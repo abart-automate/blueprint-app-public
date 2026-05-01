@@ -21,15 +21,38 @@ const ENTITY = {
   panels: {
     label: 'Panel', plural: 'Panels', store: 'panels',
     color: '#0891b2', bgColor: '#e0f2fe', badgeClass: 'badge-panel',
+    requiredPhotoSlots: ['Nameplate', 'Front (Doors Closed)', 'Front (Doors Open)'],
     fields: [
       { key: 'name',        label: 'Name',             type: 'text',     required: true },
       { key: 'areaId',      label: 'Area',             type: 'ref',      refStore: 'areas',   required: true },
       { key: 'location',    label: 'Location',         type: 'text' },
-      { key: 'panelType',   label: 'Panel Type',       type: 'enum',     options: ['MCC','PLC','HMI Panel','Control Panel','Distribution Panel','VFD Panel','Safety PLC','Relay Panel','Other'] },
       { key: 'manufacturer',label: 'Manufacturer',     type: 'text' },
-      { key: 'model',       label: 'Model / Part No.', type: 'text' },
       { key: 'description', label: 'Description',      type: 'textarea' },
-      { key: 'notes',       label: 'Notes',            type: 'textarea' },
+      // Nameplate Data
+      { key: 'npVoltage',        label: 'Voltage',          type: 'text',    section: 'Nameplate Data' },
+      { key: 'npPhase',          label: 'Phase',            type: 'enum',    options: ['1','3'], section: 'Nameplate Data' },
+      { key: 'npSccr',           label: 'SCCR',             type: 'text',    section: 'Nameplate Data' },
+      { key: 'npFla',            label: 'FLA',              type: 'text',    section: 'Nameplate Data' },
+      { key: 'npLargestMotorHp', label: 'Largest Motor HP', type: 'text', section: 'Nameplate Data' },
+      { key: 'nemaRating', label: 'NEMA Rating', type: 'enum', section: 'Nameplate Data',
+        options: ['NEMA 1','NEMA 2','NEMA 3','NEMA 3R','NEMA 3S','NEMA 3X','NEMA 3RX','NEMA 4','NEMA 4X','NEMA 5','NEMA 6','NEMA 6P','NEMA 7','NEMA 9','NEMA 12','NEMA 12K','NEMA 13'] },
+      { key: 'npDrawingRef', label: 'Drawing Reference', type: 'text', section: 'Nameplate Data' },
+      // Physical Sizing
+      { key: 'physH', label: 'Height', type: 'text', section: 'Physical Sizing' },
+      { key: 'physW', label: 'Width',  type: 'text', section: 'Physical Sizing' },
+      { key: 'physD', label: 'Depth',  type: 'text', section: 'Physical Sizing' },
+      // Backpanel Sizing
+      { key: 'bpH', label: 'Height', type: 'text', section: 'Backpanel Sizing' },
+      { key: 'bpW', label: 'Width',  type: 'text', section: 'Backpanel Sizing' },
+      // Clearance
+      { key: 'clrFront',  label: 'Front',  type: 'text', section: 'Clearance' },
+      { key: 'clrBack',   label: 'Back',   type: 'text', section: 'Clearance' },
+      { key: 'clrLeft',   label: 'Left',   type: 'text', section: 'Clearance' },
+      { key: 'clrRight',  label: 'Right',  type: 'text', section: 'Clearance' },
+      { key: 'clrTop',    label: 'Top',    type: 'text', section: 'Clearance' },
+      { key: 'clrBottom', label: 'Bottom', type: 'text', section: 'Clearance' },
+      // Notes at the bottom
+      { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
     getSubtitle: (item, refs) => refs?.areas?.[item.areaId]?.name || '—',
     getChildren: [
@@ -140,7 +163,8 @@ const state = {
   formType:   null,
   formId:     null,
   formPreset: null,   // { field, value } for pre-selecting a parent
-  formImages: [],     // working image list during form editing
+  formImages: [],       // working image list during form editing
+  formNamedPhotos: {},  // { slotName: base64 } for required photo slots
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
 };
@@ -267,6 +291,7 @@ function openLightbox(src) {
    ============================================================ */
 
 function openDetail(type, id) {
+  if (type === 'panels') { openSheet('panels', id); return; }
   state.detailType = type;
   state.detailId   = id;
   renderDetail();
@@ -302,7 +327,8 @@ function openSheet(type, id = null, preset = null) {
   state.formId     = id;
   state.formPreset = preset;
   const existing = id ? state.refs[type]?.[id] : null;
-  state.formImages = existing?.images ? [...existing.images] : [];
+  state.formImages      = existing?.images      ? [...existing.images]      : [];
+  state.formNamedPhotos = existing?.namedPhotos ? {...existing.namedPhotos} : {};
   el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + ENTITY[type].label;
   renderForm();
   el.backdrop.classList.add('open');
@@ -316,10 +342,11 @@ function closeSheet() {
   el.sheet.classList.remove('open');
   el.backdrop.classList.remove('open');
   setTimeout(() => { el.sheet.style.display = 'none'; el.formBody.innerHTML = ''; }, 300);
-  state.formType = null;
-  state.formId   = null;
-  state.formPreset = null;
-  state.formImages = [];
+  state.formType        = null;
+  state.formId          = null;
+  state.formPreset      = null;
+  state.formImages      = [];
+  state.formNamedPhotos = {};
 }
 
 /* ============================================================
@@ -551,8 +578,9 @@ async function renderList(type) {
 function cardHTML(type, item) {
   const cfg  = ENTITY[type];
   const sub  = cfg.getSubtitle(item, state.refs);
-  const thumb = item.images?.[0]
-    ? `<img class="card-thumb" src="${item.images[0]}" alt="">`
+  const firstImg = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
+  const thumb = firstImg
+    ? `<img class="card-thumb" src="${firstImg}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
   return `
     <div class="card" data-id="${item.id}">
@@ -613,23 +641,63 @@ async function renderDetail() {
   if (!item) { closeDetail(); return; }
   await refreshAll();
 
+  // Other photos gallery
   const images = item.images?.length
     ? `<div class="det-gallery">${item.images.map(src => `<img src="${src}" alt="" data-lightbox>`).join('')}</div>`
     : '';
 
-  // Build field rows (skip internal/system fields)
-  const skipKeys = new Set(['id','createdAt','updatedAt','images','assignedToType','assignedToId']);
-  const fieldRows = cfg.fields
-    .filter(f => !skipKeys.has(f.key) && f.type !== 'assign-type' && f.type !== 'assign-id')
-    .map(f => {
-      let val = item[f.key];
-      if (!val) return '';
-      if (f.type === 'ref') {
-        const refItem = state.refs[f.refStore]?.[val];
-        val = refItem ? refItem.name : val;
-      }
-      return `<div class="det-field"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval">${esc(String(val))}</div></div>`;
-    }).filter(Boolean).join('');
+  // Build field rows grouped by section
+  const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId']);
+  const sectionMap = new Map();
+  for (const f of cfg.fields) {
+    if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
+    let val = item[f.key];
+    if (!val) continue;
+    if (f.type === 'ref') {
+      const refItem = state.refs[f.refStore]?.[val];
+      val = refItem ? refItem.name : val;
+    }
+    const fieldHtml = `<div class="det-field"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval">${esc(String(val))}</div></div>`;
+    const sectionKey = f.section || null;
+    if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, []);
+    sectionMap.get(sectionKey).push(fieldHtml);
+  }
+
+  const generalFields = (sectionMap.get(null) || []).join('');
+
+  let sectionCards = '';
+  for (const [section, rows] of sectionMap) {
+    if (!section) continue;
+    sectionCards += `
+      <div class="det-card">
+        <div class="section-label" style="margin:0 0 10px">${esc(section)}</div>
+        ${rows.join('')}
+      </div>
+    `;
+  }
+
+  // Required photos card
+  let requiredPhotosCard = '';
+  if (cfg.requiredPhotoSlots) {
+    const photoItems = cfg.requiredPhotoSlots.map(slot => {
+      const src = item.namedPhotos?.[slot];
+      return `
+        <div class="named-photo-det-item">
+          <div class="named-photo-det-label">${esc(slot)}</div>
+          ${src
+            ? `<img class="named-photo-det-img" src="${src}" alt="${esc(slot)}" data-lightbox>`
+            : `<div class="named-photo-det-empty">Not captured</div>`
+          }
+        </div>
+      `;
+    }).join('');
+    requiredPhotosCard = `
+      <div class="det-card">
+        <div class="section-label" style="margin:0 0 10px">Required Photos</div>
+        ${photoItems}
+      </div>
+    `;
+  }
 
   // Assignment badge for networks/assets
   let assignBadge = '';
@@ -656,12 +724,14 @@ async function renderDetail() {
         ${assignBadge}
         ${item.tag ? `<span class="badge badge-asset">${esc(item.tag)}</span>` : ''}
       </div>
-      ${fieldRows || '<div class="det-field" style="color:var(--muted);font-size:14px">No additional details.</div>'}
+      ${generalFields || '<div class="det-field" style="color:var(--muted);font-size:14px">No additional details.</div>'}
       <div class="det-actions" style="margin-top:14px">
         <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
         <button class="btn btn-danger btn-sm" id="det-delete">Delete</button>
       </div>
     </div>
+    ${sectionCards}
+    ${requiredPhotosCard}
     ${childSections}
   `;
 
@@ -740,17 +810,31 @@ async function renderForm() {
   await refreshAll();
 
   let html = '';
+  let currentSection = undefined;
   for (const f of cfg.fields) {
+    if (f.section !== currentSection) {
+      currentSection = f.section;
+      if (currentSection) html += `<div class="form-section-hdr">${esc(currentSection)}</div>`;
+    }
     html += await buildFormField(f, existing, type);
+  }
+
+  if (cfg.requiredPhotoSlots) {
+    html += `<div class="form-section-hdr">Required Photos</div><div id="named-photo-slots">`;
+    for (const slot of cfg.requiredPhotoSlots) {
+      const slotId = `np-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+      html += `<div class="named-photo-slot"><div class="named-photo-slot-label">${esc(slot)}</div><div id="${slotId}" class="named-photo-area"></div></div>`;
+    }
+    html += `</div>`;
   }
 
   if (!cfg.noImages) {
     html += `
+      <div class="form-section-hdr">Other Photos</div>
       <div class="fg">
-        <label class="fg-label">Images</label>
         <label class="img-upload" id="img-upload-label">
           <input type="file" id="img-file-input" accept="image/*" multiple>
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           Tap to add images
         </label>
         <div id="img-preview-grid" class="img-grid"></div>
@@ -759,6 +843,10 @@ async function renderForm() {
   }
 
   el.formBody.innerHTML = html;
+
+  if (cfg.requiredPhotoSlots) {
+    renderNamedPhotoSlots(cfg.requiredPhotoSlots);
+  }
 
   if (!cfg.noImages) {
     renderImagePreviews();
@@ -912,6 +1000,44 @@ function renderImagePreviews() {
   });
 }
 
+function renderNamedPhotoSlots(slots) {
+  const cameraIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+  for (const slot of slots) {
+    const slotId = `np-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+    const area = $(slotId);
+    if (!area) continue;
+    const src = state.formNamedPhotos[slot];
+    if (src) {
+      area.innerHTML = `
+        <div class="img-thumb named-img-thumb">
+          <img src="${src}" alt="${esc(slot)}">
+          <button class="img-rm" type="button">✕</button>
+        </div>
+      `;
+      area.querySelector('.img-rm').addEventListener('click', e => {
+        e.stopPropagation();
+        delete state.formNamedPhotos[slot];
+        renderNamedPhotoSlots(slots);
+      });
+    } else {
+      area.innerHTML = `
+        <label class="named-photo-upload">
+          <input type="file" accept="image/*">
+          ${cameraIcon}
+          <span>Tap to capture</span>
+        </label>
+      `;
+      area.querySelector('input[type="file"]').addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const b64 = await resizeImage(file);
+        state.formNamedPhotos[slot] = b64;
+        renderNamedPhotoSlots(slots);
+      });
+    }
+  }
+}
+
 /* ============================================================
    FORM SAVE
    ============================================================ */
@@ -955,6 +1081,7 @@ async function saveForm() {
   }
 
   item.images = [...state.formImages];
+  if (cfg.requiredPhotoSlots) item.namedPhotos = {...state.formNamedPhotos};
 
   // Ensure preset parent is set if the field wasn't rendered as a form field (e.g. assignedToId when type is Plant)
   if (state.formPreset && !state.formId && !item[state.formPreset.field]) {
