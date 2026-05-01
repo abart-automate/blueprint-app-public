@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --input-type=module)",
+      "Bash(node --check \"c:/Repos/blueprint-app/js/app.js\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)"
+    ]
+  }
+}
