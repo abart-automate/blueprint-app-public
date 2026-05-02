@@ -558,6 +558,42 @@ body {
 }
 
 /* =====================================================
+   COLLAPSEABLE SECTIONS
+   ===================================================== */
+.det-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+}
+.det-toggle-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+.det-section-toggle[aria-expanded="true"] .det-toggle-chevron {
+  transform: rotate(180deg);
+}
+.det-section-body {
+  margin-top: 10px;
+}
+.det-collapsible-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.det-collapsible-hdr .det-section-toggle {
+  flex: 1;
+}
+
+/* =====================================================
    BUTTONS
    ===================================================== */
 .btn {

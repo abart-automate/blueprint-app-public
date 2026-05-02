@@ -774,11 +774,6 @@ async function renderDetail() {
   if (!item) { state.detailStack = []; closeDetail(); return; }
   await refreshAll();
 
-  // Other photos gallery
-  const images = item.images?.length
-    ? `<div class="det-gallery">${item.images.map(src => `<img src="${src}" alt="" data-lightbox>`).join('')}</div>`
-    : '';
-
   // Build field rows grouped by section (all fields shown, blank or not)
   const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId','name']);
   const sectionMap = new Map();
@@ -801,18 +796,33 @@ async function renderDetail() {
 
   const generalFields = (sectionMap.get(null) || []).join('');
 
-  let sectionCards = '';
+  // Categorise named sections: detail sections vs. physical/clearance sections
+  const PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Backpanel Sizing', 'Clearance']);
+  let detailSectionCards = '';
+  let physicalSectionCards = '';
   for (const [section, rows] of sectionMap) {
     if (!section) continue;
-    sectionCards += `
-      <div class="det-card">
-        <div class="section-label" style="margin:0 0 10px">${esc(section)}</div>
-        ${rows.join('')}
-      </div>
-    `;
+    if (PHYSICAL_SECTIONS.has(section)) {
+      physicalSectionCards += buildCollapsibleCard(section, rows.join(''));
+    } else {
+      detailSectionCards += buildCollapsibleCard(section, rows.join(''));
+    }
   }
 
-  // Required photos card
+  // Wiring table cards (collapseable)
+  let wiringCards = '';
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables) {
+      const wRows = item[t.key] || [];
+      const rowsHtml = wRows.length
+        ? wRows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
+        : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
+      wiringCards += buildCollapsibleCard(t.label,
+        `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead><tbody>${rowsHtml}</tbody></table>`);
+    }
+  }
+
+  // Required photos card (collapseable)
   let requiredPhotosCard = '';
   if (cfg.requiredPhotoSlots) {
     const photoItems = cfg.requiredPhotoSlots.map(slot => {
@@ -827,31 +837,16 @@ async function renderDetail() {
         </div>
       `;
     }).join('');
-    requiredPhotosCard = `
-      <div class="det-card">
-        <div class="section-label" style="margin:0 0 10px">Required Photos</div>
-        ${photoItems}
-      </div>
-    `;
+    requiredPhotosCard = buildCollapsibleCard('Required Photos', photoItems);
   }
 
-  // Wiring table cards
-  let wiringCards = '';
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables) {
-      const rows = item[t.key] || [];
-      const rowsHtml = rows.length
-        ? rows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
-        : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
-      wiringCards += `
-        <div class="det-card">
-          <div class="section-label" style="margin:0 0 10px">${esc(t.label)}</div>
-          <table class="wiring-det-table">
-            <thead><tr><th>Terminal</th><th>Label</th></tr></thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-        </div>`;
-    }
+  // Other photos card (collapseable)
+  let otherPhotosCard = '';
+  if (!cfg.noImages) {
+    const galleryHtml = item.images?.length
+      ? `<div class="det-gallery">${item.images.map(src => `<img src="${src}" alt="" data-lightbox>`).join('')}</div>`
+      : `<div style="color:var(--muted);font-size:14px;padding:4px 0">No photos added.</div>`;
+    otherPhotosCard = buildCollapsibleCard('Other Photos', galleryHtml);
   }
 
   // Assignment badge for networks/assets
@@ -875,7 +870,6 @@ async function renderDetail() {
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
     ${buildDetailCompletenessHtml(type, item)}
-    ${images}
     <div class="det-card">
       ${type === 'areas'
         ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}">`
@@ -891,9 +885,11 @@ async function renderDetail() {
           <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
         </div>` : ''}
     </div>
-    ${sectionCards}
-    ${requiredPhotosCard}
+    ${detailSectionCards}
     ${wiringCards}
+    ${physicalSectionCards}
+    ${requiredPhotosCard}
+    ${otherPhotosCard}
     ${childSections}
     <div class="det-save-bar" id="det-save-bar">
       <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
@@ -965,11 +961,42 @@ async function renderDetail() {
       openSheet(childType, null, { field: presetField, value: presetVal });
     });
   });
+
+  // Collapseable section toggles
+  el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const body = btn.closest('.det-collapsible').querySelector('.det-section-body');
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      body.style.display = expanded ? 'none' : 'block';
+    });
+  });
+
+  el.detail.scrollTop = 0;
+}
+
+function buildCollapsibleCard(title, bodyHtml) {
+  const chevron = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  return `
+    <div class="det-card det-collapsible">
+      <button class="det-section-toggle" aria-expanded="false">
+        <span class="section-label" style="margin:0">${esc(title)}</span>
+        ${chevron}
+      </button>
+      <div class="det-section-body" style="display:none">
+        ${bodyHtml}
+      </div>
+    </div>
+  `;
 }
 
 async function buildChildSections(type, id, item) {
   const cfg = ENTITY[type];
   if (!cfg.getChildren?.length) return '';
+
+  const plusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+  const chevron  = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
   let html = '';
   for (const child of cfg.getChildren) {
@@ -978,20 +1005,25 @@ async function buildChildSections(type, id, item) {
       ? all.filter(i => i[child.field] === id && child.filter(i))
       : all.filter(i => i[child.field] === id);
 
-    const rows = filtered.map(ci => cardHTML(child.store, ci)).join('');
+    const rows    = filtered.map(ci => cardHTML(child.store, ci)).join('');
+    const count   = filtered.length;
+    const title   = count > 0 ? `${esc(child.label)} (${count})` : esc(child.label);
+    const bodyHtml = rows
+      ? `<div class="card-list child-card-list" data-child-store="${child.store}">${rows}</div>`
+      : `<div style="font-size:14px;color:var(--muted)">None added yet.</div>`;
 
     html += `
-      <div class="det-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="section-label" style="margin:0">${esc(child.label)}</div>
-          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" aria-label="Add ${esc(child.label)}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <div class="det-card det-collapsible">
+        <div class="det-collapsible-hdr">
+          <button class="det-section-toggle" aria-expanded="false">
+            <span class="section-label" style="margin:0">${title}</span>
+            ${chevron}
           </button>
+          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
         </div>
-        ${rows
-          ? `<div class="card-list child-card-list" data-child-store="${child.store}">${rows}</div>`
-          : `<div style="font-size:14px;color:var(--muted)">None added yet.</div>`
-        }
+        <div class="det-section-body" style="display:none">
+          ${bodyHtml}
+        </div>
       </div>
     `;
   }
