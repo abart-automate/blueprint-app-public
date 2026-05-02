@@ -66,6 +66,7 @@ const ENTITY = {
   power: {
     label: 'Power', plural: 'Power', store: 'power',
     color: '#b45309', bgColor: '#fef3c7', badgeClass: 'badge-power',
+    requiredPhotoSlots: ['Device', 'Part Number', 'Input Wiring', 'Output Wiring'],
     fields: [
       { key: 'name',       label: 'Name',              type: 'text',     required: true },
       { key: 'panelId',    label: 'Panel',             type: 'ref',      refStore: 'panels',  required: true },
@@ -108,8 +109,7 @@ const ENTITY = {
     color: '#16a34a', bgColor: '#dcfce7', badgeClass: 'badge-network',
     fields: [
       { key: 'name',           label: 'Name',              type: 'text',     required: true },
-      { key: 'networkType',    label: 'Network Type',       type: 'enum',     options: ['Ethernet/IP','PROFINET','Profibus DP','Profibus PA','DeviceNet','Modbus TCP','Modbus RTU','EtherCAT','CANopen','AS-Interface','IO-Link','OPC UA','Other'] },
-      { key: 'protocol',       label: 'Protocol',           type: 'text' },
+      { key: 'networkType',    label: 'Network Type',       type: 'enum',     options: ['Ethernet/IP','ControlNet','DeviceNet','Modbus TCP','Modbus RTU','Serial-RS232', 'Serial-RS485','Other'] },
       { key: 'ipRange',        label: 'IP Range / Subnet',  type: 'text' },
       { key: 'assignedToType', label: 'Assigned To',        type: 'assign-type', options: ['Plant','Area','Panel'] },
       { key: 'assignedToId',   label: 'Assigned Item',      type: 'assign-id' },

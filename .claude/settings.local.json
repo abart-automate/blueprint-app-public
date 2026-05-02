@@ -10,7 +10,11 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -Force | Where-Object { !$_.Name.StartsWith\\('.'\\) -or $_.Name -eq '.claude' } | Select-Object Name, PSIsContainer)",
-      "Bash(grep -v \"^d.*\\\\.$\")"
+      "Bash(grep -v \"^d.*\\\\.$\")",
+      "Bash(ConvertTo-Json)",
+      "Bash(Out-String)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -File)",
+      "Bash(Select-Object Name)"
     ]
   }
 }
