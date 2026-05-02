@@ -1,6 +1,6 @@
 {
-  "name": "Plant Asset Manager",
-  "short_name": "Plant Assets",
+  "name": "blueprint",
+  "short_name": "blueprint",
   "description": "Manage industrial plant assets, panels, power circuits, safety systems, and networks.",
   "start_url": "./index.html",
   "scope": "./",

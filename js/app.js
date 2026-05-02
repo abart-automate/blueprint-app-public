@@ -65,7 +65,7 @@ const ENTITY = {
     getChildren: [
       { label: 'Power',           store: 'power',    field: 'panelId' },
       { label: 'Safety Circuits', store: 'safety',   field: 'panelId' },
-      { label: 'Networks', store: 'networks', field: 'assignedToId', filter: i => i.assignedToType === 'Panel' },
+      { label: 'Networks', store: 'networks', field: 'panelId' },
       { label: 'Assets',   store: 'assets',   field: 'panelId' },
     ],
   },
@@ -134,20 +134,46 @@ const ENTITY = {
     label: 'Network', plural: 'Networks', store: 'networks',
     color: '#16a34a', bgColor: '#dcfce7', badgeClass: 'badge-network',
     fields: [
-      { key: 'name',           label: 'Name',              type: 'text',     required: true },
-      { key: 'networkType',    label: 'Network Type',       type: 'enum',     options: ['Ethernet/IP','ControlNet','DeviceNet','Modbus TCP','Modbus RTU','Serial-RS232', 'Serial-RS485','Other'] },
-      { key: 'ipRange',        label: 'IP Range / Subnet',  type: 'text' },
-      { key: 'assignedToType', label: 'Assigned To',        type: 'assign-type', options: ['Plant','Area','Panel'] },
-      { key: 'assignedToId',   label: 'Assigned Item',      type: 'assign-id' },
-      { key: 'description',    label: 'Description',        type: 'textarea' },
-      { key: 'notes',          label: 'Notes',              type: 'textarea' },
+      { key: 'name',        label: 'Name',          type: 'text',  required: true },
+      { key: 'networkType', label: 'Protocol Type',  type: 'enum',  required: true,
+        options: ['Ethernet/IP','ControlNet','DeviceNet','Modbus TCP','Modbus RTU','Serial-RS232','Serial-RS485','Other'] },
+      { key: 'areaId',      label: 'Area',           type: 'ref',   refStore: 'areas' },
+      { key: 'panelId',     label: 'Panel',          type: 'ref',   refStore: 'panels' },
+      { key: 'description', label: 'Description',    type: 'textarea' },
+      { key: 'notes',       label: 'Notes',          type: 'textarea' },
     ],
-    getSubtitle: (item, refs) => {
-      if (!item.assignedToType || item.assignedToType === 'Plant') return 'Plant-wide';
-      const s = { Area: 'areas', Panel: 'panels' }[item.assignedToType];
-      return refs?.[s]?.[item.assignedToId]?.name || item.assignedToType;
+    protocolFields: {
+      'Ethernet/IP': [
+        { key: 'ipRange',  label: 'IP Range / Subnet', type: 'text', section: 'Network Configuration' },
+        { key: 'gateway',  label: 'Gateway',            type: 'text', section: 'Network Configuration' },
+        { key: 'vlanId',   label: 'VLAN ID',            type: 'text', section: 'Network Configuration' },
+      ],
+      'Modbus TCP': [
+        { key: 'ipRange',  label: 'IP Range / Subnet', type: 'text', section: 'Network Configuration' },
+        { key: 'gateway',  label: 'Gateway',            type: 'text', section: 'Network Configuration' },
+        { key: 'vlanId',   label: 'VLAN ID',            type: 'text', section: 'Network Configuration' },
+      ],
+      'ControlNet': [
+        { key: 'cnChannel', label: 'Channel', type: 'text', section: 'Network Configuration' },
+        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Configuration' },
+      ],
+      'DeviceNet': [
+        { key: 'powerId', label: 'Power Supply', type: 'ref', refStore: 'power', section: 'Network Configuration' },
+        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Configuration' },
+      ],
+      'Modbus RTU':   SERIAL_FIELDS,
+      'Serial-RS232': SERIAL_FIELDS,
+      'Serial-RS485': SERIAL_FIELDS,
     },
-    getChildren: [],
+    getSubtitle: (item, refs) => {
+      const panel = item.panelId ? refs?.panels?.[item.panelId]?.name : null;
+      const area  = item.areaId  ? refs?.areas?.[item.areaId]?.name  : null;
+      if (panel && area) return `${area} / ${panel}`;
+      return panel || area || 'Plant-wide';
+    },
+    getChildren: [
+      { label: 'Assets', store: 'assets', field: 'networkId' },
+    ],
   },
 
   assets: {
@@ -155,9 +181,10 @@ const ENTITY = {
     color: '#475569', bgColor: '#f1f5f9', badgeClass: 'badge-asset',
     fields: [
       { key: 'name',         label: 'Name',         type: 'text', required: true },
-      { key: 'panelId',      label: 'Panel',        type: 'ref',  refStore: 'panels' },
-      { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
-      { key: 'safetyId',        label: 'Safety Circuit (optional)', type: 'ref',      refStore: 'safety',   required: false },
+      { key: 'panelId',    label: 'Panel',                     type: 'ref', refStore: 'panels' },
+      { key: 'networkId',  label: 'Network (optional)',         type: 'ref', refStore: 'networks', required: false },
+      { key: 'powerId',    label: 'Power (optional)',           type: 'ref', refStore: 'power',    required: false },
+      { key: 'safetyId',   label: 'Safety Circuit (optional)', type: 'ref', refStore: 'safety',   required: false },
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
@@ -496,7 +523,7 @@ function navigate(page) {
 
 function setHeaderForPage(page) {
   if (page === 'home') {
-    el.pageTitle.textContent   = 'Plant Asset Manager';
+    el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
   } else {
@@ -863,7 +890,7 @@ async function renderDetail() {
   // Build field rows grouped by section (all fields shown, blank or not)
   const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId','name']);
   const sectionMap = new Map();
-  for (const f of cfg.fields) {
+  for (const f of getEffectiveFields(type, item)) {
     if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
     const rawVal = item[f.key];
     let displayVal;
@@ -1013,8 +1040,9 @@ async function renderDetail() {
     const field = e.target.closest('.det-field.det-field-editable');
     if (!field) return;
     if (field.querySelector('input, select, textarea')) return;
-    const key = field.dataset.key;
-    const fConfig = ENTITY[state.detailType]?.fields.find(f => f.key === key);
+    const key     = field.dataset.key;
+    const liveItem = state.refs[state.detailType]?.[state.detailId];
+    const fConfig  = getEffectiveFields(state.detailType, liveItem).find(f => f.key === key);
     if (fConfig) activateInlineEdit(field, fConfig, item);
   });
 
@@ -1203,6 +1231,25 @@ function activateInlineEdit(field, fConfig, item) {
     const isEmpty = !displayVal;
     fvalEl.classList.toggle('det-fval-empty', isEmpty);
     fvalEl.textContent = isEmpty ? '—' : String(displayVal);
+
+    // Auto-sync areaId when panelId is changed inline
+    if (fConfig.key === 'panelId') {
+      const efFields = getEffectiveFields(state.detailType, item);
+      if (efFields.some(f => f.key === 'areaId')) {
+        const panel = state.refs.panels?.[currentVal];
+        if (panel?.areaId) {
+          state.detailChanges['areaId'] = panel.areaId;
+          showDetailSaveBar();
+          const areaField = el.detail.querySelector('.det-field-editable[data-key="areaId"]');
+          if (areaField) {
+            const areaFval  = areaField.querySelector('.det-fval');
+            const areaName  = state.refs.areas?.[panel.areaId]?.name || '';
+            areaFval.classList.toggle('det-fval-empty', !areaName);
+            areaFval.textContent = areaName || '—';
+          }
+        }
+      }
+    }
   });
 }
 
@@ -1212,7 +1259,7 @@ async function saveDetailChanges(type, id) {
   const item = await getById(type, id);
   if (!item) return;
   const updatedItem = { ...item, ...state.detailChanges };
-  for (const f of cfg.fields) {
+  for (const f of getEffectiveFields(type, updatedItem)) {
     if (f.required && !updatedItem[f.key]) {
       showToast(`${f.label} is required`, 'error');
       return;
@@ -1244,6 +1291,10 @@ async function renderForm() {
       if (currentSection) html += `<div class="form-section-hdr">${esc(currentSection)}</div>`;
     }
     html += await buildFormField(f, existing, type);
+  }
+
+  if (type === 'networks') {
+    html += `<div id="protocol-fields-container"></div>`;
   }
 
   if (cfg.wiringTables) {
@@ -1303,6 +1354,42 @@ async function renderForm() {
   if (assignTypeSelect) {
     assignTypeSelect.addEventListener('change', () => populateAssignId(type, assignTypeSelect.value, existing?.assignedToId));
     populateAssignId(type, assignTypeSelect.value, existing?.assignedToId);
+  }
+
+  // Wire up protocol-specific fields for networks
+  if (type === 'networks') {
+    const typeSelect = $('f-networkType');
+    const renderProtocolFields = async () => {
+      const networkType = typeSelect?.value;
+      const protoFields = ENTITY.networks.protocolFields?.[networkType] || [];
+      const container   = $('protocol-fields-container');
+      if (!container) return;
+      if (!protoFields.length) { container.innerHTML = ''; return; }
+      let ph = '';
+      let lastSection;
+      for (const f of protoFields) {
+        if (f.section !== lastSection) {
+          lastSection = f.section;
+          ph += `<div class="form-section-hdr">${esc(f.section)}</div>`;
+        }
+        ph += await buildFormField(f, existing, type);
+      }
+      container.innerHTML = ph;
+    };
+    typeSelect?.addEventListener('change', renderProtocolFields);
+    await renderProtocolFields();
+  }
+
+  // Auto-populate areaId from panel when panelId changes
+  {
+    const panelSel = $('f-panelId');
+    const areaSel  = $('f-areaId');
+    if (panelSel && areaSel) {
+      panelSel.addEventListener('change', () => {
+        const panel = state.refs.panels?.[panelSel.value];
+        if (panel?.areaId) areaSel.value = panel.areaId;
+      });
+    }
   }
 
   // Wire up power filter when panel changes (for safety circuits)
@@ -1561,8 +1648,17 @@ async function saveForm() {
     }
   }
 
+  // Read protocol-specific fields for networks
+  if (type === 'networks') {
+    const networkType = item.networkType;
+    for (const f of ENTITY.networks.protocolFields?.[networkType] || []) {
+      const el2 = $(`f-${f.key}`);
+      if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
+    }
+  }
+
   // Validate required fields
-  for (const f of cfg.fields) {
+  for (const f of getEffectiveFields(type, item)) {
     if (f.required && !item[f.key]) {
       showToast(`${f.label} is required`, 'error');
       $(`f-${f.key}`)?.focus();
@@ -1667,7 +1763,7 @@ async function exportData() {
   try {
     const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
     const payload = {
-      appName:    'Plant Asset Manager',
+      appName:    'blueprint',
       version:    1,
       exportedAt: new Date().toISOString(),
       data:       {}
@@ -1712,7 +1808,7 @@ async function processImportFile(file) {
 
     if (
       typeof payload !== 'object' || payload === null ||
-      payload.appName !== 'Plant Asset Manager' ||
+      payload.appName !== 'blueprint' ||
       typeof payload.version !== 'number' ||
       typeof payload.data !== 'object'
     ) {
@@ -1753,10 +1849,17 @@ async function processImportFile(file) {
    UTILITY
    ============================================================ */
 
+function getEffectiveFields(type, item) {
+  const cfg   = ENTITY[type];
+  const base  = cfg.fields || [];
+  const proto = cfg.protocolFields?.[item?.networkType] || [];
+  return [...base, ...proto];
+}
+
 function calcCompleteness(type, item) {
   const cfg = ENTITY[type];
   let total = 0, filled = 0;
-  for (const f of cfg.fields) {
+  for (const f of getEffectiveFields(type, item)) {
     if (f.type === 'assign-type' || f.type === 'assign-id') continue;
     total++;
     const val = item[f.key];
@@ -1970,7 +2073,7 @@ function initInstallPrompt() {
     const el = document.createElement('div');
     el.id = 'install-banner';
     el.className = 'install-banner';
-    el.innerHTML = `<span>Install Plant Asset Manager</span>
+    el.innerHTML = `<span>Install blueprint</span>
       <div class="install-banner-btns">
         <button id="install-now-btn">Install</button>
         <button id="install-skip-btn">Not now</button>
