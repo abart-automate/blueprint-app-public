@@ -66,6 +66,10 @@ const ENTITY = {
     label: 'Power', plural: 'Power', store: 'power',
     color: '#b45309', bgColor: '#fef3c7', badgeClass: 'badge-power',
     requiredPhotoSlots: ['Device', 'Part Number', 'Input Wiring', 'Output Wiring'],
+    wiringTables: [
+      { key: 'inputWiring',  label: 'Input Wiring'  },
+      { key: 'outputWiring', label: 'Output Wiring' },
+    ],
     fields: [
       { key: 'name',         label: 'Name',         type: 'text',     required: true },
       { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels', required: true },
@@ -177,8 +181,9 @@ const state = {
   formType:   null,
   formId:     null,
   formPreset: null,   // { field, value } for pre-selecting a parent
-  formImages: [],       // working image list during form editing
-  formNamedPhotos: {},  // { slotName: base64 } for required photo slots
+  formImages: [],         // working image list during form editing
+  formNamedPhotos: {},    // { slotName: base64 } for required photo slots
+  formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
 };
@@ -305,7 +310,6 @@ function openLightbox(src) {
    ============================================================ */
 
 function openDetail(type, id) {
-  if (type === 'panels') { openSheet('panels', id); return; }
   state.detailType = type;
   state.detailId   = id;
   renderDetail();
@@ -343,6 +347,12 @@ function openSheet(type, id = null, preset = null) {
   const existing = id ? state.refs[type]?.[id] : null;
   state.formImages      = existing?.images      ? [...existing.images]      : [];
   state.formNamedPhotos = existing?.namedPhotos ? {...existing.namedPhotos} : {};
+  state.formWiringTables = {};
+  const cfg = ENTITY[type];
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables)
+      state.formWiringTables[t.key] = existing?.[t.key] ? existing[t.key].map(r => ({...r})) : [];
+  }
   el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + ENTITY[type].label;
   renderForm();
   el.backdrop.classList.add('open');
@@ -356,11 +366,12 @@ function closeSheet() {
   el.sheet.classList.remove('open');
   el.backdrop.classList.remove('open');
   setTimeout(() => { el.sheet.style.display = 'none'; el.formBody.innerHTML = ''; }, 300);
-  state.formType        = null;
-  state.formId          = null;
-  state.formPreset      = null;
-  state.formImages      = [];
-  state.formNamedPhotos = {};
+  state.formType         = null;
+  state.formId           = null;
+  state.formPreset       = null;
+  state.formImages       = [];
+  state.formNamedPhotos  = {};
+  state.formWiringTables = {};
 }
 
 /* ============================================================
@@ -502,7 +513,7 @@ async function renderAreasList() {
         power:    (state.cache.power    || []).filter(p => panelIds.has(p.panelId)).length,
         safety:   (state.cache.safety   || []).filter(s => panelIds.has(s.panelId)).length,
         networks: (state.cache.networks || []).filter(n => n.assignedToType === 'Area' && n.assignedToId === area.id).length,
-        assets:   (state.cache.assets   || []).filter(a => a.assignedToType === 'Area' && a.assignedToId === area.id).length,
+        assets:   (state.cache.assets   || []).filter(a => panelIds.has(a.panelId)).length,
       };
       return areaCardHTML(area, counts);
     }).join('');
@@ -523,6 +534,8 @@ async function renderAreasList() {
 }
 
 function areaCardHTML(area, counts) {
+  const pct = calcAreaCompleteness(area);
+  const barColor = pct >= 75 ? 'var(--success)' : 'var(--danger)';
   const countDefs = [
     { type: 'panels',   color: 'var(--c-panel)',   title: 'Panels',   n: counts.panels },
     { type: 'power',    color: 'var(--c-power)',   title: 'Power',    n: counts.power },
@@ -545,6 +558,9 @@ function areaCardHTML(area, counts) {
             <span>${c.n}</span>
           </div>
         `).join('')}
+      </div>
+      <div class="card-progress-wrap area-card-progress">
+        <div class="card-progress-fill" style="width:${pct}%;background:${barColor}"></div>
       </div>
     </div>
   `;
@@ -593,6 +609,12 @@ async function renderList(type) {
     list.querySelectorAll('.card').forEach(card => {
       card.addEventListener('click', () => openDetail(type, card.dataset.id));
     });
+    list.querySelectorAll('.card-delete-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        deleteItem(type, btn.dataset.id, btn.dataset.name);
+      });
+    });
   };
 
   el.main.querySelector('#list-search').addEventListener('input', render);
@@ -607,14 +629,65 @@ function cardHTML(type, item) {
   const thumb = firstImg
     ? `<img class="card-thumb" src="${firstImg}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+
+  const counts = (cfg.getChildren || []).map(child => {
+    const all = state.cache[child.store] || [];
+    const n = child.filter
+      ? all.filter(i => i[child.field] === item.id && child.filter(i)).length
+      : all.filter(i => i[child.field] === item.id).length;
+    return { store: child.store, label: child.label, n };
+  });
+  const countsHtml = counts.length ? `
+    <div class="card-counts">
+      ${counts.map(c => `
+        <div class="card-count-item" style="color:${ENTITY[c.store].color}" title="${esc(c.label)}">
+          ${entityIcon(c.store, 14)}<span>${c.n}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+  const pct = calcCompleteness(type, item);
+  const barColor = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+
+  let progressHtml;
+  if (type === 'panels') {
+    const devPct = calcPanelDevicesCompleteness(item.id);
+    const devColor = devPct !== null ? (devPct >= 75 ? 'var(--success)' : 'var(--danger)') : 'var(--border)';
+    progressHtml = `
+      <div class="card-progress-multi">
+        <div class="cpr-row">
+          <span class="cpr-label">Panel</span>
+          <div class="cpr-track"><div class="cpr-fill" style="width:${pct}%;background:${barColor}"></div></div>
+          <span class="cpr-pct" style="color:${barColor}">${pct}%</span>
+        </div>
+        <div class="cpr-row">
+          <span class="cpr-label">Devices</span>
+          <div class="cpr-track"><div class="cpr-fill" style="width:${devPct ?? 0}%;background:${devColor}"></div></div>
+          <span class="cpr-pct" style="color:${devColor}">${devPct !== null ? devPct + '%' : '—'}</span>
+        </div>
+      </div>`;
+  } else {
+    progressHtml = `
+      <div class="card-progress-wrap">
+        <div class="card-progress-fill" style="width:${pct}%;background:${barColor}"></div>
+      </div>`;
+  }
+
   return `
     <div class="card" data-id="${item.id}">
-      ${thumb}
-      <div class="card-body">
-        <div class="card-name">${esc(item.name)}</div>
-        ${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}
-        ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
+      <div class="card-row">
+        ${thumb}
+        <div class="card-body">
+          <div class="card-name-row">
+            <div class="card-name">${esc(item.name)}</div>
+            <button class="card-delete-btn" data-id="${item.id}" data-name="${esc(item.name)}" aria-label="Delete">${trashIcon}</button>
+          </div>
+          ${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}
+          ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
+          ${countsHtml}
+        </div>
       </div>
+      ${progressHtml}
     </div>
   `;
 }
@@ -724,6 +797,25 @@ async function renderDetail() {
     `;
   }
 
+  // Wiring table cards
+  let wiringCards = '';
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables) {
+      const rows = item[t.key] || [];
+      const rowsHtml = rows.length
+        ? rows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
+        : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
+      wiringCards += `
+        <div class="det-card">
+          <div class="section-label" style="margin:0 0 10px">${esc(t.label)}</div>
+          <table class="wiring-det-table">
+            <thead><tr><th>Terminal</th><th>Label</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+  }
+
   // Assignment badge for networks/assets
   let assignBadge = '';
   if (item.assignedToType) {
@@ -741,10 +833,10 @@ async function renderDetail() {
   const childSections = await buildChildSections(type, id, item);
 
   el.detail.innerHTML = `
-    ${type === 'areas' ? `
-      <button class="det-back-btn" id="det-back" aria-label="Back">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      </button>` : ''}
+    <button class="det-back-btn" id="det-back" aria-label="Back">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    ${buildDetailCompletenessHtml(type, item)}
     ${images}
     <div class="det-card">
       ${type === 'areas'
@@ -754,25 +846,24 @@ async function renderDetail() {
       <div class="det-badges">
         <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
         ${assignBadge}
-        ${item.tag ? `<span class="badge badge-asset">${esc(item.tag)}</span>` : ''}
       </div>
       ${generalFields || '<div class="det-field" style="color:var(--muted);font-size:14px">No additional details.</div>'}
       ${type !== 'areas' ? `
         <div class="det-actions" style="margin-top:14px">
           <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
-          <button class="btn btn-danger btn-sm" id="det-delete">Delete</button>
         </div>` : ''}
     </div>
     ${sectionCards}
     ${requiredPhotosCard}
+    ${wiringCards}
     ${childSections}
   `;
 
   el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
     img.addEventListener('click', () => openLightbox(img.src));
   });
+  el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
   if (type === 'areas') {
-    el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
     const nameInput = el.detail.querySelector('#det-name-input');
     nameInput.addEventListener('blur', async () => {
       const newName = nameInput.value.trim();
@@ -792,10 +883,18 @@ async function renderDetail() {
       closeDetail();
       openSheet(type, id);
     });
-    el.detail.querySelector('#det-delete').addEventListener('click', () => deleteItem(type, id, item.name));
   }
-  el.detail.querySelectorAll('[data-child-type][data-child-id]').forEach(el2 => {
-    el2.addEventListener('click', () => openDetail(el2.dataset.childType, el2.dataset.childId));
+  el.detail.querySelectorAll('.child-card-list').forEach(list => {
+    const childStore = list.dataset.childStore;
+    list.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('click', () => openDetail(childStore, card.dataset.id));
+    });
+    list.querySelectorAll('.card-delete-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        deleteItem(childStore, btn.dataset.id, btn.dataset.name);
+      });
+    });
   });
   el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -818,32 +917,20 @@ async function buildChildSections(type, id, item) {
       ? all.filter(i => i[child.field] === id && child.filter(i))
       : all.filter(i => i[child.field] === id);
 
-    const childCfg    = ENTITY[child.store];
-    const presetField = child.field;
-    const presetVal   = id;
-
-    const rows = filtered.map(ci => {
-      const sub = childCfg.getSubtitle(ci, state.refs);
-      return `
-        <div class="related-item" data-child-type="${child.store}" data-child-id="${ci.id}">
-          <div>
-            <div class="related-item-name">${esc(ci.name)}</div>
-            ${sub ? `<div class="related-item-sub">${esc(sub)}</div>` : ''}
-          </div>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);flex-shrink:0"><path d="m9 18 6-6-6-6"/></svg>
-        </div>
-      `;
-    }).join('');
+    const rows = filtered.map(ci => cardHTML(child.store, ci)).join('');
 
     html += `
       <div class="det-card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div class="section-label" style="margin:0">${esc(child.label)}</div>
-          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${presetField}" data-preset-val="${presetVal}" aria-label="Add ${esc(child.label)}">
+          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" aria-label="Add ${esc(child.label)}">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
-        ${rows ? `<div class="related-list">${rows}</div>` : `<div style="font-size:14px;color:var(--muted)">None added yet.</div>`}
+        ${rows
+          ? `<div class="card-list child-card-list" data-child-store="${child.store}">${rows}</div>`
+          : `<div style="font-size:14px;color:var(--muted)">None added yet.</div>`
+        }
       </div>
     `;
   }
@@ -871,6 +958,12 @@ async function renderForm() {
     html += await buildFormField(f, existing, type);
   }
 
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables) {
+      html += `<div class="form-section-hdr">${esc(t.label)}</div><div id="wiring-table-${t.key}"></div>`;
+    }
+  }
+
   if (cfg.requiredPhotoSlots) {
     html += `<div class="form-section-hdr">Required Photos</div><div id="named-photo-slots">`;
     for (const slot of cfg.requiredPhotoSlots) {
@@ -895,6 +988,10 @@ async function renderForm() {
   }
 
   el.formBody.innerHTML = html;
+
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables) renderWiringTable(t.key, t.label);
+  }
 
   if (cfg.requiredPhotoSlots) {
     renderNamedPhotoSlots(cfg.requiredPhotoSlots);
@@ -1090,6 +1187,43 @@ function renderNamedPhotoSlots(slots) {
   }
 }
 
+function renderWiringTable(key, label) {
+  const container = $(`wiring-table-${key}`);
+  if (!container) return;
+  const rows = state.formWiringTables[key] || [];
+  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rowsHtml = rows.map((r, i) => `
+    <div class="wiring-form-row">
+      <input class="f-input wiring-terminal" type="text" placeholder="Terminal" value="${esc(r.terminal || '')}" data-wkey="${key}" data-idx="${i}" data-field="terminal">
+      <input class="f-input wiring-label"    type="text" placeholder="Label"    value="${esc(r.label    || '')}" data-wkey="${key}" data-idx="${i}" data-field="label">
+      <button class="wiring-rm-btn" data-wkey="${key}" data-idx="${i}" type="button" aria-label="Remove row">${rmIcon}</button>
+    </div>
+  `).join('');
+  container.innerHTML = `
+    ${rowsHtml}
+    <button class="wiring-add-btn" data-wkey="${key}" type="button">+ Add Row</button>
+  `;
+  container.querySelectorAll('.wiring-form-row input').forEach(input => {
+    input.addEventListener('change', () => {
+      const { wkey, idx, field } = input.dataset;
+      state.formWiringTables[wkey][Number(idx)][field] = input.value;
+    });
+  });
+  container.querySelectorAll('.wiring-rm-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      state.formWiringTables[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
+      renderWiringTable(btn.dataset.wkey, label);
+    });
+  });
+  container.querySelector('.wiring-add-btn').addEventListener('click', () => {
+    state.formWiringTables[key].push({ terminal: '', label: '' });
+    renderWiringTable(key, label);
+    const inputs = container.querySelectorAll('.wiring-terminal');
+    inputs[inputs.length - 1]?.focus();
+  });
+}
+
 /* ============================================================
    FORM SAVE
    ============================================================ */
@@ -1134,6 +1268,10 @@ async function saveForm() {
 
   item.images = [...state.formImages];
   if (cfg.requiredPhotoSlots) item.namedPhotos = {...state.formNamedPhotos};
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables)
+      item[t.key] = (state.formWiringTables[t.key] || []).filter(r => r.terminal || r.label);
+  }
 
   // Ensure preset parent is set if the field wasn't rendered as a form field (e.g. assignedToId when type is Plant)
   if (state.formPreset && !state.formId && !item[state.formPreset.field]) {
@@ -1169,6 +1307,105 @@ async function deleteItem(type, id, name) {
 /* ============================================================
    UTILITY
    ============================================================ */
+
+function calcCompleteness(type, item) {
+  const cfg = ENTITY[type];
+  let total = 0, filled = 0;
+  for (const f of cfg.fields) {
+    if (f.type === 'assign-type' || f.type === 'assign-id') continue;
+    total++;
+    const val = item[f.key];
+    if (val !== undefined && val !== null && String(val).trim() !== '') filled++;
+  }
+  if (cfg.requiredPhotoSlots) {
+    for (const slot of cfg.requiredPhotoSlots) {
+      total++;
+      if (item.namedPhotos?.[slot]) filled++;
+    }
+  }
+  if (cfg.wiringTables) {
+    for (const t of cfg.wiringTables) {
+      total++;
+      if ((item[t.key] || []).some(r => r.terminal || r.label)) filled++;
+    }
+  }
+  return total === 0 ? 100 : Math.round((filled / total) * 100);
+}
+
+function calcAreaCompleteness(area) {
+  const panelItems = (state.cache.panels || []).filter(p => p.areaId === area.id);
+  const panelIds = new Set(panelItems.map(p => p.id));
+  const allItems = [
+    ...panelItems.map(p => ({ type: 'panels', item: p })),
+    ...(state.cache.power    || []).filter(p => panelIds.has(p.panelId)).map(p => ({ type: 'power',    item: p })),
+    ...(state.cache.safety   || []).filter(s => panelIds.has(s.panelId)).map(s => ({ type: 'safety',   item: s })),
+    ...(state.cache.networks || []).filter(n => n.assignedToType === 'Area' && n.assignedToId === area.id).map(n => ({ type: 'networks', item: n })),
+    ...(state.cache.assets   || []).filter(a => panelIds.has(a.panelId)).map(a => ({ type: 'assets',   item: a })),
+  ];
+  if (!allItems.length) return 0;
+  return Math.round(allItems.reduce((sum, { type, item }) => sum + calcCompleteness(type, item), 0) / allItems.length);
+}
+
+function calcPanelDevicesCompleteness(panelId) {
+  const allItems = [
+    ...(state.cache.power    || []).filter(p => p.panelId === panelId).map(p => ({ type: 'power',    item: p })),
+    ...(state.cache.safety   || []).filter(s => s.panelId === panelId).map(s => ({ type: 'safety',   item: s })),
+    ...(state.cache.networks || []).filter(n => n.assignedToType === 'Panel' && n.assignedToId === panelId).map(n => ({ type: 'networks', item: n })),
+    ...(state.cache.assets   || []).filter(a => a.panelId === panelId).map(a => ({ type: 'assets',   item: a })),
+  ];
+  if (!allItems.length) return null;
+  return Math.round(allItems.reduce((sum, { type, item }) => sum + calcCompleteness(type, item), 0) / allItems.length);
+}
+
+function buildDetailCompletenessHtml(type, item) {
+  if (type === 'areas') {
+    const pct = calcAreaCompleteness(item);
+    const color = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+    return `
+      <div class="det-card det-completeness-card">
+        <div class="det-completeness-row">
+          <span class="det-completeness-label">Area Completeness</span>
+          <span class="det-completeness-pct" style="color:${color}">${pct}%</span>
+        </div>
+        <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>
+      </div>`;
+  }
+  if (type === 'panels') {
+    const panelPct = calcCompleteness('panels', item);
+    const panelColor = panelPct >= 75 ? 'var(--success)' : 'var(--danger)';
+    const devPct = calcPanelDevicesCompleteness(item.id);
+    const devColor = devPct !== null ? (devPct >= 75 ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
+    const devRow = devPct !== null
+      ? `<div class="det-completeness-row" style="margin-top:12px">
+           <span class="det-completeness-label">Devices</span>
+           <span class="det-completeness-pct" style="color:${devColor}">${devPct}%</span>
+         </div>
+         <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${devPct}%;background:${devColor}"></div></div>`
+      : `<div class="det-completeness-row" style="margin-top:12px">
+           <span class="det-completeness-label">Devices</span>
+           <span style="font-size:13px;color:var(--muted)">None assigned</span>
+         </div>`;
+    return `
+      <div class="det-card det-completeness-card">
+        <div class="det-completeness-row">
+          <span class="det-completeness-label">Panel</span>
+          <span class="det-completeness-pct" style="color:${panelColor}">${panelPct}%</span>
+        </div>
+        <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${panelPct}%;background:${panelColor}"></div></div>
+        ${devRow}
+      </div>`;
+  }
+  const pct = calcCompleteness(type, item);
+  const color = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+  return `
+    <div class="det-card det-completeness-card">
+      <div class="det-completeness-row">
+        <span class="det-completeness-label">Completeness</span>
+        <span class="det-completeness-pct" style="color:${color}">${pct}%</span>
+      </div>
+      <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+}
 
 function esc(str) {
   if (str == null) return '';

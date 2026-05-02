@@ -170,15 +170,63 @@ body {
 .card {
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 14px 14px 0;
   box-shadow: var(--shadow);
   cursor: pointer;
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  overflow: hidden;
   transition: transform 0.1s, box-shadow 0.1s;
 }
 .card:active { transform: scale(0.98); box-shadow: none; }
+.card-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.card-progress-wrap {
+  height: 4px;
+  background: var(--border);
+  margin: 10px -14px 0;
+}
+.card-progress-fill { height: 100%; }
+.area-card-progress { margin: 0 -16px 0; }
+
+.card-progress-multi {
+  padding: 8px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cpr-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cpr-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 44px;
+  flex-shrink: 0;
+}
+.cpr-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.cpr-fill { height: 100%; }
+.cpr-pct {
+  font-size: 11px;
+  font-weight: 700;
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
 
 .card-thumb {
   width: 54px;
@@ -828,9 +876,10 @@ body {
 .area-card {
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 14px 16px 0;
   box-shadow: var(--shadow);
   cursor: pointer;
+  overflow: hidden;
   transition: transform 0.1s;
 }
 .area-card:active { transform: scale(0.98); }
@@ -868,9 +917,56 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 10px;
 }
 
 .area-count-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Generic card — name row with inline delete */
+.card-name-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card-name-row .card-name {
+  flex: 1;
+  min-width: 0;
+}
+.card-delete-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+.card-delete-btn:active { color: var(--danger); }
+
+/* Cards nested inside a detail child section — suppress double shadow */
+.child-card-list .card {
+  box-shadow: none;
+  border: 1px solid var(--border);
+}
+
+/* Generic card — child counts */
+.card-counts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.card-count-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1044,4 +1140,114 @@ body {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
+}
+
+/* =====================================================
+   WIRING TABLES (form)
+   ===================================================== */
+.wiring-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.wiring-form-row .f-input { flex: 1; }
+.wiring-terminal { max-width: 110px; flex: 0 0 110px; }
+.wiring-rm-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-lt);
+  border: none;
+  cursor: pointer;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wiring-rm-btn:active { opacity: 0.7; }
+.wiring-add-btn {
+  width: 100%;
+  height: 38px;
+  margin-top: 4px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.wiring-add-btn:active { background: var(--primary-lt); border-color: var(--primary); }
+
+/* =====================================================
+   WIRING TABLES (detail view)
+   ===================================================== */
+.wiring-det-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.wiring-det-table th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.wiring-det-table th:first-child { width: 120px; }
+.wiring-det-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.wiring-det-table tr:last-child td { border-bottom: none; }
+.wiring-det-terminal { color: var(--muted); font-size: 13px; font-weight: 600; }
+.wiring-empty {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+/* =====================================================
+   DETAIL COMPLETENESS BAR
+   ===================================================== */
+.det-completeness-card {
+  padding: 12px 16px 14px;
+}
+.det-completeness-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.det-completeness-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.det-completeness-pct {
+  font-size: 13px;
+  font-weight: 700;
+}
+.det-progress-wrap {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.det-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
 }
