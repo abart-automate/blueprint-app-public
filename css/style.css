@@ -135,6 +135,8 @@ body {
   align-items: stretch;
   flex-shrink: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  position: relative;
+  z-index: 201;
 }
 
 .nav-btn {
@@ -424,6 +426,15 @@ body {
   box-shadow: var(--shadow);
   margin-bottom: 12px;
 }
+.det-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.det-name-row .det-name { margin-bottom: 0; flex: 1; min-width: 0; }
+
 .det-name {
   font-size: 22px;
   font-weight: 700;
@@ -457,6 +468,13 @@ body {
   margin-top: 4px;
 }
 
+.det-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .det-back-btn {
   display: flex;
   align-items: center;
@@ -469,9 +487,23 @@ body {
   cursor: pointer;
   color: var(--text);
   box-shadow: var(--shadow);
-  margin-bottom: 12px;
 }
 .det-back-btn:active { opacity: 0.7; }
+
+.det-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.det-edit-btn:active { opacity: 0.7; }
 
 .det-name-input {
   font-size: 22px;

@@ -901,7 +901,7 @@ async function renderDetail() {
       displayVal = rawVal != null ? String(rawVal) : '';
     }
     const isEmpty = !displayVal;
-    const fieldHtml = `<div class="det-field det-field-editable" data-key="${f.key}"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval${isEmpty ? ' det-fval-empty' : ''}">${isEmpty ? '—' : esc(displayVal)}</div></div>`;
+    const fieldHtml = `<div class="det-field" data-key="${f.key}"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval${isEmpty ? ' det-fval-empty' : ''}">${isEmpty ? '—' : esc(displayVal)}</div></div>`;
     const sectionKey = f.section || null;
     if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, []);
     sectionMap.get(sectionKey).push(fieldHtml);
@@ -979,24 +979,27 @@ async function renderDetail() {
   const childSections = await buildChildSections(type, id, item);
 
   el.detail.innerHTML = `
-    <button class="det-back-btn" id="det-back" aria-label="Back">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-    </button>
+    <div class="det-header">
+      <button class="det-back-btn" id="det-back" aria-label="Back">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+    </div>
     ${buildDetailCompletenessHtml(type, item)}
     <div class="det-card">
       ${type === 'areas'
-        ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}">`
-        : `<div class="det-name det-field-editable" data-key="name">${esc(item.name)}</div>`
+        ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}" readonly>`
+        : `<div class="det-name-row">
+             <div class="det-name">${esc(item.name)}</div>
+             <button class="det-edit-btn" id="det-edit" aria-label="Edit">
+               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+             </button>
+           </div>`
       }
       <div class="det-badges">
         <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
         ${assignBadge}
       </div>
       ${generalFields || ''}
-      ${type !== 'areas' ? `
-        <div class="det-actions" style="margin-top:14px">
-          <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
-        </div>` : ''}
     </div>
     ${detailSectionCards}
     ${wiringCards}
@@ -1017,34 +1020,7 @@ async function renderDetail() {
   });
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
 
-  if (type === 'areas') {
-    const nameInput = el.detail.querySelector('#det-name-input');
-    nameInput.addEventListener('input', () => {
-      state.detailChanges['name'] = nameInput.value;
-      showDetailSaveBar();
-    });
-    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') nameInput.blur(); });
-  } else {
-    el.detail.querySelector('#det-edit')?.addEventListener('click', () => {
-      openSheet(type, id);
-    });
-    // Inline name editing
-    el.detail.addEventListener('click', e => {
-      const nameDiv = e.target.closest('.det-name.det-field-editable');
-      if (nameDiv && !nameDiv.querySelector('input')) activateNameEdit(nameDiv, item);
-    });
-  }
-
-  // Inline field editing via event delegation
-  el.detail.addEventListener('click', e => {
-    const field = e.target.closest('.det-field.det-field-editable');
-    if (!field) return;
-    if (field.querySelector('input, select, textarea')) return;
-    const key     = field.dataset.key;
-    const liveItem = state.refs[state.detailType]?.[state.detailId];
-    const fConfig  = getEffectiveFields(state.detailType, liveItem).find(f => f.key === key);
-    if (fConfig) activateInlineEdit(field, fConfig, item);
-  });
+  el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSheet(type, id));
 
   // Save bar buttons
   el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
