@@ -409,6 +409,52 @@ body {
   margin-top: 4px;
 }
 
+.det-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+}
+.det-back-btn:active { opacity: 0.7; }
+
+.det-name-input {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  padding: 0 0 2px;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.det-name-input:focus { border-bottom-color: var(--primary); }
+
+.det-add-child-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-lt);
+  border: none;
+  cursor: pointer;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.det-add-child-btn:active { opacity: 0.7; }
+
 /* =====================================================
    BUTTONS
    ===================================================== */
@@ -789,15 +835,34 @@ body {
 }
 .area-card:active { transform: scale(0.98); }
 
+.area-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
 .area-card-name {
   font-size: 17px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
+.area-card-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+.area-card-delete:active { color: var(--danger); }
 
 .area-card-counts {
   display: flex;

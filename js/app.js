@@ -14,7 +14,6 @@ const ENTITY = {
     getChildren: [
       { label: 'Panels',   store: 'panels',   field: 'areaId' },
       { label: 'Networks', store: 'networks', field: 'assignedToId', filter: i => i.assignedToType === 'Area' },
-      { label: 'Assets',   store: 'assets',   field: 'assignedToId', filter: i => i.assignedToType === 'Area' },
     ],
   },
 
@@ -58,8 +57,8 @@ const ENTITY = {
     getChildren: [
       { label: 'Power',           store: 'power',    field: 'panelId' },
       { label: 'Safety Circuits', store: 'safety',   field: 'panelId' },
-      { label: 'Networks',        store: 'networks', field: 'assignedToId', filter: i => i.assignedToType === 'Panel' },
-      { label: 'Assets',          store: 'assets',   field: 'assignedToId', filter: i => i.assignedToType === 'Panel' },
+      { label: 'Networks', store: 'networks', field: 'assignedToId', filter: i => i.assignedToType === 'Panel' },
+      { label: 'Assets',   store: 'assets',   field: 'panelId' },
     ],
   },
 
@@ -68,20 +67,36 @@ const ENTITY = {
     color: '#b45309', bgColor: '#fef3c7', badgeClass: 'badge-power',
     requiredPhotoSlots: ['Device', 'Part Number', 'Input Wiring', 'Output Wiring'],
     fields: [
-      { key: 'name',       label: 'Name',              type: 'text',     required: true },
-      { key: 'panelId',    label: 'Panel',             type: 'ref',      refStore: 'panels',  required: true },
-      { key: 'powerType',  label: 'Power Type',        type: 'enum',     options: ['480V 3-Phase','240V 3-Phase','240V 1-Phase','120V 1-Phase','24 VDC','48 VDC','12 VDC','Other'] },
-      { key: 'voltage',    label: 'Voltage',           type: 'text' },
-      { key: 'amperage',   label: 'Amperage',          type: 'text' },
-      { key: 'phase',      label: 'Phase',             type: 'enum',     options: ['1','3'] },
-      { key: 'circuitId',  label: 'Circuit / Breaker ID', type: 'text' },
-      { key: 'description',label: 'Description',       type: 'textarea' },
-      { key: 'notes',      label: 'Notes',             type: 'textarea' },
+      { key: 'name',         label: 'Name',         type: 'text',     required: true },
+      { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels', required: true },
+      { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
+      { key: 'partNumber',   label: 'Part Number',  type: 'text' },
+      { key: 'description',  label: 'Description',  type: 'textarea' },
+      // Physical Sizing
+      { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
+      { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
+      { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
+      // Clearance
+      { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
+      { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
+      { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
+      { key: 'clrBack',   label: 'Back (in)',   type: 'text', section: 'Clearance' },
+      { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
+      { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
+      // Input Power
+      { key: 'inVoltage',           label: 'Voltage',            type: 'text',                       section: 'Input Power' },
+      { key: 'inAmperage',          label: 'Amperage',           type: 'text',                       section: 'Input Power' },
+      { key: 'inPhase',             label: 'Phase',              type: 'enum', options: ['1', '3'],  section: 'Input Power' },
+      { key: 'inCircuitProtection', label: 'Circuit Protection', type: 'text',                       section: 'Input Power' },
+      // Output Power
+      { key: 'outVoltage',  label: 'Voltage',  type: 'text',                      section: 'Output Power' },
+      { key: 'outAmperage', label: 'Amperage', type: 'text',                      section: 'Output Power' },
+      { key: 'outPhase',    label: 'Phase',    type: 'enum', options: ['1', '3'], section: 'Output Power' },
+      { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
     getChildren: [
-      { label: 'Safety Circuits', store: 'safety',  field: 'powerId' },
-      { label: 'Assets',          store: 'assets',  field: 'assignedToId', filter: i => i.assignedToType === 'Power' },
+      { label: 'Safety Circuits', store: 'safety', field: 'powerId' },
     ],
   },
 
@@ -99,9 +114,7 @@ const ENTITY = {
       { key: 'notes',          label: 'Notes',            type: 'textarea' },
     ],
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
-    getChildren: [
-      { label: 'Assets', store: 'assets', field: 'assignedToId', filter: i => i.assignedToType === 'Safety Circuit' },
-    ],
+    getChildren: [],
   },
 
   networks: {
@@ -121,31 +134,32 @@ const ENTITY = {
       const s = { Area: 'areas', Panel: 'panels' }[item.assignedToType];
       return refs?.[s]?.[item.assignedToId]?.name || item.assignedToType;
     },
-    getChildren: [
-      { label: 'Assets', store: 'assets', field: 'assignedToId', filter: i => i.assignedToType === 'Network' },
-    ],
+    getChildren: [],
   },
 
   assets: {
     label: 'Asset', plural: 'Assets', store: 'assets',
     color: '#475569', bgColor: '#f1f5f9', badgeClass: 'badge-asset',
     fields: [
-      { key: 'name',           label: 'Name',           type: 'text',     required: true },
-      { key: 'tag',            label: 'Asset Tag / ID', type: 'text' },
-      { key: 'assignedToType', label: 'Assigned To',    type: 'assign-type', options: ['Area','Panel','Power','Safety Circuit','Network'] },
-      { key: 'assignedToId',   label: 'Assigned Item',  type: 'assign-id' },
-      { key: 'manufacturer',   label: 'Manufacturer',   type: 'text' },
-      { key: 'model',          label: 'Model',          type: 'text' },
-      { key: 'serialNumber',   label: 'Serial Number',  type: 'text' },
-      { key: 'description',    label: 'Description',    type: 'textarea' },
-      { key: 'notes',          label: 'Notes',          type: 'textarea' },
+      { key: 'name',         label: 'Name',         type: 'text', required: true },
+      { key: 'panelId',      label: 'Panel',        type: 'ref',  refStore: 'panels' },
+      { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
+      { key: 'partNumber',   label: 'Part Number',  type: 'text' },
+      { key: 'description',  label: 'Description',  type: 'textarea' },
+      // Physical Sizing
+      { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
+      { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
+      { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
+      // Clearance
+      { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
+      { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
+      { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
+      { key: 'clrBack',   label: 'Back (in)',   type: 'text', section: 'Clearance' },
+      { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
+      { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
+      { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
-    getSubtitle: (item, refs) => {
-      if (item.tag) return item.tag;
-      if (!item.assignedToType || !item.assignedToId) return '';
-      const s = { Area: 'areas', Panel: 'panels', Power: 'power', 'Safety Circuit': 'safety', Network: 'networks' }[item.assignedToType];
-      return refs?.[s]?.[item.assignedToId]?.name || item.assignedToType;
-    },
+    getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '',
     getChildren: [],
   },
 };
@@ -496,6 +510,12 @@ async function renderAreasList() {
     list.querySelectorAll('.area-card').forEach(card => {
       card.addEventListener('click', () => openDetail('areas', card.dataset.id));
     });
+    list.querySelectorAll('.area-card-delete').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        deleteItem('areas', btn.dataset.id, btn.dataset.name);
+      });
+    });
   };
 
   el.main.querySelector('#list-search').addEventListener('input', render);
@@ -512,7 +532,12 @@ function areaCardHTML(area, counts) {
   ];
   return `
     <div class="area-card" data-id="${area.id}">
-      <div class="area-card-name">${esc(area.name)}</div>
+      <div class="area-card-header">
+        <div class="area-card-name">${esc(area.name)}</div>
+        <button class="area-card-delete" data-id="${area.id}" data-name="${esc(area.name)}" aria-label="Delete area">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>
       <div class="area-card-counts">
         ${countDefs.map(c => `
           <div class="area-count-item" style="color:${c.color}" title="${c.title}">
@@ -716,19 +741,27 @@ async function renderDetail() {
   const childSections = await buildChildSections(type, id, item);
 
   el.detail.innerHTML = `
+    ${type === 'areas' ? `
+      <button class="det-back-btn" id="det-back" aria-label="Back">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>` : ''}
     ${images}
     <div class="det-card">
-      <div class="det-name">${esc(item.name)}</div>
+      ${type === 'areas'
+        ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}">`
+        : `<div class="det-name">${esc(item.name)}</div>`
+      }
       <div class="det-badges">
         <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
         ${assignBadge}
         ${item.tag ? `<span class="badge badge-asset">${esc(item.tag)}</span>` : ''}
       </div>
       ${generalFields || '<div class="det-field" style="color:var(--muted);font-size:14px">No additional details.</div>'}
-      <div class="det-actions" style="margin-top:14px">
-        <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
-        <button class="btn btn-danger btn-sm" id="det-delete">Delete</button>
-      </div>
+      ${type !== 'areas' ? `
+        <div class="det-actions" style="margin-top:14px">
+          <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
+          <button class="btn btn-danger btn-sm" id="det-delete">Delete</button>
+        </div>` : ''}
     </div>
     ${sectionCards}
     ${requiredPhotosCard}
@@ -738,20 +771,37 @@ async function renderDetail() {
   el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
     img.addEventListener('click', () => openLightbox(img.src));
   });
-  el.detail.querySelector('#det-edit').addEventListener('click', () => {
-    closeDetail();
-    openSheet(type, id);
-  });
-  el.detail.querySelector('#det-delete').addEventListener('click', () => deleteItem(type, id, item.name));
+  if (type === 'areas') {
+    el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+    const nameInput = el.detail.querySelector('#det-name-input');
+    nameInput.addEventListener('blur', async () => {
+      const newName = nameInput.value.trim();
+      if (!newName || newName === item.name) return;
+      await upsert('areas', { ...item, name: newName });
+      await refreshAll();
+      item.name = newName;
+      const card = document.querySelector(`.area-card[data-id="${id}"]`);
+      if (card) {
+        card.querySelector('.area-card-name').textContent = newName;
+        card.querySelector('.area-card-delete').dataset.name = newName;
+      }
+    });
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') nameInput.blur(); });
+  } else {
+    el.detail.querySelector('#det-edit').addEventListener('click', () => {
+      closeDetail();
+      openSheet(type, id);
+    });
+    el.detail.querySelector('#det-delete').addEventListener('click', () => deleteItem(type, id, item.name));
+  }
   el.detail.querySelectorAll('[data-child-type][data-child-id]').forEach(el2 => {
     el2.addEventListener('click', () => openDetail(el2.dataset.childType, el2.dataset.childId));
   });
   el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const childType  = btn.dataset.addChild;
+      const childType   = btn.dataset.addChild;
       const presetField = btn.dataset.presetField;
       const presetVal   = btn.dataset.presetVal;
-      closeDetail();
       openSheet(childType, null, { field: presetField, value: presetVal });
     });
   });
@@ -789,7 +839,9 @@ async function buildChildSections(type, id, item) {
       <div class="det-card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div class="section-label" style="margin:0">${esc(child.label)}</div>
-          <button class="btn btn-outline btn-sm" data-add-child="${child.store}" data-preset-field="${presetField}" data-preset-val="${presetVal}">+ Add</button>
+          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${presetField}" data-preset-val="${presetVal}" aria-label="Add ${esc(child.label)}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
         </div>
         ${rows ? `<div class="related-list">${rows}</div>` : `<div style="font-size:14px;color:var(--muted)">None added yet.</div>`}
       </div>
