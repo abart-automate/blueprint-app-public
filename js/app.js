@@ -101,6 +101,7 @@ const ENTITY = {
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
     getChildren: [
       { label: 'Safety Circuits', store: 'safety', field: 'powerId' },
+      { label: 'Assets',   store: 'assets',   field: 'powerId'},
     ],
   },
 
@@ -111,14 +112,14 @@ const ENTITY = {
       { key: 'name',           label: 'Name',             type: 'text',     required: true },
       { key: 'panelId',        label: 'Panel',            type: 'ref',      refStore: 'panels' },
       { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
-      { key: 'circuitType',    label: 'Circuit Type',     type: 'enum',     options: ['E-Stop','Light Curtain','Safety Gate','Two-Hand Control','Safety Mat','Safety Scanner','Safety Relay','Safety PLC Input','Other'] },
       { key: 'safetyCategory', label: 'Safety Category',  type: 'enum',     options: ['CAT B','CAT 1','CAT 2','CAT 3','CAT 4','PLa','PLb','PLc','PLd','PLe','SIL 1','SIL 2','SIL 3'] },
-      { key: 'device',         label: 'Safety Device',    type: 'text' },
       { key: 'description',    label: 'Description',      type: 'textarea' },
       { key: 'notes',          label: 'Notes',            type: 'textarea' },
     ],
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
-    getChildren: [],
+    getChildren: [
+      { label: 'Assets',   store: 'assets',   field: 'safetyId' },
+    ],
   },
 
   networks: {
@@ -147,6 +148,8 @@ const ENTITY = {
     fields: [
       { key: 'name',         label: 'Name',         type: 'text', required: true },
       { key: 'panelId',      label: 'Panel',        type: 'ref',  refStore: 'panels' },
+      { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
+      { key: 'safetyId',        label: 'Safety Circuit (optional)', type: 'ref',      refStore: 'safety',   required: false },
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
@@ -186,6 +189,7 @@ const state = {
   formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   detailStack:   [],  // [{type, id}] – navigation history for back-stack within detail panel
   detailChanges: {},  // { key: newValue } for inline edits in the detail view
+  pickerMeta:    null, // { childType, parentField, parentId, selected: Set } for assign picker
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
 };
@@ -385,6 +389,8 @@ function openSheet(type, id = null, preset = null) {
 function closeSheet() {
   el.sheet.classList.remove('open');
   el.backdrop.classList.remove('open');
+  el.formSave.textContent = 'Save';
+  el.formSave.disabled    = false;
   setTimeout(() => { el.sheet.style.display = 'none'; el.formBody.innerHTML = ''; }, 300);
   state.formType         = null;
   state.formId           = null;
@@ -392,6 +398,78 @@ function closeSheet() {
   state.formImages       = [];
   state.formNamedPhotos  = {};
   state.formWiringTables = {};
+  state.pickerMeta       = null;
+}
+
+async function openAssignOrCreate(childType, parentField, parentId) {
+  await refreshAll();
+  const cfg        = ENTITY[childType];
+  const unassigned = (state.cache[childType] || []).filter(i => !i[parentField]);
+
+  if (!unassigned.length) {
+    openSheet(childType, null, { field: parentField, value: parentId });
+    return;
+  }
+
+  const selected = new Set();
+  state.formType   = '__picker__';
+  state.pickerMeta = { childType, parentField, parentId, selected };
+  el.formTitle.textContent = `Add ${cfg.label}`;
+  el.formSave.textContent  = 'Assign';
+  el.formSave.disabled     = true;
+
+  const infoField = cfg.fields.find(f =>
+    f.key !== 'name' && f.key !== parentField && f.key !== 'powerId' &&
+    (f.type === 'text' || f.type === 'enum')
+  );
+
+  const checkIcon = `<svg class="picker-check-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const plusIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+
+  el.formBody.innerHTML = `
+    <div style="margin-bottom:20px">
+      <button class="btn btn-outline btn-full" id="picker-create-new">${plusIcon} Create New ${esc(cfg.label)}</button>
+    </div>
+    <div class="picker-or-label">or select existing to assign</div>
+    ${unassigned.map(item => {
+      const info = infoField ? item[infoField.key] : '';
+      return `<div class="picker-item" data-id="${item.id}">
+        <div class="picker-item-body">
+          <div class="picker-item-name">${esc(item.name)}</div>
+          ${info ? `<div class="picker-item-info">${esc(info)}</div>` : ''}
+        </div>
+        ${checkIcon}
+      </div>`;
+    }).join('')}
+  `;
+
+  const updateBtn = () => {
+    el.formSave.disabled    = selected.size === 0;
+    el.formSave.textContent = selected.size > 0 ? `Assign (${selected.size})` : 'Assign';
+  };
+
+  el.formBody.querySelector('#picker-create-new').addEventListener('click', () => {
+    closeSheet();
+    openSheet(childType, null, { field: parentField, value: parentId });
+  });
+
+  el.formBody.querySelectorAll('.picker-item').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.id;
+      if (selected.has(id)) {
+        selected.delete(id);
+        row.classList.remove('picker-item-selected');
+      } else {
+        selected.add(id);
+        row.classList.add('picker-item-selected');
+      }
+      updateBtn();
+    });
+  });
+
+  el.backdrop.classList.add('open');
+  el.sheet.style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => el.sheet.classList.add('open')));
 }
 
 /* ============================================================
@@ -958,7 +1036,11 @@ async function renderDetail() {
       const childType   = btn.dataset.addChild;
       const presetField = btn.dataset.presetField;
       const presetVal   = btn.dataset.presetVal;
-      openSheet(childType, null, { field: presetField, value: presetVal });
+      if ((childType === 'power' || childType === 'safety') && presetField === 'panelId') {
+        openAssignOrCreate(childType, presetField, presetVal);
+      } else {
+        openSheet(childType, null, { field: presetField, value: presetVal });
+      }
     });
   });
 
@@ -1428,6 +1510,22 @@ function renderWiringTable(key, label) {
 
 async function saveForm() {
   const type = state.formType;
+  if (type === '__picker__') {
+    const { childType, parentField, parentId, selected } = state.pickerMeta || {};
+    if (!selected?.size) return;
+    for (const id of selected) {
+      const existing = state.refs[childType]?.[id];
+      if (existing) await upsert(childType, { ...existing, [parentField]: parentId });
+    }
+    await refreshAll();
+    const count = selected.size;
+    const pcfg  = ENTITY[childType];
+    closeSheet();
+    showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
+    if (state.detailType) renderDetail();
+    else renderPage();
+    return;
+  }
 
   // Special case: plant info
   if (type === '__plant__') {
