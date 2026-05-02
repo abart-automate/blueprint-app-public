@@ -184,6 +184,8 @@ const state = {
   formImages: [],         // working image list during form editing
   formNamedPhotos: {},    // { slotName: base64 } for required photo slots
   formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
+  detailStack:   [],  // [{type, id}] – navigation history for back-stack within detail panel
+  detailChanges: {},  // { key: newValue } for inline edits in the detail view
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
 };
@@ -310,20 +312,36 @@ function openLightbox(src) {
    ============================================================ */
 
 function openDetail(type, id) {
+  const wasOpen = !!(state.detailType && state.detailId);
+  if (wasOpen) {
+    state.detailStack.push({ type: state.detailType, id: state.detailId });
+    state.detailChanges = {};
+  }
   state.detailType = type;
   state.detailId   = id;
   renderDetail();
-  el.detail.classList.remove('animating');
-  el.detail.style.display = 'block';
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => el.detail.classList.add('open'));
-  });
+  if (!wasOpen) {
+    el.detail.classList.remove('animating');
+    el.detail.style.display = 'block';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => el.detail.classList.add('open'));
+    });
+  }
   el.backBtn.style.visibility = 'visible';
   el.addBtn.style.visibility  = 'hidden';
   el.pageTitle.textContent    = ENTITY[type].label;
 }
 
 function closeDetail() {
+  if (state.detailStack.length > 0) {
+    const prev = state.detailStack.pop();
+    state.detailType    = prev.type;
+    state.detailId      = prev.id;
+    state.detailChanges = {};
+    renderDetail();
+    el.pageTitle.textContent = ENTITY[prev.type].label;
+    return;
+  }
   el.detail.classList.remove('open');
   el.detail.classList.add('animating');
   setTimeout(() => {
@@ -331,8 +349,10 @@ function closeDetail() {
     el.detail.style.display = 'none';
     el.detail.innerHTML = '';
   }, 300);
-  state.detailType = null;
-  state.detailId   = null;
+  state.detailType    = null;
+  state.detailId      = null;
+  state.detailChanges = {};
+  state.detailStack   = [];
   setHeaderForPage(state.page);
 }
 
@@ -379,7 +399,7 @@ function closeSheet() {
    ============================================================ */
 
 function navigate(page) {
-  if (state.detailType) closeDetail();
+  if (state.detailType) { state.detailStack = []; closeDetail(); }
   if (state.formType)   closeSheet();
   state.page = page;
   window.location.hash = page;
@@ -751,7 +771,7 @@ async function renderDetail() {
   if (!type || !id) return;
   const cfg  = ENTITY[type];
   const item = await getById(type, id);
-  if (!item) { closeDetail(); return; }
+  if (!item) { state.detailStack = []; closeDetail(); return; }
   await refreshAll();
 
   // Other photos gallery
@@ -759,18 +779,21 @@ async function renderDetail() {
     ? `<div class="det-gallery">${item.images.map(src => `<img src="${src}" alt="" data-lightbox>`).join('')}</div>`
     : '';
 
-  // Build field rows grouped by section
-  const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId']);
+  // Build field rows grouped by section (all fields shown, blank or not)
+  const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId','name']);
   const sectionMap = new Map();
   for (const f of cfg.fields) {
     if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
-    let val = item[f.key];
-    if (!val) continue;
+    const rawVal = item[f.key];
+    let displayVal;
     if (f.type === 'ref') {
-      const refItem = state.refs[f.refStore]?.[val];
-      val = refItem ? refItem.name : val;
+      const refItem = state.refs[f.refStore]?.[rawVal];
+      displayVal = refItem ? refItem.name : '';
+    } else {
+      displayVal = rawVal != null ? String(rawVal) : '';
     }
-    const fieldHtml = `<div class="det-field"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval">${esc(String(val))}</div></div>`;
+    const isEmpty = !displayVal;
+    const fieldHtml = `<div class="det-field det-field-editable" data-key="${f.key}"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval${isEmpty ? ' det-fval-empty' : ''}">${isEmpty ? '—' : esc(displayVal)}</div></div>`;
     const sectionKey = f.section || null;
     if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, []);
     sectionMap.get(sectionKey).push(fieldHtml);
@@ -856,13 +879,13 @@ async function renderDetail() {
     <div class="det-card">
       ${type === 'areas'
         ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}">`
-        : `<div class="det-name">${esc(item.name)}</div>`
+        : `<div class="det-name det-field-editable" data-key="name">${esc(item.name)}</div>`
       }
       <div class="det-badges">
         <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
         ${assignBadge}
       </div>
-      ${generalFields || '<div class="det-field" style="color:var(--muted);font-size:14px">No additional details.</div>'}
+      ${generalFields || ''}
       ${type !== 'areas' ? `
         <div class="det-actions" style="margin-top:14px">
           <button class="btn btn-outline btn-sm" id="det-edit">Edit</button>
@@ -872,33 +895,56 @@ async function renderDetail() {
     ${requiredPhotosCard}
     ${wiringCards}
     ${childSections}
+    <div class="det-save-bar" id="det-save-bar">
+      <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
+      <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
+    </div>
   `;
+
+  state.detailChanges = {};
 
   el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
     img.addEventListener('click', () => openLightbox(img.src));
   });
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+
   if (type === 'areas') {
     const nameInput = el.detail.querySelector('#det-name-input');
-    nameInput.addEventListener('blur', async () => {
-      const newName = nameInput.value.trim();
-      if (!newName || newName === item.name) return;
-      await upsert('areas', { ...item, name: newName });
-      await refreshAll();
-      item.name = newName;
-      const card = document.querySelector(`.area-card[data-id="${id}"]`);
-      if (card) {
-        card.querySelector('.area-card-name').textContent = newName;
-        card.querySelector('.area-card-delete').dataset.name = newName;
-      }
+    nameInput.addEventListener('input', () => {
+      state.detailChanges['name'] = nameInput.value;
+      showDetailSaveBar();
     });
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') nameInput.blur(); });
   } else {
-    el.detail.querySelector('#det-edit').addEventListener('click', () => {
-      closeDetail();
+    el.detail.querySelector('#det-edit')?.addEventListener('click', () => {
       openSheet(type, id);
     });
+    // Inline name editing
+    el.detail.addEventListener('click', e => {
+      const nameDiv = e.target.closest('.det-name.det-field-editable');
+      if (nameDiv && !nameDiv.querySelector('input')) activateNameEdit(nameDiv, item);
+    });
   }
+
+  // Inline field editing via event delegation
+  el.detail.addEventListener('click', e => {
+    const field = e.target.closest('.det-field.det-field-editable');
+    if (!field) return;
+    if (field.querySelector('input, select, textarea')) return;
+    const key = field.dataset.key;
+    const fConfig = ENTITY[state.detailType]?.fields.find(f => f.key === key);
+    if (fConfig) activateInlineEdit(field, fConfig, item);
+  });
+
+  // Save bar buttons
+  el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
+    state.detailChanges = {};
+    renderDetail();
+  });
+  el.detail.querySelector('#det-save-changes')?.addEventListener('click', () => {
+    saveDetailChanges(type, id);
+  });
+
   el.detail.querySelectorAll('.child-card-list').forEach(list => {
     const childStore = list.dataset.childStore;
     list.querySelectorAll('.card').forEach(card => {
@@ -950,6 +996,111 @@ async function buildChildSections(type, id, item) {
     `;
   }
   return html;
+}
+
+/* ============================================================
+   DETAIL INLINE EDITING
+   ============================================================ */
+
+function showDetailSaveBar() {
+  el.detail.querySelector('#det-save-bar')?.classList.add('visible');
+}
+
+function activateNameEdit(nameDiv, item) {
+  const input = document.createElement('input');
+  input.className = 'det-name-input';
+  input.value = state.detailChanges['name'] ?? item.name;
+  nameDiv.textContent = '';
+  nameDiv.appendChild(input);
+  input.focus();
+  input.addEventListener('input', () => {
+    state.detailChanges['name'] = input.value;
+    showDetailSaveBar();
+  });
+  input.addEventListener('blur', () => {
+    const val = state.detailChanges['name'] ?? item.name;
+    nameDiv.textContent = val || item.name;
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+}
+
+function activateInlineEdit(field, fConfig, item) {
+  const fvalEl = field.querySelector('.det-fval');
+  const rawVal = state.detailChanges[fConfig.key] !== undefined
+    ? state.detailChanges[fConfig.key]
+    : (item[fConfig.key] ?? '');
+
+  let control;
+  if (fConfig.type === 'text') {
+    control = document.createElement('input');
+    control.className = 'det-inline-input';
+    control.type = 'text';
+    control.value = String(rawVal);
+  } else if (fConfig.type === 'textarea') {
+    control = document.createElement('textarea');
+    control.className = 'det-inline-textarea';
+    control.value = String(rawVal);
+  } else if (fConfig.type === 'enum') {
+    control = document.createElement('select');
+    control.className = 'det-inline-select';
+    control.innerHTML = `<option value="">— Select —</option>` +
+      fConfig.options.map(o => `<option value="${esc(o)}"${o === rawVal ? ' selected' : ''}>${esc(o)}</option>`).join('');
+  } else if (fConfig.type === 'ref') {
+    const refItems = state.cache[fConfig.refStore] || [];
+    control = document.createElement('select');
+    control.className = 'det-inline-select';
+    control.innerHTML = `<option value="">— Unassigned —</option>` +
+      refItems.map(i => `<option value="${i.id}"${i.id === rawVal ? ' selected' : ''}>${esc(i.name)}</option>`).join('');
+  }
+
+  if (!control) return;
+
+  fvalEl.innerHTML = '';
+  fvalEl.classList.remove('det-fval-empty');
+  fvalEl.appendChild(control);
+  control.focus();
+
+  const markDirty = () => {
+    state.detailChanges[fConfig.key] = control.value;
+    showDetailSaveBar();
+  };
+  control.addEventListener('input', markDirty);
+  control.addEventListener('change', markDirty);
+
+  control.addEventListener('blur', () => {
+    const currentVal = state.detailChanges[fConfig.key] !== undefined
+      ? state.detailChanges[fConfig.key]
+      : (item[fConfig.key] ?? '');
+    let displayVal;
+    if (fConfig.type === 'ref') {
+      const refItem = state.refs[fConfig.refStore]?.[currentVal];
+      displayVal = refItem ? refItem.name : '';
+    } else {
+      displayVal = currentVal;
+    }
+    const isEmpty = !displayVal;
+    fvalEl.classList.toggle('det-fval-empty', isEmpty);
+    fvalEl.textContent = isEmpty ? '—' : String(displayVal);
+  });
+}
+
+async function saveDetailChanges(type, id) {
+  if (!Object.keys(state.detailChanges).length) return;
+  const cfg  = ENTITY[type];
+  const item = await getById(type, id);
+  if (!item) return;
+  const updatedItem = { ...item, ...state.detailChanges };
+  for (const f of cfg.fields) {
+    if (f.required && !updatedItem[f.key]) {
+      showToast(`${f.label} is required`, 'error');
+      return;
+    }
+  }
+  await upsert(type, updatedItem);
+  await refreshAll();
+  state.detailChanges = {};
+  showToast(`${cfg.label} saved`, 'success');
+  renderDetail();
 }
 
 /* ============================================================
@@ -1353,6 +1504,7 @@ async function deleteItem(type, id, name) {
   }
 
   await refreshAll();
+  state.detailStack = [];
   closeDetail();
   showToast(`${ENTITY[type].label} deleted`);
   renderPage();
