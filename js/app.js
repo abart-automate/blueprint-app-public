@@ -1247,4 +1247,30 @@ function initInstallPrompt() {
   }
 }
 
+/* ============================================================
+   PWA UPDATE BANNER
+   ============================================================ */
+
+function initUpdateBanner() {
+  if (document.getElementById('update-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.className = 'update-banner';
+  banner.innerHTML =
+    '<span>A new version is available.</span>' +
+    '<div class="update-banner-btns">' +
+    '<button id="update-later-btn">Later</button>' +
+    '<button id="update-now-btn">Update Now</button>' +
+    '</div>';
+  document.getElementById('app-header').before(banner);
+  document.getElementById('update-now-btn').onclick = function () {
+    window.location.reload();
+  };
+  document.getElementById('update-later-btn').onclick = function () {
+    banner.remove();
+  };
+}
+
+window.addEventListener('pwa-updated', initUpdateBanner);
+
 init();

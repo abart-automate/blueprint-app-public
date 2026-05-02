@@ -101,7 +101,17 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js');
+        navigator.serviceWorker.register('./sw.js').then(function (reg) {
+          var hadController = !!navigator.serviceWorker.controller;
+          reg.addEventListener('updatefound', function () {
+            var newWorker = reg.installing;
+            newWorker.addEventListener('statechange', function () {
+              if (newWorker.state === 'activated' && hadController) {
+                window.dispatchEvent(new CustomEvent('pwa-updated'));
+              }
+            });
+          });
+        });
       });
     }
   </script>

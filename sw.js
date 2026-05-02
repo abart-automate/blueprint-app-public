@@ -1,7 +1,8 @@
-const CACHE_NAME = 'plant-asset-v1';
+const APP_VERSION = '1.0.1';
+const CACHE_NAME = `plant-asset-${APP_VERSION}`;
 
 // All static files that make up the app shell.
-// Bump CACHE_NAME (v1 → v2) whenever any of these files change.
+// Bump APP_VERSION whenever any of these files change.
 const APP_SHELL = [
   './',
   './index.html',

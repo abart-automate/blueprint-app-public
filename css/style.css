@@ -943,3 +943,40 @@ body {
   color: #fff;
   border-color: var(--primary);
 }
+
+/* =====================================================
+   PWA UPDATE BANNER
+   ===================================================== */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  flex-shrink: 0;
+  background: var(--success-lt);
+  border-bottom: 1px solid var(--success);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.update-banner-btns {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.update-banner-btns button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+#update-now-btn {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
