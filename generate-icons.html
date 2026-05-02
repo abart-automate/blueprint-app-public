@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Icon Generator — Plant Asset Manager</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 24px; max-width: 600px; margin: 0 auto; background: #f1f5f9; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .card { background: white; border-radius: 10px; padding: 16px; text-align: center; border: 1px solid #e2e8f0; }
+    .card img { display: block; margin: 0 auto 8px; border-radius: 6px; }
+    .card a { display: block; margin-top: 8px; padding: 6px 12px; background: #1d4ed8; color: white;
+               border-radius: 6px; font-size: 13px; text-decoration: none; font-weight: 500; }
+    .card span { font-size: 12px; color: #64748b; }
+    #status { margin-bottom: 16px; font-size: 14px; color: #1d4ed8; font-weight: 500; }
+    .note { background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px 16px;
+            font-size: 13px; color: #713f12; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>PWA Icon Generator</h1>
+  <p>Opens <code>icons/icon-source.svg</code> and exports all required PNG sizes. Save each file into the <code>icons/</code> folder.</p>
+
+  <div class="note">
+    <strong>How to use:</strong> Serve this file with a local server (e.g. <code>npx serve .</code> or VS Code Live Server),
+    then open it in Chrome. Icons will generate automatically. Click each download link and move the file to <code>icons/</code>.
+    You cannot open this via <code>file://</code> due to CORS restrictions on SVG loading.
+  </div>
+
+  <div id="status">Loading SVG…</div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const SIZES = [
+      { name: 'icon-96.png',           size: 96,  label: '96×96 (favicon / Android legacy)' },
+      { name: 'icon-144.png',          size: 144, label: '144×144 (Android / Windows)' },
+      { name: 'icon-192.png',          size: 192, label: '192×192 (Android — required)' },
+      { name: 'icon-512.png',          size: 512, label: '512×512 (Android splash — required)' },
+      { name: 'apple-touch-icon.png',  size: 180, label: '180×180 (iOS apple-touch-icon)' },
+    ];
+
+    async function generate() {
+      const statusEl = document.getElementById('status');
+      const gridEl = document.getElementById('grid');
+
+      let svgText;
+      try {
+        const resp = await fetch('./icons/icon-source.svg');
+        svgText = await resp.text();
+      } catch (e) {
+        statusEl.textContent = 'Error loading icons/icon-source.svg — make sure you are serving via a local server (not file://).';
+        statusEl.style.color = '#dc2626';
+        return;
+      }
+
+      const blob = new Blob([svgText], { type: 'image/svg+xml' });
+      const svgUrl = URL.createObjectURL(blob);
+      const img = new Image();
+
+      img.onload = () => {
+        SIZES.forEach(({ name, size, label }) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, size, size);
+
+          const dataUrl = canvas.toDataURL('image/png');
+
+          const preview = document.createElement('img');
+          preview.src = dataUrl;
+          preview.width = Math.min(size, 80);
+          preview.height = Math.min(size, 80);
+
+          const link = document.createElement('a');
+          link.href = dataUrl;
+          link.download = name;
+          link.textContent = `Download ${name}`;
+
+          const span = document.createElement('span');
+          span.textContent = label;
+
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.append(preview, span, link);
+          gridEl.append(card);
+        });
+
+        URL.revokeObjectURL(svgUrl);
+        statusEl.textContent = `✓ ${SIZES.length} icons ready — click each download link, then move files to icons/`;
+        statusEl.style.color = '#16a34a';
+      };
+
+      img.onerror = () => {
+        statusEl.textContent = 'Failed to render SVG as image.';
+        statusEl.style.color = '#dc2626';
+      };
+
+      img.src = svgUrl;
+    }
+
+    generate();
+  </script>
+</body>
+</html>

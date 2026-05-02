@@ -7,6 +7,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#1d4ed8">
+  <meta name="apple-mobile-web-app-title" content="Plant Assets">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="icons/icon-96.png">
   <title>Plant Asset Manager</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -93,5 +98,12 @@
   </div>
   <script src="js/db.js"></script>
   <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+  </script>
 </body>
 </html>

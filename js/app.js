@@ -1189,6 +1189,7 @@ async function init() {
     const hash = window.location.hash.replace('#', '') || 'home';
     const startPage = (ENTITY[hash] || hash === 'home') ? hash : 'home';
     navigate(startPage);
+    initInstallPrompt();
   } catch (err) {
     console.error('Init failed:', err);
     document.querySelector('#app-main').innerHTML = `
@@ -1198,6 +1199,51 @@ async function init() {
         <p style="margin-top:8px;font-family:monospace;font-size:12px">${esc(String(err))}</p>
       </div>
     `;
+  }
+}
+
+/* ============================================================
+   PWA INSTALL PROMPT (Android / Chrome only)
+   ============================================================ */
+
+function initInstallPrompt() {
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+  let deferredPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showInstallBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    hideInstallBanner();
+    deferredPrompt = null;
+  });
+
+  function showInstallBanner() {
+    if (document.getElementById('install-banner')) return;
+    const el = document.createElement('div');
+    el.id = 'install-banner';
+    el.className = 'install-banner';
+    el.innerHTML = `<span>Install Plant Asset Manager</span>
+      <div class="install-banner-btns">
+        <button id="install-now-btn">Install</button>
+        <button id="install-skip-btn">Not now</button>
+      </div>`;
+    document.getElementById('bottom-nav').before(el);
+    document.getElementById('install-now-btn').onclick = async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') hideInstallBanner();
+    };
+    document.getElementById('install-skip-btn').onclick = hideInstallBanner;
+  }
+
+  function hideInstallBanner() {
+    document.getElementById('install-banner')?.remove();
   }
 }
 
