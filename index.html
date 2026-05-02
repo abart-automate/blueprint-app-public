@@ -8,7 +8,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#1d4ed8">
   <meta name="apple-mobile-web-app-title" content="Plant Assets">
-  <link rel="manifest" href="manifest.json">
+  <script>if(location.protocol!=='file:'){document.write('<link rel="manifest" href="manifest.json">')}</script>
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="96x96" href="icons/icon-96.png">
@@ -101,7 +101,7 @@
   <script src="js/db.js"></script>
   <script src="js/app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('./sw.js').then(function (reg) {
           var hadController = !!navigator.serviceWorker.controller;
