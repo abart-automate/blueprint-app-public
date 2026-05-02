@@ -2,6 +2,14 @@
    ENTITY CONFIGURATION
    ============================================================ */
 
+const SERIAL_FIELDS = [
+  { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Serial Configuration',
+    options: ['1200','2400','4800','9600','19200','38400','57600','115200'] },
+  { key: 'dataBits', label: 'Data Bits', type: 'enum', section: 'Serial Configuration', options: ['7','8'] },
+  { key: 'parity',   label: 'Parity',    type: 'enum', section: 'Serial Configuration', options: ['None','Even','Odd'] },
+  { key: 'stopBits', label: 'Stop Bits', type: 'enum', section: 'Serial Configuration', options: ['1','2'] },
+];
+
 const ENTITY = {
   areas: {
     label: 'Area', plural: 'Areas', store: 'areas',
@@ -13,7 +21,7 @@ const ENTITY = {
     getSubtitle: () => '',
     getChildren: [
       { label: 'Panels',   store: 'panels',   field: 'areaId' },
-      { label: 'Networks', store: 'networks', field: 'assignedToId', filter: i => i.assignedToType === 'Area' },
+      { label: 'Networks', store: 'networks', field: 'areaId' },
     ],
   },
 
