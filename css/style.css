@@ -803,6 +803,16 @@ body {
 .stat-info { flex: 1; min-width: 0; }
 .stat-count { font-size: 26px; font-weight: 700; line-height: 1; }
 .stat-label { font-size: 13px; color: var(--muted); margin-top: 1px; }
+.home-data-actions {
+  margin-bottom: 16px;
+}
+.home-data-btns {
+  display: flex;
+  gap: 8px;
+}
+.home-data-btns .btn {
+  flex: 1;
+}
 
 /* =====================================================
    IMAGE LIGHTBOX

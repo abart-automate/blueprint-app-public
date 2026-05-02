@@ -23,7 +23,7 @@ const ENTITY = {
     requiredPhotoSlots: ['Nameplate', 'Front (Doors Closed)', 'Front (Doors Open)'],
     fields: [
       { key: 'name',        label: 'Name',             type: 'text',     required: true },
-      { key: 'areaId',      label: 'Area',             type: 'ref',      refStore: 'areas',   required: true },
+      { key: 'areaId',      label: 'Area',             type: 'ref',      refStore: 'areas' },
       { key: 'location',    label: 'Location',         type: 'text' },
       { key: 'manufacturer',label: 'Manufacturer',     type: 'text' },
       { key: 'description', label: 'Description',      type: 'textarea' },
@@ -72,7 +72,7 @@ const ENTITY = {
     ],
     fields: [
       { key: 'name',         label: 'Name',         type: 'text',     required: true },
-      { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels', required: true },
+      { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels' },
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
@@ -109,7 +109,7 @@ const ENTITY = {
     color: '#dc2626', bgColor: '#fee2e2', badgeClass: 'badge-safety',
     fields: [
       { key: 'name',           label: 'Name',             type: 'text',     required: true },
-      { key: 'panelId',        label: 'Panel',            type: 'ref',      refStore: 'panels',  required: true },
+      { key: 'panelId',        label: 'Panel',            type: 'ref',      refStore: 'panels' },
       { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
       { key: 'circuitType',    label: 'Circuit Type',     type: 'enum',     options: ['E-Stop','Light Curtain','Safety Gate','Two-Hand Control','Safety Mat','Safety Scanner','Safety Relay','Safety PLC Input','Other'] },
       { key: 'safetyCategory', label: 'Safety Category',  type: 'enum',     options: ['CAT B','CAT 1','CAT 2','CAT 3','CAT 4','PLa','PLb','PLc','PLd','PLe','SIL 1','SIL 2','SIL 3'] },
@@ -448,12 +448,27 @@ async function renderHome() {
         </div>
       `).join('')}
     </div>
+    <div class="home-data-actions">
+      <div class="section-label">Data Management</div>
+      <div class="home-data-btns">
+        <button class="btn btn-outline" id="home-export-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+        <button class="btn btn-outline" id="home-import-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import
+        </button>
+      </div>
+    </div>
   `;
 
   el.main.querySelector('#home-edit-plant').addEventListener('click', () => openPlantForm());
   el.main.querySelectorAll('.stat-card').forEach(card => {
     card.addEventListener('click', () => navigate(card.dataset.nav));
   });
+  el.main.querySelector('#home-export-btn').addEventListener('click', exportData);
+  el.main.querySelector('#home-import-btn').addEventListener('click', importData);
 }
 
 function openPlantForm() {
@@ -1065,7 +1080,7 @@ async function buildFormField(f, existing, type) {
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
       <select id="f-${f.key}" class="f-select">
-        ${f.required ? '' : '<option value="">— None —</option>'}
+        <option value="">— Unassigned —</option>
         ${opts}
       </select>
     </div>`;
@@ -1297,11 +1312,151 @@ async function saveForm() {
 async function deleteItem(type, id, name) {
   const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`);
   if (!ok) return;
+
+  // Collect direct children from cache
+  const childRels = [];
+  for (const rel of ENTITY[type].getChildren) {
+    let items = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
+    if (rel.filter) items = items.filter(rel.filter);
+    if (items.length > 0) childRels.push({ ...rel, items });
+  }
+
+  let deleteChildren = false;
+  if (childRels.length > 0) {
+    const desc = childRels.map(r => `${r.items.length} ${r.label.toLowerCase()}`).join(', ');
+    el.confirmYes.textContent = 'Also Delete';
+    el.confirmNo.textContent  = 'Keep';
+    deleteChildren = await confirm(
+      'Delete associated items?',
+      `"${name}" has ${desc}. Delete them too?`
+    );
+    el.confirmYes.textContent = 'Delete';
+    el.confirmNo.textContent  = 'Cancel';
+  }
+
   await remove(type, id);
+
+  if (deleteChildren) {
+    for (const rel of childRels) {
+      for (const item of rel.items) {
+        await cascadeDeleteItem(rel.store, item.id);
+      }
+    }
+  } else {
+    for (const rel of childRels) {
+      for (const item of rel.items) {
+        const updated = { ...item, [rel.field]: '' };
+        if (rel.field === 'assignedToId') updated.assignedToType = '';
+        await upsert(rel.store, updated);
+      }
+    }
+  }
+
   await refreshAll();
   closeDetail();
   showToast(`${ENTITY[type].label} deleted`);
   renderPage();
+}
+
+async function cascadeDeleteItem(type, id) {
+  for (const rel of ENTITY[type].getChildren) {
+    let children = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
+    if (rel.filter) children = children.filter(rel.filter);
+    for (const child of children) {
+      await cascadeDeleteItem(rel.store, child.id);
+    }
+  }
+  await remove(type, id);
+}
+
+/* ============================================================
+   IMPORT / EXPORT
+   ============================================================ */
+
+async function exportData() {
+  try {
+    const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
+    const payload = {
+      appName:    'Plant Asset Manager',
+      version:    1,
+      exportedAt: new Date().toISOString(),
+      data:       {}
+    };
+    for (const name of stores) {
+      payload.data[name] = await getAll(name);
+    }
+    payload.data.settings = await getAll('settings');
+
+    const plantName = (await getSetting('plantName')) || 'plant';
+    const dateStr   = new Date().toISOString().slice(0, 10);
+    const filename  = `${plantName.replace(/[^a-z0-9]/gi, '-')}-export-${dateStr}.json`;
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Data exported successfully', 'success');
+  } catch (err) {
+    console.error('Export failed:', err);
+    showToast('Export failed', 'error');
+  }
+}
+
+function importData() {
+  $('import-file-input').click();
+}
+
+async function processImportFile(file) {
+  try {
+    const text = await file.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      showToast('Invalid file: not valid JSON', 'error');
+      return;
+    }
+
+    if (
+      typeof payload !== 'object' || payload === null ||
+      payload.appName !== 'Plant Asset Manager' ||
+      typeof payload.version !== 'number' ||
+      typeof payload.data !== 'object'
+    ) {
+      showToast('Invalid file: unrecognised format', 'error');
+      return;
+    }
+
+    el.confirmYes.textContent = 'Replace All';
+    const ok = await confirm(
+      'Replace all data?',
+      'This will permanently delete all current data and replace it with the imported file. This cannot be undone.'
+    );
+    el.confirmYes.textContent = 'Delete';
+    if (!ok) return;
+
+    const allStores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'];
+    for (const name of allStores) {
+      await clearStore(name);
+    }
+    for (const name of allStores) {
+      const items = payload.data[name];
+      if (!Array.isArray(items)) continue;
+      for (const item of items) {
+        await upsert(name, item);
+      }
+    }
+
+    await refreshAll();
+    showToast('Data imported successfully', 'success');
+    renderPage();
+  } catch (err) {
+    console.error('Import failed:', err);
+    showToast('Import failed: ' + err.message, 'error');
+  }
 }
 
 /* ============================================================
@@ -1463,6 +1618,15 @@ function wireEvents() {
     const hash = window.location.hash.replace('#', '') || 'home';
     if (ENTITY[hash] || hash === 'home') {
       if (hash !== state.page) navigate(hash);
+    }
+  });
+
+  // Import file input
+  $('import-file-input').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (file) {
+      await processImportFile(file);
+      e.target.value = '';
     }
   });
 }

@@ -62,6 +62,14 @@ async function remove(name, id) {
   });
 }
 
+async function clearStore(name) {
+  return new Promise((res, rej) => {
+    const req = tx(name, 'readwrite').clear();
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+
 async function getSetting(key) {
   const s = await getById('settings', key);
   return s?.value ?? null;
