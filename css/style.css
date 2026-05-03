@@ -1463,6 +1463,13 @@ body {
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
 }
+.rack-slot-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.rack-slot-hdr .sn-det-name { margin-bottom: 0; }
 .sn-det-name {
   font-size: 14px;
   font-weight: 700;

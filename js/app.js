@@ -306,7 +306,7 @@ const state = {
   formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   formSwitchNetworks: [], // [{networkId}] for managed switch/router network connections
   formSwitchPorts: [],    // [{portName, networkId, assetId}] for managed switch/router ports
-  formIoPoints: [],       // [{tagName, terminal, description}] for PLC slot IO points
+  formIoPoints: [],       // [{label, terminal, description}] for PLC slot IO points
   detailStack:      [],   // [{type, id, slotNumber?}] – navigation history within detail panel
   detailSlotNumber: null, // slot index when viewing a PLC slot detail
   detailChanges:    {},   // { key: newValue } for inline edits in the detail view
@@ -540,7 +540,9 @@ function openSlotForm(rackId, slotNumber) {
   state.formId       = null;
   state.formPreset   = { rackId, slotNumber };
   state.formImages   = [];
-  state.formIoPoints = existing?.ioPoints ? existing.ioPoints.map(r => ({...r})) : [];
+  state.formIoPoints = existing?.ioPoints
+    ? existing.ioPoints.map(r => ({ label: r.label ?? r.tagName ?? 'Spare', terminal: r.terminal || '', description: r.description || '' }))
+    : [];
   el.formTitle.textContent = existing
     ? `Slot ${slotNumber} — Edit Card`
     : `Slot ${slotNumber} — Add Card`;
@@ -1034,9 +1036,10 @@ function matchParentChip(type, item, parentId) {
    DETAIL VIEW
    ============================================================ */
 
-async function renderDetail() {
+async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
+  const savedScroll = preserveScroll ? el.detail.scrollTop : 0;
 
   // Slot detail — renders card data embedded in the rack's slots array
   if (type === '__plc_slot__') {
@@ -1054,8 +1057,19 @@ async function renderDetail() {
       ? `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval">${esc(val)}</div></div>`
       : `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval det-fval-empty">—</div></div>`;
 
+    // IO usage for Analog/Digital
+    let ioUsage = '';
+    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+      const total = parseInt(slot?.ioPointCount) || (slot?.ioPoints?.length ?? 0);
+      const inUse = (slot?.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
+      ioUsage = `${inUse} / ${total}`;
+    }
+
     // Base fields every card has
-    let fieldsHtml = field('Part Number', slot?.partNumber) + field('Firmware Version', slot?.firmwareVersion);
+    let fieldsHtml = field('Part Number', slot?.partNumber)
+      + field('Revision', slot?.revision)
+      + field('Firmware Version', slot?.firmwareVersion)
+      + (ioUsage ? field('IO In Use', ioUsage) : '');
 
     // Card-type-specific fields
     const ctFields = PLC_CARD_TYPE_FIELDS[slot?.cardType] || [];
@@ -1080,18 +1094,18 @@ async function renderDetail() {
       const pts = slot?.ioPoints || [];
       const rowsHtml = pts.length
         ? `<table class="wiring-det-table">
-             <thead><tr><th>#</th><th>Tag Name</th><th>Terminal</th><th>Description</th></tr></thead>
+             <thead><tr><th>#</th><th>Label</th><th>Terminal</th><th>Description</th></tr></thead>
              <tbody>${pts.map((r, i) => `
                <tr>
-                 <td class="wiring-det-terminal">${i + 1}</td>
-                 <td>${esc(r.tagName || '')}</td>
+                 <td class="wiring-det-terminal">${i}</td>
+                 <td>${esc(r.label || '')}</td>
                  <td>${esc(r.terminal || '')}</td>
                  <td>${esc(r.description || '')}</td>
                </tr>`).join('')}
              </tbody>
            </table>`
         : `<div class="wiring-empty">No IO points configured</div>`;
-      ioCard = buildCollapsibleCard('IO Points', rowsHtml);
+      ioCard = buildCollapsibleCard('IO Points', rowsHtml, { expanded: true });
     }
 
     el.detail.innerHTML = `
@@ -1118,10 +1132,19 @@ async function renderDetail() {
 
     el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
     el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSlotForm(id, slotNumber));
+    el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!expanded));
+        body.style.display = expanded ? 'none' : 'block';
+      });
+    });
     el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
       img.addEventListener('click', () => openLightbox(img.src));
     });
-    el.detail.scrollTop = 0;
+    el.detail.scrollTop = savedScroll;
     return;
   }
 
@@ -1135,6 +1158,8 @@ async function renderDetail() {
   const sectionMap = new Map();
   for (const f of getEffectiveFields(type, item)) {
     if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
+    // PLC racks have no meaningful subtype — hide the field
+    if (f.key === 'assetSubclass' && item.assetClass === 'PLC') continue;
     const rawVal = item[f.key];
     let displayVal;
     if (f.type === 'ref') {
@@ -1235,15 +1260,25 @@ async function renderDetail() {
       slotRows = Array.from({ length: slotCount }, (_, k) => {
         const slot = slotsMap.get(k);
         if (slot) {
-          const typeTag = slot.cardType ? `<span class="sn-det-field">${esc(slot.cardType)}</span>` : '';
+          const typeTag  = slot.cardType  ? `<span class="sn-det-field">${esc(slot.cardType)}</span>`  : '';
+          const pnTag    = slot.partNumber ? `<span class="sn-det-field">PN<strong>${esc(slot.partNumber)}</strong></span>` : '';
+          const revTag   = slot.revision   ? `<span class="sn-det-field">Rev<strong>${esc(slot.revision)}</strong></span>`  : '';
+          let ioTag = '';
+          if (slot.cardType === 'Analog' || slot.cardType === 'Digital') {
+            const total = parseInt(slot.ioPointCount) || (slot.ioPoints?.length ?? 0);
+            const inUse = (slot.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
+            ioTag = `<span class="sn-det-field">IO<strong>${inUse}/${total}</strong></span>`;
+          }
           return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
-            <div class="sn-det-name">Slot ${k}</div>
-            <div class="sn-det-fields" style="flex:1"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}</div>
-            <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${item.id}" data-slot-num="${k}" aria-label="Clear slot">${clearIcon}</button>
+            <div class="rack-slot-hdr">
+              <span class="sn-det-name">Slot ${k}</span>
+              <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${item.id}" data-slot-num="${k}" aria-label="Clear slot">${clearIcon}</button>
+            </div>
+            <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}</div>
           </div>`;
         }
         return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
-          <div class="sn-det-name">Slot ${k}</div>
+          <div class="rack-slot-hdr"><span class="sn-det-name">Slot ${k}</span></div>
           <div class="sn-det-fields" style="color:var(--muted)">Empty — tap to add card</div>
         </div>`;
       }).join('');
@@ -1251,11 +1286,11 @@ async function renderDetail() {
 
     rackSlotsCard = `
       <div class="det-card det-collapsible">
-        <button class="det-section-toggle" aria-expanded="false">
+        <button class="det-section-toggle" aria-expanded="true">
           <span class="section-label" style="margin:0">${title}</span>
           ${chevron}
         </button>
-        <div class="det-section-body" style="display:none">
+        <div class="det-section-body">
           <div class="sn-det-list">${slotRows}</div>
         </div>
       </div>`;
@@ -1394,10 +1429,13 @@ async function renderDetail() {
       const slotNum = +btn.dataset.slotNum;
       const rack    = state.refs.assets?.[rackId];
       if (!rack) return;
+      const slot = rack.slots?.find(s => s.slotNumber === slotNum);
+      const ok = await confirm('Delete card?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`);
+      if (!ok) return;
       const slots = (rack.slots || []).filter(s => s.slotNumber !== slotNum);
       await upsert('assets', { ...rack, slots });
       await refreshAll();
-      renderDetail();
+      renderDetail({ preserveScroll: true });
     });
   });
 
@@ -1426,18 +1464,18 @@ async function renderDetail() {
     });
   });
 
-  el.detail.scrollTop = 0;
+  el.detail.scrollTop = savedScroll;
 }
 
-function buildCollapsibleCard(title, bodyHtml) {
+function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
   const chevron = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
   return `
     <div class="det-card det-collapsible">
-      <button class="det-section-toggle" aria-expanded="false">
+      <button class="det-section-toggle" aria-expanded="${expanded}">
         <span class="section-label" style="margin:0">${esc(title)}</span>
         ${chevron}
       </button>
-      <div class="det-section-body" style="display:none">
+      <div class="det-section-body" style="${expanded ? '' : 'display:none'}"
         ${bodyHtml}
       </div>
     </div>
@@ -1643,6 +1681,8 @@ async function renderForm() {
         <input class="f-input" id="f-partNumber" type="text" value="${esc(existing?.partNumber || '')}"></div>
       <div class="fg"><label class="f-label">Firmware Version</label>
         <input class="f-input" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}"></div>
+      <div class="fg"><label class="f-label">Revision</label>
+        <input class="f-input" id="f-revision" type="text" value="${esc(existing?.revision || '')}"></div>
       <div id="slot-cardtype-container"></div>
       <div id="network-address-container"></div>
       <div id="io-points-wrap" style="display:none">
@@ -2355,7 +2395,7 @@ function renderSwitchPortsTable() {
 function syncIoPointCount() {
   const count = parseInt($('f-ioPointCount')?.value) || 0;
   while (state.formIoPoints.length < count)
-    state.formIoPoints.push({ tagName: '', terminal: '', description: '' });
+    state.formIoPoints.push({ label: 'Spare', terminal: '', description: '' });
   state.formIoPoints.length = count;
   renderIoPointsTable();
 }
@@ -2367,8 +2407,8 @@ function renderIoPointsTable() {
   const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
   const rowsHtml = rows.map((r, i) => `
     <div class="wiring-form-row io-point-row">
-      <span class="io-point-num">${i + 1}</span>
-      <input class="f-input io-tag"  type="text" placeholder="Tag Name"    value="${esc(r.tagName     || '')}" data-idx="${i}" data-field="tagName">
+      <span class="io-point-num">${i}</span>
+      <input class="f-input io-tag"  type="text" placeholder="Label"       value="${esc(r.label       || '')}" data-idx="${i}" data-field="label">
       <input class="f-input io-term" type="text" placeholder="Terminal"    value="${esc(r.terminal    || '')}" data-idx="${i}" data-field="terminal">
       <input class="f-input io-desc" type="text" placeholder="Description" value="${esc(r.description || '')}" data-idx="${i}" data-field="description">
     </div>
@@ -2376,7 +2416,7 @@ function renderIoPointsTable() {
   container.innerHTML = rows.length
     ? `<div class="io-point-header">
         <span class="io-point-num">#</span>
-        <span>Tag Name</span><span>Terminal</span><span>Description</span>
+        <span>Label</span><span>Terminal</span><span>Description</span>
        </div>${rowsHtml}`
     : '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set IO Point Count to populate rows.</div>';
   container.querySelectorAll('.io-point-row input').forEach(input => {
@@ -2458,6 +2498,7 @@ async function saveForm() {
       cardType,
       partNumber:      $('f-partNumber')?.value.trim()      || '',
       firmwareVersion: $('f-firmwareVersion')?.value.trim() || '',
+      revision:        $('f-revision')?.value.trim()        || '',
     };
     for (const f of PLC_CARD_TYPE_FIELDS[cardType] || []) {
       const el2 = $(`f-${f.key}`);
@@ -2480,7 +2521,7 @@ async function saveForm() {
     await refreshAll();
     closeSheet();
     showToast('Card saved', 'success');
-    renderDetail();
+    renderDetail({ preserveScroll: true });
     return;
   }
 
