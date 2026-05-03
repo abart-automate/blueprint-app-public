@@ -219,11 +219,53 @@ const ENTITY = {
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' }
       ],
     },
+    // Extra fields per card type
+    cardTypeFields: {
+      Analog: [
+        { key: 'channelCount', label: 'Channel Count', type: 'text', section: 'Card Details' },
+        { key: 'signalType',   label: 'Signal Type',   type: 'enum',
+          options: ['4-20mA','0-10V','Thermocouple','RTD'], section: 'Card Details' },
+      ],
+      Digital: [
+        { key: 'channelCount', label: 'Channel Count', type: 'text', section: 'Card Details' },
+        { key: 'voltageLevel', label: 'Voltage Level', type: 'enum',
+          options: ['24VDC','120VAC','240VAC'],          section: 'Card Details' },
+      ],
+      Communication: [
+        { key: 'networkId', label: 'Network',  type: 'ref',  refStore: 'networks', section: 'Card Details' },
+        { key: 'protocol',  label: 'Protocol', type: 'text', section: 'Card Details' },
+      ],
+      Specialty: [],
+    },
     // Class-level fields shown for flat classes (no subclass)
     classFields: {
-      'HMI':            [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
-      'VFD':            [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
-      'Network Device': [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+      'HMI':            [
+        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
+        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Controller' },
+      ],
+      'VFD':            [
+        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
+        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Controller' },
+      ],
+      'Network Device': [
+        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
+        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Controller' },
+      ],
+    },
+    // Children shown on drill-in per subclass (extends getChildren)
+    subclassChildren: {
+      Controller: [
+        { label: 'Rack', store: 'assets', field: 'controllerId',
+          extraPresets: { assetClass: 'PLC', assetSubclass: 'Rack' },
+          filter: a => a.assetSubclass === 'Rack',
+          countFn: (all, id) => all.filter(a => a.controllerId === id && a.assetSubclass === 'Rack').length },
+        { label: 'Assigned Assets', store: 'assets', field: 'controllerId',
+          filter: a => a.assetSubclass !== 'Rack',
+          countFn: (all, id) => all.filter(a => a.controllerId === id && a.assetSubclass !== 'Rack').length },
+      ],
     },
     // Subclass options per device class
     classSubclasses: {
@@ -253,9 +295,21 @@ const ENTITY = {
       ],
       Controller: [
         { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
+        { key: 'rackId',    label: 'Rack',    type: 'ref', refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Rack' },
       ],
-      Rack: [],
-      Card: [],
+      Rack: [
+        { key: 'controllerId', label: 'Controller', type: 'ref', refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Controller' },
+        { key: 'slotCount',    label: 'Slot Count',  type: 'text' },
+      ],
+      Card: [
+        { key: 'rackId',     label: 'Rack',      type: 'ref',  refStore: 'assets',
+          refFilter: a => a.assetSubclass === 'Rack' },
+        { key: 'slotNumber', label: 'Slot',      type: 'text' },
+        { key: 'cardType',   label: 'Card Type', type: 'enum',
+          options: ['Analog','Digital','Communication','Specialty'] },
+      ],
     },
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '',
     getChildren: [],
@@ -280,6 +334,7 @@ const state = {
   formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   formSwitchNetworks: [], // [{networkId}] for managed switch/router network connections
   formSwitchPorts: [],    // [{portName, networkId, assetId}] for managed switch/router ports
+  formRackSlots: [],      // [{slotNumber, assetId}] for rack slot assignments
   detailStack:   [],  // [{type, id}] – navigation history for back-stack within detail panel
   detailChanges: {},  // { key: newValue } for inline edits in the detail view
   pickerMeta:    null, // { childType, parentField, parentId, selected: Set } for assign picker
@@ -472,6 +527,7 @@ function openSheet(type, id = null, preset = null) {
   }
   state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map(r => ({...r})) : [];
   state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map(r => ({...r}))    : [];
+  state.formRackSlots      = existing?.rackSlots      ? existing.rackSlots.map(r => ({...r}))      : [];
   el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + ENTITY[type].label;
   renderForm();
   el.backdrop.classList.add('open');
@@ -840,7 +896,11 @@ function cardHTML(type, item) {
     ? `<img class="card-thumb" src="${firstImg}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
 
-  const counts = (cfg.getChildren || []).map(child => {
+  const allChildren = [
+    ...(cfg.getChildren || []),
+    ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
+  ];
+  const counts = allChildren.map(child => {
     const all = state.cache[child.store] || [];
     const n = child.countFn
       ? child.countFn(all, item.id)
@@ -1039,6 +1099,24 @@ async function renderDetail() {
     }
   }
 
+  // Rack slot assignments card
+  let rackSlotsCard = '';
+  if (type === 'assets' && item.assetSubclass === 'Rack') {
+    const slotCount = parseInt(item.slotCount) || 0;
+    // Build a map of assigned slots from rackSlots
+    const assignedMap = new Map((item.rackSlots || []).map(s => [s.slotNumber, s.assetId]));
+    const slotRows = Array.from({ length: slotCount }, (_, k) => {
+      const slotNum = k;
+      const cardId  = assignedMap.get(slotNum);
+      const card    = cardId ? state.refs.assets?.[cardId] : null;
+      return `<div class="sn-det-row">
+        <div class="sn-det-name">Slot ${slotNum}</div>
+        <div class="sn-det-fields"><span class="sn-det-field">Card<strong>${esc(card?.name || 'Empty')}</strong></span></div>
+      </div>`;
+    }).join('');
+    rackSlotsCard = buildCollapsibleCard('Rack Slots', `<div class="sn-det-list">${slotRows || '<div class="wiring-empty">No slots configured</div>'}</div>`);
+  }
+
   // Switch/Router network connections and port assignment cards
   let switchNetworksCard = '';
   let switchPortsCard    = '';
@@ -1108,6 +1186,7 @@ async function renderDetail() {
     </div>
     ${detailSectionCards}
     ${wiringCards}
+    ${rackSlotsCard}
     ${switchNetworksCard}
     ${switchPortsCard}
     ${physicalSectionCards}
@@ -1152,13 +1231,14 @@ async function renderDetail() {
   });
   el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const childType   = btn.dataset.addChild;
-      const presetField = btn.dataset.presetField;
-      const presetVal   = btn.dataset.presetVal;
+      const childType    = btn.dataset.addChild;
+      const presetField  = btn.dataset.presetField;
+      const presetVal    = btn.dataset.presetVal;
+      const extraPresets = btn.dataset.extraPresets ? JSON.parse(btn.dataset.extraPresets) : {};
       if ((childType === 'power' || childType === 'safety') && presetField === 'panelId') {
         openAssignOrCreate(childType, presetField, presetVal);
       } else {
-        openSheet(childType, null, { field: presetField, value: presetVal });
+        openSheet(childType, null, { field: presetField, value: presetVal, extra: extraPresets });
       }
     });
   });
@@ -1194,13 +1274,17 @@ function buildCollapsibleCard(title, bodyHtml) {
 
 async function buildChildSections(type, id, item) {
   const cfg = ENTITY[type];
-  if (!cfg.getChildren?.length) return '';
+  const allChildren = [
+    ...(cfg.getChildren || []),
+    ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
+  ];
+  if (!allChildren.length) return '';
 
   const plusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
   const chevron  = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
   let html = '';
-  for (const child of cfg.getChildren) {
+  for (const child of allChildren) {
     const all      = state.cache[child.store] || [];
     const filtered = (child.filter
       ? all.filter(i => i[child.field] === id && child.filter(i))
@@ -1226,7 +1310,7 @@ async function buildChildSections(type, id, item) {
             <span class="section-label" style="margin:0">${title}</span>
             ${chevron}
           </button>
-          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
+          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" data-extra-presets="${esc(JSON.stringify(child.extraPresets || {}))}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
         </div>
         <div class="det-section-body" style="display:none">
           ${bodyHtml}
@@ -1409,7 +1493,12 @@ async function renderForm() {
       <div id="switch-ports-wrap" style="display:none">
         <div class="form-section-hdr">Port Assignments</div>
         <div id="switch-ports-container"></div>
-      </div>`;
+      </div>
+      <div id="rack-slots-wrap" style="display:none">
+        <div class="form-section-hdr">Rack Slots</div>
+        <div id="rack-slots-container"></div>
+      </div>
+      <div id="card-type-fields-container"></div>`;
     html += physicalHtml;
   }
 
@@ -1550,7 +1639,7 @@ async function renderForm() {
         $('f-networkId').addEventListener('change', renderNetworkAddressFields);
         await renderNetworkAddressFields();
       }
-      // Auto-populate port rows when portCount changes
+      // Auto-populate port rows when portCount changes (switch)
       const portCountEl = $('f-portCount');
       if (portCountEl) {
         portCountEl.addEventListener('change', () => {
@@ -1565,7 +1654,49 @@ async function renderForm() {
           renderSwitchPortsTable();
         });
       }
+      // Auto-populate rack slots when slotCount changes
+      const slotCountEl = $('f-slotCount');
+      if (slotCountEl) {
+        const updateRackSlots = () => {
+          const count   = Math.max(0, parseInt(slotCountEl.value) || 0);
+          const current = state.formRackSlots.length;
+          if (count > current) {
+            for (let i = current; i < count; i++)
+              state.formRackSlots.push({ slotNumber: i, assetId: '' });
+          } else if (count < current) {
+            state.formRackSlots.splice(count);
+          }
+          renderRackSlotsTable();
+          const rackWrap = $('rack-slots-wrap');
+          if (rackWrap) rackWrap.style.display = count > 0 ? '' : 'none';
+        };
+        slotCountEl.addEventListener('change', updateRackSlots);
+        updateRackSlots(); // render on initial load for edit forms
+      }
+      // Wire card type → card type fields
+      const cardTypeEl = $('f-cardType');
+      if (cardTypeEl) {
+        cardTypeEl.addEventListener('change', renderCardTypeFields);
+        await renderCardTypeFields();
+      }
       updateSwitchTables();
+    };
+
+    const renderCardTypeFields = async () => {
+      const cardType  = $('f-cardType')?.value;
+      const fields    = ENTITY.assets.cardTypeFields?.[cardType] || [];
+      const container = $('card-type-fields-container');
+      if (!container) return;
+      if (!fields.length) { container.innerHTML = ''; return; }
+      let ph = '', lastSection;
+      for (const f of fields) {
+        if (f.section !== lastSection) {
+          lastSection = f.section;
+          ph += `<div class="form-section-hdr">${esc(f.section)}</div>`;
+        }
+        ph += await buildFormField(f, existing, type);
+      }
+      container.innerHTML = ph;
     };
 
     const renderClassSubclassField = async () => {
@@ -1595,6 +1726,10 @@ async function renderForm() {
       }
 
       await renderSubclassFields();
+
+      // Hide panel field for Cards (panel is inherited from the rack)
+      const panelWrap = $('f-panelId')?.closest('.fg');
+      if (panelWrap) panelWrap.style.display = $('f-assetSubclass')?.value === 'Card' ? 'none' : '';
     };
 
     $('f-assetSubclass')?.addEventListener('change', renderSubclassFields);
@@ -1626,8 +1761,10 @@ async function renderForm() {
 }
 
 async function buildFormField(f, existing, type) {
-  // For new items, apply preset value if this field matches
-  const presetVal = (!existing && state.formPreset?.field === f.key) ? state.formPreset.value : null;
+  // For new items, apply preset value if this field matches (primary or extra presets)
+  const presetVal = !existing
+    ? (state.formPreset?.field === f.key ? state.formPreset.value : (state.formPreset?.extra?.[f.key] ?? null))
+    : null;
   const val = existing?.[f.key] ?? presetVal ?? '';
 
   if (f.type === 'text') {
@@ -1656,12 +1793,12 @@ async function buildFormField(f, existing, type) {
   }
 
   if (f.type === 'ref') {
-    const items = state.cache[f.refStore] || [];
+    let items = state.cache[f.refStore] || [];
+    if (f.refFilter) items = items.filter(f.refFilter);
     const opts  = items.map(i => `<option value="${i.id}" ${i.id === val ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
-    // For safety's powerId — will be filtered after panel selected
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
-      <select id="f-${f.key}" class="f-select">
+      <select id="f-${f.key}" class="f-select"${f.readOnly ? ' disabled' : ''}>
         <option value="">— Unassigned —</option>
         ${opts}
       </select>
@@ -1959,6 +2096,44 @@ function renderSwitchPortsTable() {
   });
 }
 
+function renderRackSlotsTable() {
+  const container = $('rack-slots-container');
+  if (!container) return;
+  const rows       = state.formRackSlots;
+  const selfId     = state.formId;
+  const controllerId = $('f-controllerId')?.value || '';
+  const controller   = controllerId ? state.refs.assets?.[controllerId] : null;
+
+  // Cards not yet assigned to a slot on this rack (or already assigned to this slot)
+  const usedCardIds = new Set(rows.map(r => r.assetId).filter(Boolean));
+  const makeCardOpts = (selectedId) =>
+    (state.cache.assets || [])
+      .filter(a => a.assetSubclass === 'Card' && a.id !== selfId &&
+                   (!usedCardIds.has(a.id) || a.id === selectedId))
+      .map(a => `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`)
+      .join('');
+
+  const slotRows = rows.map((r, i) => `
+    <div class="sp-port-row">
+      <div class="sp-port-row-top">
+        <input class="f-input" type="text" value="Slot ${r.slotNumber}" disabled style="flex:1;font-weight:600">
+      </div>
+      <select class="f-select rs-card" data-idx="${i}">
+        <option value="">— Empty —</option>
+        ${makeCardOpts(r.assetId)}
+      </select>
+    </div>`).join('');
+
+  container.innerHTML = slotRows || '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set a Slot Count to add slots.</div>';
+
+  container.querySelectorAll('.rs-card').forEach(sel => {
+    sel.addEventListener('change', () => {
+      state.formRackSlots[+sel.dataset.idx].assetId = sel.value;
+      renderRackSlotsTable(); // re-render to update usedCardIds exclusions
+    });
+  });
+}
+
 function renderWiringTable(key, label) {
   const container = $(`wiring-table-${key}`);
   if (!container) return;
@@ -2079,6 +2254,17 @@ async function saveForm() {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);
     }
+    // Rack slot assignments
+    if (item.assetSubclass === 'Rack') {
+      item.rackSlots = state.formRackSlots;
+    }
+    // Card type-specific fields
+    if (item.assetSubclass === 'Card') {
+      for (const f of ENTITY.assets.cardTypeFields?.[item.cardType] || []) {
+        const el2 = $(`f-${f.key}`);
+        if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
+      }
+    }
   }
 
   // Validate IP uniqueness across the network
@@ -2122,12 +2308,30 @@ async function saveForm() {
       item[t.key] = (state.formWiringTables[t.key] || []).filter(r => r.terminal || r.label);
   }
 
-  // Ensure preset parent is set if the field wasn't rendered as a form field (e.g. assignedToId when type is Plant)
-  if (state.formPreset && !state.formId && !item[state.formPreset.field]) {
-    item[state.formPreset.field] = state.formPreset.value;
+  // Ensure preset fields are set if not captured from DOM (e.g. fields not yet rendered)
+  if (state.formPreset && !state.formId) {
+    if (!item[state.formPreset.field]) item[state.formPreset.field] = state.formPreset.value;
+    for (const [k, v] of Object.entries(state.formPreset.extra || {})) {
+      if (!item[k]) item[k] = v;
+    }
   }
 
-  await upsert(type, item);
+  const saved = await upsert(type, item);
+
+  // PLC Controller: auto-create rack if none selected, or link to existing rack
+  if (type === 'assets' && saved.assetSubclass === 'Controller' && !state.formId) {
+    if (saved.rackId) {
+      const rack = state.refs.assets?.[saved.rackId];
+      if (rack) await upsert('assets', { ...rack, controllerId: saved.id });
+    } else {
+      const rack = await upsert('assets', {
+        name: `${saved.name} - Local`, assetClass: 'PLC', assetSubclass: 'Rack',
+        panelId: saved.panelId || '', controllerId: saved.id, slotCount: '0',
+      });
+      await upsert('assets', { ...saved, rackId: rack.id });
+    }
+  }
+
   await refreshAll();
   closeSheet();
   showToast(`${cfg.label} saved`, 'success');
@@ -2310,9 +2514,10 @@ function getEffectiveFields(type, item) {
   const proto         = cfg.protocolFields?.[item?.networkType] || [];
   const classF        = cfg.classFields?.[item?.assetClass] || [];
   const subclassF     = cfg.subclassFields?.[item?.assetSubclass] || [];
+  const cardTypeF     = cfg.cardTypeFields?.[item?.cardType] || [];
   const linkedNetType = state.refs?.networks?.[item?.networkId]?.networkType;
   const networkTypeF  = type === 'assets' ? (cfg.networkTypeFields?.[linkedNetType] || []) : [];
-  return [...base, ...proto, ...classF, ...subclassF, ...networkTypeF];
+  return [...base, ...proto, ...classF, ...subclassF, ...cardTypeF, ...networkTypeF];
 }
 
 function calcCompleteness(type, item) {
