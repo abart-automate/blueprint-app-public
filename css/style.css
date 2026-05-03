@@ -1337,7 +1337,39 @@ body {
   margin-bottom: 6px;
 }
 .wiring-form-row .f-input { flex: 1; }
-.wiring-terminal { max-width: 110px; flex: 0 0 110px; }
+.wiring-terminal { max-width: 150px; flex: 0 0 150px; }
+.sn-network-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.sn-network-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sn-network-row-top .f-select { flex: 1; }
+.sp-port-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.sp-port-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sp-port-row-top .f-input { flex: 1; font-weight: 600; }
 .wiring-rm-btn {
   flex-shrink: 0;
   width: 30px;
@@ -1388,12 +1420,39 @@ body {
 }
 .wiring-det-table th:first-child { width: 120px; }
 .wiring-det-table td {
-  padding: 8px 0;
+  padding: 8px 4px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 .wiring-det-table tr:last-child td { border-bottom: none; }
-.wiring-det-terminal { color: var(--muted); font-size: 13px; font-weight: 600; }
+.wiring-det-terminal { font-size: 14px; font-weight: 700; color: var(--text); }
+.sn-det-list { display: flex; flex-direction: column; gap: 10px; }
+.sn-det-row {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.sn-det-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.sn-det-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.sn-det-field {
+  font-size: 13px;
+  color: var(--muted);
+}
+.sn-det-field strong {
+  color: var(--text);
+  font-weight: 600;
+  margin-left: 4px;
+}
 .wiring-empty {
   text-align: center;
   color: var(--muted);

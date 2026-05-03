@@ -21,8 +21,7 @@ const ENTITY = {
     ],
     getSubtitle: () => '',
     getChildren: [
-      { label: 'Panels',   store: 'panels',   field: 'areaId' },
-      { label: 'Networks', store: 'networks', field: 'areaId' },
+      { label: 'Panels', store: 'panels', field: 'areaId' },
     ],
   },
 
@@ -66,7 +65,6 @@ const ENTITY = {
     getChildren: [
       { label: 'Power',           store: 'power',    field: 'panelId' },
       { label: 'Safety Circuits', store: 'safety',   field: 'panelId' },
-      { label: 'Networks', store: 'networks', field: 'panelId' },
       { label: 'Assets',   store: 'assets',   field: 'panelId' },
     ],
   },
@@ -173,7 +171,8 @@ const ENTITY = {
       return panel || area || 'Plant-wide';
     },
     getChildren: [
-      { label: 'Assets', store: 'assets', field: 'networkId' },
+      { label: 'Assets', store: 'assets', field: 'networkId',
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id)).length },
     ],
   },
 
@@ -183,7 +182,8 @@ const ENTITY = {
     requiredPhotoSlots: ['Device Front', 'Part Number'],
     fields: [
       { key: 'name',          label: 'Name',          type: 'text', required: true },
-      { key: 'assetSubclass', label: 'Device Type',   type: 'enum', options: ['General','Switch','Router'], required: true },
+      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true },
+      { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
       { key: 'manufacturer',  label: 'Manufacturer',  type: 'text' },
       { key: 'partNumber',    label: 'Part Number',   type: 'text' },
@@ -219,24 +219,43 @@ const ENTITY = {
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' }
       ],
     },
-    // Extra fields per device type subclass
+    // Class-level fields shown for flat classes (no subclass)
+    classFields: {
+      'HMI':            [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+      'VFD':            [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+      'Network Device': [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+    },
+    // Subclass options per device class
+    classSubclasses: {
+      'Network Switch': ['Managed', 'Unmanaged', 'Router'],
+      'PLC':            ['Controller', 'Rack', 'Card'],
+      'HMI':            [],
+      'VFD':            [],
+      'Network Device': [],
+      'Hardwired Device': [],
+    },
+    // Extra fields per device subtype
     subclassFields: {
-      General: [
-        { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Device Details' },
-        { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Device Details' },
-        { key: 'networkId',       label: 'Network',         type: 'ref',  refStore: 'networks' },
-      ],
-      Switch: [
-        { key: 'switchManaged',   label: 'Switch Type',      type: 'enum', options: ['Managed','Unmanaged'], section: 'Switch Details' },
+      Managed: [
         { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Switch Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Switch Details' },
-        { key: 'vlanSupport',     label: 'VLAN Support',     type: 'enum', options: ['Yes','No'], section: 'Switch Details' },
+      ],
+      Unmanaged: [
+        { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
+        { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Switch Details' },
+        { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Switch Details' },
       ],
       Router: [
+        { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Router Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Router Details' },
       ],
+      Controller: [
+        { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
+      ],
+      Rack: [],
+      Card: [],
     },
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '',
     getChildren: [],
@@ -823,9 +842,11 @@ function cardHTML(type, item) {
 
   const counts = (cfg.getChildren || []).map(child => {
     const all = state.cache[child.store] || [];
-    const n = child.filter
-      ? all.filter(i => i[child.field] === item.id && child.filter(i)).length
-      : all.filter(i => i[child.field] === item.id).length;
+    const n = child.countFn
+      ? child.countFn(all, item.id)
+      : child.filter
+        ? all.filter(i => i[child.field] === item.id && child.filter(i)).length
+        : all.filter(i => i[child.field] === item.id).length;
     return { store: child.store, label: child.label, n };
   });
   const countsHtml = counts.length ? `
@@ -1022,31 +1043,40 @@ async function renderDetail() {
   let switchNetworksCard = '';
   let switchPortsCard    = '';
   if (type === 'assets') {
-    const showTables = item.assetSubclass === 'Router' ||
-                       (item.assetSubclass === 'Switch' && item.switchManaged === 'Managed');
+    const showTables = item.assetClass === 'Network Switch' &&
+                       (item.assetSubclass === 'Managed' || item.assetSubclass === 'Router');
     if (showTables) {
-      const snRows = item.switchNetworks?.length
+      const snHtml = item.switchNetworks?.length
         ? item.switchNetworks.map(r => {
-            const net = state.refs.networks?.[r.networkId];
-            return `<tr><td>${esc(net?.name || r.networkId || '—')}</td></tr>`;
+            const net        = state.refs.networks?.[r.networkId];
+            const addrFields = ENTITY.assets.networkTypeFields?.[net?.networkType] || [];
+            const fieldPills = addrFields
+              .filter(f => r[f.key])
+              .map(f => `<span class="sn-det-field">${esc(f.label)}<strong>${esc(r[f.key])}</strong></span>`)
+              .join('');
+            return `<div class="sn-det-row">
+              <div class="sn-det-name">${esc(net?.name || '—')}</div>
+              ${fieldPills ? `<div class="sn-det-fields">${fieldPills}</div>` : ''}
+            </div>`;
           }).join('')
-        : `<tr><td class="wiring-empty">No networks assigned</td></tr>`;
-      switchNetworksCard = buildCollapsibleCard('Network Connections',
-        `<table class="wiring-det-table"><thead><tr><th>Network</th></tr></thead><tbody>${snRows}</tbody></table>`);
+        : `<div class="wiring-empty">No networks assigned</div>`;
+      switchNetworksCard = buildCollapsibleCard('Network Connections', `<div class="sn-det-list">${snHtml}</div>`);
 
-      const spRows = item.switchPorts?.length
+      const spHtml = item.switchPorts?.length
         ? item.switchPorts.map(r => {
             const net   = state.refs.networks?.[r.networkId];
             const asset = state.refs.assets?.[r.assetId];
-            return `<tr>
-              <td class="wiring-det-terminal">${esc(r.portName || '—')}</td>
-              <td>${esc(net?.name || '—')}</td>
-              <td>${esc(asset?.name || '—')}</td>
-            </tr>`;
+            const pills = [
+              net   ? `<span class="sn-det-field">Network<strong>${esc(net.name)}</strong></span>`   : '',
+              `<span class="sn-det-field">Device<strong>${esc(asset?.name || 'No Connection')}</strong></span>`,
+            ].filter(Boolean).join('');
+            return `<div class="sn-det-row">
+              <div class="sn-det-name">${esc(r.portName || '—')}</div>
+              <div class="sn-det-fields">${pills}</div>
+            </div>`;
           }).join('')
-        : `<tr><td colspan="3" class="wiring-empty">No ports assigned</td></tr>`;
-      switchPortsCard = buildCollapsibleCard('Port Assignments',
-        `<table class="wiring-det-table"><thead><tr><th>Port</th><th>Network</th><th>Device</th></tr></thead><tbody>${spRows}</tbody></table>`);
+        : `<div class="wiring-empty">No ports assigned</div>`;
+      switchPortsCard = buildCollapsibleCard('Port Assignments', `<div class="sn-det-list">${spHtml}</div>`);
     }
   }
 
@@ -1172,9 +1202,15 @@ async function buildChildSections(type, id, item) {
   let html = '';
   for (const child of cfg.getChildren) {
     const all      = state.cache[child.store] || [];
-    const filtered = child.filter
+    const filtered = (child.filter
       ? all.filter(i => i[child.field] === id && child.filter(i))
-      : all.filter(i => i[child.field] === id);
+      : all.filter(i => i[child.field] === id)
+    ).concat(
+      // Also include switch assets connected to this network via switchNetworks
+      type === 'networks' && child.store === 'assets'
+        ? all.filter(a => a[child.field] !== id && a.switchNetworks?.some(sn => sn.networkId === id))
+        : []
+    );
 
     const rows    = filtered.map(ci => cardHTML(child.store, ci)).join('');
     const count   = filtered.length;
@@ -1336,18 +1372,25 @@ async function renderForm() {
   const existing = id ? await getById(type, id) : null;
   await refreshAll();
 
+  const FORM_PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Clearance']);
   let html = '';
+  let physicalHtml = '';
   let currentSection = undefined;
+  let physicalSection = undefined;
   for (const f of cfg.fields) {
+    if (type === 'assets' && FORM_PHYSICAL_SECTIONS.has(f.section)) {
+      if (f.section !== physicalSection) {
+        physicalSection = f.section;
+        physicalHtml += `<div class="form-section-hdr">${esc(f.section)}</div>`;
+      }
+      physicalHtml += await buildFormField(f, existing, type);
+      continue;
+    }
     if (f.section !== currentSection) {
       currentSection = f.section;
       if (currentSection) html += `<div class="form-section-hdr">${esc(currentSection)}</div>`;
     }
     html += await buildFormField(f, existing, type);
-    // Inject network address container right after networkId for assets
-    if (type === 'assets' && f.key === 'networkId') {
-      html += `<div id="network-address-container"></div>`;
-    }
   }
 
   if (type === 'networks') {
@@ -1355,7 +1398,9 @@ async function renderForm() {
   }
 
   if (type === 'assets') {
+    html += `<div id="class-fields-container"></div>`;
     html += `<div id="subclass-fields-container"></div>`;
+    html += `<div id="network-address-container"></div>`;
     html += `
       <div id="switch-networks-wrap" style="display:none">
         <div class="form-section-hdr">Network Connections</div>
@@ -1365,6 +1410,7 @@ async function renderForm() {
         <div class="form-section-hdr">Port Assignments</div>
         <div id="switch-ports-container"></div>
       </div>`;
+    html += physicalHtml;
   }
 
   if (cfg.wiringTables) {
@@ -1462,12 +1508,18 @@ async function renderForm() {
       let ph = `<div class="form-section-hdr">Network Address</div>`;
       for (const f of fields) ph += await buildFormField(f, existing, type);
       container.innerHTML = ph;
+      // Prefill IP address with network subnet prefix if field is empty
+      const ipInput = $('f-ipAddress');
+      if (ipInput && !ipInput.value) {
+        const prefix = getIpPrefix(network?.ipRange);
+        if (prefix) ipInput.value = prefix;
+      }
     };
 
     const updateSwitchTables = () => {
-      const subclass     = $('f-assetSubclass')?.value;
-      const switchManaged = $('f-switchManaged')?.value;
-      const showTables   = subclass === 'Router' || (subclass === 'Switch' && switchManaged === 'Managed');
+      const assetClass = $('f-assetClass')?.value;
+      const subclass   = $('f-assetSubclass')?.value;
+      const showTables = assetClass === 'Network Switch' && (subclass === 'Managed' || subclass === 'Router');
       const snWrap = $('switch-networks-wrap');
       const spWrap = $('switch-ports-wrap');
       if (snWrap) snWrap.style.display = showTables ? '' : 'none';
@@ -1479,8 +1531,8 @@ async function renderForm() {
     };
 
     const renderSubclassFields = async () => {
-      const subclass = $('f-assetSubclass')?.value;
-      const fields   = ENTITY.assets.subclassFields?.[subclass] || [];
+      const subclass  = $('f-assetSubclass')?.value;
+      const fields    = ENTITY.assets.subclassFields?.[subclass] || [];
       const container = $('subclass-fields-container');
       if (!container) return;
       if (!fields.length) { container.innerHTML = ''; updateSwitchTables(); return; }
@@ -1493,9 +1545,11 @@ async function renderForm() {
         ph += await buildFormField(f, existing, type);
       }
       container.innerHTML = ph;
-      // Wire switchManaged change after its select is in the DOM
-      const switchManagedSel = $('f-switchManaged');
-      if (switchManagedSel) switchManagedSel.addEventListener('change', updateSwitchTables);
+      // Re-wire networkId listener and refresh address fields if subclass includes it
+      if ($('f-networkId')) {
+        $('f-networkId').addEventListener('change', renderNetworkAddressFields);
+        await renderNetworkAddressFields();
+      }
       // Auto-populate port rows when portCount changes
       const portCountEl = $('f-portCount');
       if (portCountEl) {
@@ -1514,10 +1568,38 @@ async function renderForm() {
       updateSwitchTables();
     };
 
-    $('f-networkId')?.addEventListener('change', renderNetworkAddressFields);
+    const renderClassSubclassField = async () => {
+      const assetClass  = $('f-assetClass')?.value;
+      const subclasses  = ENTITY.assets.classSubclasses?.[assetClass] || [];
+      const subclassSel = $('f-assetSubclass');
+      if (!subclassSel) return;
+      const currentSub = existing?.assetSubclass || '';
+      subclassSel.innerHTML = '<option value=""></option>' +
+        subclasses.map(s => `<option value="${s}"${s === currentSub ? ' selected' : ''}>${esc(s)}</option>`).join('');
+      const wrap = subclassSel.closest('.fg');
+      if (wrap) wrap.style.display = subclasses.length ? '' : 'none';
+
+      // Render class-level fields (e.g. networkId for flat classes)
+      const classFieldDefs = ENTITY.assets.classFields?.[assetClass] || [];
+      const classCont = $('class-fields-container');
+      if (classCont) {
+        if (!classFieldDefs.length) {
+          classCont.innerHTML = '';
+        } else {
+          let ph = '';
+          for (const f of classFieldDefs) ph += await buildFormField(f, existing, type);
+          classCont.innerHTML = ph;
+          $('f-networkId')?.addEventListener('change', renderNetworkAddressFields);
+          await renderNetworkAddressFields();
+        }
+      }
+
+      await renderSubclassFields();
+    };
+
     $('f-assetSubclass')?.addEventListener('change', renderSubclassFields);
-    await renderNetworkAddressFields();
-    await renderSubclassFields();
+    $('f-assetClass')?.addEventListener('change', renderClassSubclassField);
+    await renderClassSubclassField();
   }
 
   // Auto-populate areaId from panel when panelId changes
@@ -1706,32 +1788,71 @@ function renderSwitchNetworksTable() {
   const container = $('switch-networks-container');
   if (!container) return;
   const rows = state.formSwitchNetworks;
+  const takenNetIds = new Set(rows.map(r => r.networkId).filter(Boolean));
   const makeNetOpts = (selectedId) =>
     (state.cache.networks || [])
+      .filter(n => n.networkType === 'Ethernet' && (!takenNetIds.has(n.id) || n.id === selectedId))
       .map(n => `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`).join('');
   const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  const buildAddrFields = (r, i) => {
+    const net     = state.refs.networks?.[r.networkId];
+    const netType = net?.networkType;
+    const fields  = ENTITY.assets.networkTypeFields?.[netType] || [];
+    return fields.map(f => {
+      let val = r[f.key] || '';
+      if (!val && f.key === 'ipAddress') val = getIpPrefix(net?.ipRange);
+      if (f.type === 'enum') {
+        return `<select class="f-select sn-addr" data-idx="${i}" data-key="${f.key}">
+          <option value="">— ${esc(f.label)} —</option>
+          ${(f.options || []).map(o => `<option value="${o}"${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+        </select>`;
+      }
+      return `<input class="f-input sn-addr" type="text" placeholder="${esc(f.label)}" data-idx="${i}" data-key="${f.key}" value="${esc(val)}">`;
+    }).join('');
+  };
+
+  const isRouter = $('f-assetSubclass')?.value === 'Router';
+  const atRouterMax = isRouter && rows.length >= 2;
+
   let html = rows.map((r, i) => `
-    <div class="wiring-form-row">
-      <select class="f-select sn-network" data-idx="${i}">
-        <option value="">— Select Network —</option>
-        ${makeNetOpts(r.networkId)}
-      </select>
-      <button type="button" class="wiring-rm-btn sn-rm" data-idx="${i}">${rmIcon}</button>
+    <div class="sn-network-row" data-idx="${i}">
+      <div class="sn-network-row-top">
+        <select class="f-select sn-network" data-idx="${i}">
+          <option value="">— Select Network —</option>
+          ${makeNetOpts(r.networkId)}
+        </select>
+        <button type="button" class="wiring-rm-btn sn-rm" data-idx="${i}">${rmIcon}</button>
+      </div>
+      ${buildAddrFields(r, i)}
     </div>`).join('');
-  html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
+  if (!atRouterMax) html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
   container.innerHTML = html;
+
   container.querySelectorAll('.sn-network').forEach(sel => {
     sel.addEventListener('change', () => {
-      state.formSwitchNetworks[+sel.dataset.idx].networkId = sel.value;
-      renderSwitchPortsTable(); // port network dropdowns depend on assigned networks
+      const idx = +sel.dataset.idx;
+      // Clear previous address fields when network changes
+      const keys = Object.keys(state.formSwitchNetworks[idx]).filter(k => k !== 'networkId');
+      keys.forEach(k => delete state.formSwitchNetworks[idx][k]);
+      state.formSwitchNetworks[idx].networkId = sel.value;
+      renderSwitchNetworksTable();
+      renderSwitchPortsTable();
     });
   });
+
+  container.querySelectorAll('.sn-addr').forEach(el => {
+    const ev = el.tagName === 'SELECT' ? 'change' : 'input';
+    el.addEventListener(ev, () => {
+      state.formSwitchNetworks[+el.dataset.idx][el.dataset.key] = el.value;
+    });
+  });
+
   container.querySelectorAll('.sn-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const removedNetId = state.formSwitchNetworks[+btn.dataset.idx].networkId;
       state.formSwitchNetworks.splice(+btn.dataset.idx, 1);
-      // Clear any port that was using the removed network
       if (removedNetId) {
         state.formSwitchPorts.forEach(p => { if (p.networkId === removedNetId) p.networkId = ''; });
       }
@@ -1742,7 +1863,7 @@ function renderSwitchNetworksTable() {
     state.formSwitchNetworks.push({ networkId: '' });
     renderSwitchNetworksTable();
   });
-  renderSwitchPortsTable(); // keep port network dropdowns in sync
+  renderSwitchPortsTable();
 }
 
 function renderSwitchPortsTable() {
@@ -1760,26 +1881,29 @@ function renderSwitchPortsTable() {
       `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`
     ).join('');
 
-  // Devices on the port's network, or unassigned to any network
+  // Devices on the port's network, or unassigned — excluding this switch itself
+  const selfId = state.formId;
   const makeDeviceOpts = (networkId, selectedId) =>
     (state.cache.assets || [])
-      .filter(a => !networkId || !a.networkId || a.networkId === networkId)
+      .filter(a => a.id !== selfId && (!networkId || !a.networkId || a.networkId === networkId))
       .map(a =>
         `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`
       ).join('');
 
   let html = rows.map((r, i) => `
-    <div class="wiring-form-row">
-      <input class="f-input wiring-terminal sp-port" type="text" placeholder="Port" data-idx="${i}" value="${esc(r.portName || '')}">
+    <div class="sp-port-row">
+      <div class="sp-port-row-top">
+        <input class="f-input sp-port" type="text" placeholder="Port ${i + 1}" data-idx="${i}" value="${esc(r.portName || '')}">
+        <button type="button" class="wiring-rm-btn sp-rm" data-idx="${i}">${rmIcon}</button>
+      </div>
       <select class="f-select sp-network" data-idx="${i}">
         <option value="">— Network —</option>
         ${makeNetOpts(r.networkId)}
       </select>
       <select class="f-select sp-device" data-idx="${i}">
-        <option value="">— Device —</option>
+        <option value="">— No Connection —</option>
         ${makeDeviceOpts(r.networkId, r.assetId)}
       </select>
-      <button type="button" class="wiring-rm-btn sp-rm" data-idx="${i}">${rmIcon}</button>
     </div>`).join('');
   html += `<button type="button" class="wiring-add-btn sp-add">+ Add Port</button>`;
   container.innerHTML = html;
@@ -1804,10 +1928,10 @@ function renderSwitchPortsTable() {
       }
       state.formSwitchPorts[idx].networkId = newNetId;
       // Refresh only the device dropdown for this row
-      const row = container.querySelectorAll('.wiring-form-row')[idx];
+      const row = container.querySelectorAll('.sp-port-row')[idx];
       const deviceSel = row?.querySelector('.sp-device');
       if (deviceSel) {
-        deviceSel.innerHTML = `<option value="">— Device —</option>${makeDeviceOpts(newNetId, state.formSwitchPorts[idx].assetId)}`;
+        deviceSel.innerHTML = `<option value="">— No Connection —</option>${makeDeviceOpts(newNetId, state.formSwitchPorts[idx].assetId)}`;
       }
     });
   });
@@ -1827,11 +1951,11 @@ function renderSwitchPortsTable() {
   });
 
   container.querySelector('.sp-add')?.addEventListener('click', () => {
-    const nextNum = state.formSwitchPorts.length + 1;
-    state.formSwitchPorts.push({ portName: `Port ${nextNum}`, networkId: '', assetId: '' });
+    const num = state.formSwitchPorts.length + 1;
+    state.formSwitchPorts.push({ portName: `Port ${num}`, networkId: '', assetId: '' });
     renderSwitchPortsTable();
     const inputs = container.querySelectorAll('.sp-port');
-    inputs[inputs.length - 1]?.focus();
+    inputs[inputs.length - 1]?.select();
   });
 }
 
@@ -1932,10 +2056,15 @@ async function saveForm() {
 
   // Read subclass and network-type-driven fields for assets
   if (type === 'assets') {
+    // Class-level fields (flat classes)
+    for (const f of ENTITY.assets.classFields?.[item.assetClass] || []) {
+      const el2 = $(`f-${f.key}`);
+      if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
+    }
     // Subclass fields
     for (const f of ENTITY.assets.subclassFields?.[item.assetSubclass] || []) {
       const el2 = $(`f-${f.key}`);
-      if (el2) item[f.key] = el2.value.trim();
+      if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
     // Network address fields (driven by linked network's type)
     const linkedNetwork = state.refs.networks?.[item.networkId];
@@ -1944,11 +2073,36 @@ async function saveForm() {
       if (el2) item[f.key] = el2.value.trim();
     }
     // Switch/Router tables
-    const showTables = item.assetSubclass === 'Router' ||
-                       (item.assetSubclass === 'Switch' && item.switchManaged === 'Managed');
+    const showTables = item.assetClass === 'Network Switch' &&
+                       (item.assetSubclass === 'Managed' || item.assetSubclass === 'Router');
     if (showTables) {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);
+    }
+  }
+
+  // Validate IP uniqueness across the network
+  if (type === 'assets') {
+    const ipAssignments = [];
+    if (item.ipAddress && item.networkId)
+      ipAssignments.push({ networkId: item.networkId, ipAddress: item.ipAddress });
+    for (const sn of item.switchNetworks || []) {
+      if (sn.ipAddress && sn.networkId)
+        ipAssignments.push({ networkId: sn.networkId, ipAddress: sn.ipAddress });
+    }
+    for (const { networkId, ipAddress } of ipAssignments) {
+      const conflicts = new Set();
+      for (const a of state.cache.assets || []) {
+        if (a.id === item.id) continue;
+        if (a.ipAddress === ipAddress && a.networkId === networkId) conflicts.add(a.name);
+        for (const sn of a.switchNetworks || []) {
+          if (sn.ipAddress === ipAddress && sn.networkId === networkId) conflicts.add(a.name);
+        }
+      }
+      if (conflicts.size) {
+        showToast(`IP ${ipAddress} already used by: ${[...conflicts].join(', ')}`, 'error');
+        return;
+      }
     }
   }
 
@@ -2144,14 +2298,21 @@ async function processImportFile(file) {
    UTILITY
    ============================================================ */
 
+function getIpPrefix(ipRange) {
+  if (!ipRange) return '';
+  const parts = ipRange.split('/')[0].split('.');
+  return parts.length >= 3 ? parts.slice(0, 3).join('.') + '.' : '';
+}
+
 function getEffectiveFields(type, item) {
   const cfg           = ENTITY[type];
   const base          = cfg.fields || [];
   const proto         = cfg.protocolFields?.[item?.networkType] || [];
+  const classF        = cfg.classFields?.[item?.assetClass] || [];
   const subclassF     = cfg.subclassFields?.[item?.assetSubclass] || [];
   const linkedNetType = state.refs?.networks?.[item?.networkId]?.networkType;
   const networkTypeF  = type === 'assets' ? (cfg.networkTypeFields?.[linkedNetType] || []) : [];
-  return [...base, ...proto, ...subclassF, ...networkTypeF];
+  return [...base, ...proto, ...classF, ...subclassF, ...networkTypeF];
 }
 
 function calcCompleteness(type, item) {
