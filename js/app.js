@@ -2,6 +2,19 @@
    ENTITY CONFIGURATION
    ============================================================ */
 
+const PLC_CARD_TYPE_FIELDS = {
+  Controller:    [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+  Analog:        [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
+                  { key: 'signalType',   label: 'Signal Type',    type: 'enum',
+                    options: ['4-20mA','0-10V','Thermocouple','RTD'] }],
+  Digital:       [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
+                  { key: 'voltageLevel', label: 'Voltage Level',  type: 'enum',
+                    options: ['24VDC','120VAC','240VAC'] }],
+  Communication: [{ key: 'networkId', label: 'Network',  type: 'ref', refStore: 'networks' },
+                  { key: 'protocol',  label: 'Protocol', type: 'text' }],
+  Specialty:     [],
+};
+
 const SERIAL_FIELDS = [
   { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['RS232','RS422','RS485','Modbus RTU','Other'], required: true },
   { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Serial Configuration',
@@ -219,58 +232,34 @@ const ENTITY = {
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' }
       ],
     },
-    // Extra fields per card type
-    cardTypeFields: {
-      Analog: [
-        { key: 'channelCount', label: 'Channel Count', type: 'text', section: 'Card Details' },
-        { key: 'signalType',   label: 'Signal Type',   type: 'enum',
-          options: ['4-20mA','0-10V','Thermocouple','RTD'], section: 'Card Details' },
-      ],
-      Digital: [
-        { key: 'channelCount', label: 'Channel Count', type: 'text', section: 'Card Details' },
-        { key: 'voltageLevel', label: 'Voltage Level', type: 'enum',
-          options: ['24VDC','120VAC','240VAC'],          section: 'Card Details' },
-      ],
-      Communication: [
-        { key: 'networkId', label: 'Network',  type: 'ref',  refStore: 'networks', section: 'Card Details' },
-        { key: 'protocol',  label: 'Protocol', type: 'text', section: 'Card Details' },
-      ],
-      Specialty: [],
-    },
-    // Class-level fields shown for flat classes (no subclass)
+    cardTypeFields: PLC_CARD_TYPE_FIELDS,
+    // Class-level fields shown per device class
     classFields: {
+      'PLC': [
+        { key: 'slotCount', label: 'Slot Count', type: 'text' },
+      ],
       'HMI':            [
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
         { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Controller' },
+          refFilter: a => a.assetClass === 'PLC' },
       ],
       'VFD':            [
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
         { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Controller' },
+          refFilter: a => a.assetClass === 'PLC' },
       ],
       'Network Device': [
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
         { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Controller' },
+          refFilter: a => a.assetClass === 'PLC' },
       ],
     },
     // Children shown on drill-in per subclass (extends getChildren)
-    subclassChildren: {
-      Controller: [
-        { label: 'Rack', store: 'assets', field: 'controllerId',
-          extraPresets: { assetClass: 'PLC', assetSubclass: 'Rack' },
-          filter: a => a.assetSubclass === 'Rack',
-          countFn: (all, id) => all.filter(a => a.controllerId === id && a.assetSubclass === 'Rack').length },
-        { label: 'Assigned Assets', store: 'assets', field: 'controllerId',
-          filter: a => a.assetSubclass !== 'Rack',
-          countFn: (all, id) => all.filter(a => a.controllerId === id && a.assetSubclass !== 'Rack').length },
-      ],
-    },
+    subclassChildren: {},
     // Subclass options per device class
     classSubclasses: {
       'Network Switch': ['Managed', 'Unmanaged', 'Router'],
-      'PLC':            ['Controller', 'Rack', 'Card'],
+      'PLC':            [],
       'HMI':            [],
       'VFD':            [],
       'Network Device': [],
@@ -292,23 +281,6 @@ const ENTITY = {
         { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Router Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Router Details' },
-      ],
-      Controller: [
-        { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
-        { key: 'rackId',    label: 'Rack',    type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Rack' },
-      ],
-      Rack: [
-        { key: 'controllerId', label: 'Controller', type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Controller' },
-        { key: 'slotCount',    label: 'Slot Count',  type: 'text' },
-      ],
-      Card: [
-        { key: 'rackId',     label: 'Rack',      type: 'ref',  refStore: 'assets',
-          refFilter: a => a.assetSubclass === 'Rack' },
-        { key: 'slotNumber', label: 'Slot',      type: 'text' },
-        { key: 'cardType',   label: 'Card Type', type: 'enum',
-          options: ['Analog','Digital','Communication','Specialty'] },
       ],
     },
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '',
@@ -334,9 +306,10 @@ const state = {
   formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   formSwitchNetworks: [], // [{networkId}] for managed switch/router network connections
   formSwitchPorts: [],    // [{portName, networkId, assetId}] for managed switch/router ports
-  formRackSlots: [],      // [{slotNumber, assetId}] for rack slot assignments
-  detailStack:   [],  // [{type, id}] – navigation history for back-stack within detail panel
-  detailChanges: {},  // { key: newValue } for inline edits in the detail view
+  formIoPoints: [],       // [{tagName, terminal, description}] for PLC slot IO points
+  detailStack:      [],   // [{type, id, slotNumber?}] – navigation history within detail panel
+  detailSlotNumber: null, // slot index when viewing a PLC slot detail
+  detailChanges:    {},   // { key: newValue } for inline edits in the detail view
   pickerMeta:    null, // { childType, parentField, parentId, selected: Set } for assign picker
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
@@ -487,11 +460,14 @@ function openDetail(type, id) {
 function closeDetail() {
   if (state.detailStack.length > 0) {
     const prev = state.detailStack.pop();
-    state.detailType    = prev.type;
-    state.detailId      = prev.id;
-    state.detailChanges = {};
+    state.detailType       = prev.type;
+    state.detailId         = prev.id;
+    state.detailSlotNumber = prev.slotNumber ?? null;
+    state.detailChanges    = {};
     renderDetail();
-    el.pageTitle.textContent = ENTITY[prev.type].label;
+    el.pageTitle.textContent = prev.type === '__plc_slot__'
+      ? `Slot ${prev.slotNumber}`
+      : ENTITY[prev.type].label;
     return;
   }
   el.detail.classList.remove('open');
@@ -501,10 +477,11 @@ function closeDetail() {
     el.detail.style.display = 'none';
     el.detail.innerHTML = '';
   }, 300);
-  state.detailType    = null;
-  state.detailId      = null;
-  state.detailChanges = {};
-  state.detailStack   = [];
+  state.detailType       = null;
+  state.detailId         = null;
+  state.detailSlotNumber = null;
+  state.detailChanges    = {};
+  state.detailStack      = [];
   setHeaderForPage(state.page);
 }
 
@@ -527,8 +504,9 @@ function openSheet(type, id = null, preset = null) {
   }
   state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map(r => ({...r})) : [];
   state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map(r => ({...r}))    : [];
-  state.formRackSlots      = existing?.rackSlots      ? existing.rackSlots.map(r => ({...r}))      : [];
-  el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + ENTITY[type].label;
+  state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map(r => ({...r}))       : [];
+  const subLabel = !id ? (preset?.extra?.assetSubclass || existing?.assetSubclass) : existing?.assetSubclass;
+  el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + (subLabel || ENTITY[type].label);
   renderForm();
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';
@@ -551,7 +529,45 @@ function closeSheet() {
   state.formWiringTables  = {};
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
+  state.formIoPoints       = [];
   state.pickerMeta        = null;
+}
+
+function openSlotForm(rackId, slotNumber) {
+  const rack     = state.refs.assets?.[rackId];
+  const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
+  state.formType     = '__plc_slot__';
+  state.formId       = null;
+  state.formPreset   = { rackId, slotNumber };
+  state.formImages   = [];
+  state.formIoPoints = existing?.ioPoints ? existing.ioPoints.map(r => ({...r})) : [];
+  el.formTitle.textContent = existing
+    ? `Slot ${slotNumber} — Edit Card`
+    : `Slot ${slotNumber} — Add Card`;
+  renderForm();
+  el.backdrop.classList.add('open');
+  el.sheet.style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => el.sheet.classList.add('open')));
+}
+
+function openSlotDetail(rackId, slotNumber) {
+  const wasOpen = !!state.detailType;
+  if (wasOpen) {
+    state.detailStack.push({ type: state.detailType, id: state.detailId, slotNumber: state.detailSlotNumber });
+    state.detailChanges = {};
+  }
+  state.detailType       = '__plc_slot__';
+  state.detailId         = rackId;
+  state.detailSlotNumber = slotNumber;
+  renderDetail();
+  if (!wasOpen) {
+    el.detail.classList.remove('animating');
+    el.detail.style.display = 'block';
+    requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
+  }
+  el.backBtn.style.visibility = 'visible';
+  el.addBtn.style.visibility  = 'hidden';
+  el.pageTitle.textContent    = `Slot ${slotNumber}`;
 }
 
 async function openAssignOrCreate(childType, parentField, parentId) {
@@ -644,6 +660,10 @@ function setHeaderForPage(page) {
     el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
+  } else if (page === 'plc') {
+    el.pageTitle.textContent   = 'PLCs';
+    el.backBtn.style.visibility = 'hidden';
+    el.addBtn.style.visibility  = 'visible';
   } else {
     el.pageTitle.textContent   = ENTITY[page].plural;
     el.backBtn.style.visibility = 'hidden';
@@ -659,6 +679,14 @@ async function renderPage() {
   el.main.innerHTML = '<div class="spinner"></div>';
   if (state.page === 'home')  { await renderHome(); return; }
   if (state.page === 'areas') { await renderAreasList(); return; }
+  if (state.page === 'plc') {
+    await renderList('assets', {
+      preFilter: a => a.assetClass === 'PLC',
+      label:  'PLC Rack',
+      plural: 'PLC Racks',
+    });
+    return;
+  }
   await renderList(state.page);
 }
 
@@ -833,10 +861,13 @@ function areaCardHTML(area, counts) {
 }
 
 /* ---- LIST VIEW ---- */
-async function renderList(type) {
+async function renderList(type, opts = {}) {
   await loadCache([type, 'areas', 'panels', 'power', 'safety', 'networks']);
-  const items = state.cache[type] || [];
-  const cfg   = ENTITY[type];
+  let items = state.cache[type] || [];
+  if (opts.preFilter) items = items.filter(opts.preFilter);
+  const cfg        = ENTITY[type];
+  const cfgLabel   = opts.label  || cfg.label;
+  const cfgPlural  = opts.plural || cfg.plural;
 
   const parentFilter = buildParentFilterChips(type, items);
 
@@ -845,7 +876,7 @@ async function renderList(type) {
       <span class="search-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </span>
-      <input id="list-search" class="search-input" type="search" placeholder="Search ${cfg.plural.toLowerCase()}…">
+      <input id="list-search" class="search-input" type="search" placeholder="Search ${cfgPlural.toLowerCase()}…">
     </div>
     ${parentFilter.html}
     <div id="card-list" class="card-list"></div>
@@ -866,7 +897,7 @@ async function renderList(type) {
 
     if (!shown.length) {
       list.innerHTML = items.length === 0
-        ? `<div class="empty"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><h3>No ${cfg.plural} yet</h3><p>Tap <strong>+</strong> to add your first ${cfg.label.toLowerCase()}.</p></div>`
+        ? `<div class="empty"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><h3>No ${cfgPlural} yet</h3><p>Tap <strong>+</strong> to add your first ${cfgLabel.toLowerCase()}.</p></div>`
         : `<div class="empty"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>No results</h3><p>Try a different search or filter.</p></div>`;
       return;
     }
@@ -1006,6 +1037,94 @@ function matchParentChip(type, item, parentId) {
 async function renderDetail() {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
+
+  // Slot detail — renders card data embedded in the rack's slots array
+  if (type === '__plc_slot__') {
+    await refreshAll();
+    const rack = state.refs.assets?.[id];
+    if (!rack) { closeDetail(); return; }
+    const slotNumber = state.detailSlotNumber;
+    const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
+    const network = slot?.networkId ? state.refs.networks?.[slot.networkId] : null;
+
+    const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+    const backIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+
+    const field = (label, val) => val
+      ? `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval">${esc(val)}</div></div>`
+      : `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval det-fval-empty">—</div></div>`;
+
+    // Base fields every card has
+    let fieldsHtml = field('Part Number', slot?.partNumber) + field('Firmware Version', slot?.firmwareVersion);
+
+    // Card-type-specific fields
+    const ctFields = PLC_CARD_TYPE_FIELDS[slot?.cardType] || [];
+    for (const f of ctFields) {
+      if (f.type === 'ref') {
+        const refItem = f.refStore === 'networks' ? network : state.refs[f.refStore]?.[slot?.[f.key]];
+        fieldsHtml += field(f.label, refItem?.name);
+      } else {
+        fieldsHtml += field(f.label, slot?.[f.key]);
+      }
+    }
+
+    // Network address fields for Controller cards
+    if (slot?.cardType === 'Controller' && network) {
+      const netFields = ENTITY.assets.networkTypeFields?.[network.networkType] || [];
+      for (const f of netFields) fieldsHtml += field(f.label, slot?.[f.key]);
+    }
+
+    // IO points table for Analog/Digital
+    let ioCard = '';
+    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+      const pts = slot?.ioPoints || [];
+      const rowsHtml = pts.length
+        ? `<table class="wiring-det-table">
+             <thead><tr><th>#</th><th>Tag Name</th><th>Terminal</th><th>Description</th></tr></thead>
+             <tbody>${pts.map((r, i) => `
+               <tr>
+                 <td class="wiring-det-terminal">${i + 1}</td>
+                 <td>${esc(r.tagName || '')}</td>
+                 <td>${esc(r.terminal || '')}</td>
+                 <td>${esc(r.description || '')}</td>
+               </tr>`).join('')}
+             </tbody>
+           </table>`
+        : `<div class="wiring-empty">No IO points configured</div>`;
+      ioCard = buildCollapsibleCard('IO Points', rowsHtml);
+    }
+
+    el.detail.innerHTML = `
+      <div class="det-header">
+        <button class="icon-btn" id="det-back" aria-label="Back">${backIcon}</button>
+        <div style="flex:1"></div>
+        <button class="icon-btn" id="det-edit" aria-label="Edit">${editIcon}</button>
+      </div>
+      <div class="det-body">
+        <div class="det-title-row">
+          <div class="det-name">${esc(slot?.name || '(unnamed card)')}</div>
+        </div>
+        <div class="det-badges">
+          <span class="badge badge-asset">Slot ${slotNumber}</span>
+          ${slot?.cardType ? `<span class="badge badge-asset">${esc(slot.cardType)}</span>` : ''}
+          <span class="badge badge-panel">${esc(rack.name)}</span>
+        </div>
+        <div class="det-card">
+          <div class="det-fields">${fieldsHtml}</div>
+        </div>
+        ${ioCard}
+      </div>
+    `;
+
+    el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+    el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSlotForm(id, slotNumber));
+    el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
+      img.addEventListener('click', () => openLightbox(img.src));
+    });
+    el.detail.scrollTop = 0;
+    return;
+  }
+
   const cfg  = ENTITY[type];
   const item = await getById(type, id);
   if (!item) { state.detailStack = []; closeDetail(); return; }
@@ -1099,23 +1218,50 @@ async function renderDetail() {
     }
   }
 
-  // Rack slot assignments card
+  // PLC rack slots card — each slot is clickable to add/edit its card
   let rackSlotsCard = '';
-  if (type === 'assets' && item.assetSubclass === 'Rack') {
-    const slotCount = parseInt(item.slotCount) || 0;
-    // Build a map of assigned slots from rackSlots
-    const assignedMap = new Map((item.rackSlots || []).map(s => [s.slotNumber, s.assetId]));
-    const slotRows = Array.from({ length: slotCount }, (_, k) => {
-      const slotNum = k;
-      const cardId  = assignedMap.get(slotNum);
-      const card    = cardId ? state.refs.assets?.[cardId] : null;
-      return `<div class="sn-det-row">
-        <div class="sn-det-name">Slot ${slotNum}</div>
-        <div class="sn-det-fields"><span class="sn-det-field">Card<strong>${esc(card?.name || 'Empty')}</strong></span></div>
+  if (type === 'assets' && item.assetClass === 'PLC') {
+    const slotCount  = parseInt(item.slotCount) || 0;
+    const slotsMap   = new Map((item.slots || []).map(s => [s.slotNumber, s]));
+    const cardCount  = (item.slots || []).length;
+    const chevron    = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+    const title      = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
+    const clearIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+    let slotRows = '';
+    if (slotCount === 0) {
+      slotRows = `<div style="font-size:14px;color:var(--muted)">No slots configured — edit the rack to set Slot Count.</div>`;
+    } else {
+      slotRows = Array.from({ length: slotCount }, (_, k) => {
+        const slot = slotsMap.get(k);
+        if (slot) {
+          const typeTag = slot.cardType ? `<span class="sn-det-field">${esc(slot.cardType)}</span>` : '';
+          return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
+            <div class="sn-det-name">Slot ${k}</div>
+            <div class="sn-det-fields" style="flex:1"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}</div>
+            <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${item.id}" data-slot-num="${k}" aria-label="Clear slot">${clearIcon}</button>
+          </div>`;
+        }
+        return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
+          <div class="sn-det-name">Slot ${k}</div>
+          <div class="sn-det-fields" style="color:var(--muted)">Empty — tap to add card</div>
+        </div>`;
+      }).join('');
+    }
+
+    rackSlotsCard = `
+      <div class="det-card det-collapsible">
+        <button class="det-section-toggle" aria-expanded="false">
+          <span class="section-label" style="margin:0">${title}</span>
+          ${chevron}
+        </button>
+        <div class="det-section-body" style="display:none">
+          <div class="sn-det-list">${slotRows}</div>
+        </div>
       </div>`;
-    }).join('');
-    rackSlotsCard = buildCollapsibleCard('Rack Slots', `<div class="sn-det-list">${slotRows || '<div class="wiring-empty">No slots configured</div>'}</div>`);
   }
+
+  let ioPointsCard = '';
 
   // Switch/Router network connections and port assignment cards
   let switchNetworksCard = '';
@@ -1187,6 +1333,7 @@ async function renderDetail() {
     ${detailSectionCards}
     ${wiringCards}
     ${rackSlotsCard}
+    ${ioPointsCard}
     ${switchNetworksCard}
     ${switchPortsCard}
     ${physicalSectionCards}
@@ -1229,6 +1376,31 @@ async function renderDetail() {
       });
     });
   });
+  el.detail.querySelectorAll('.rack-slot-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.rack-slot-clear')) return;
+      const rackId  = row.dataset.rackId;
+      const slotNum = +row.dataset.slotNum;
+      const rack    = state.refs.assets?.[rackId];
+      const hasCard = rack?.slots?.some(s => s.slotNumber === slotNum);
+      if (hasCard) openSlotDetail(rackId, slotNum);
+      else         openSlotForm(rackId, slotNum);
+    });
+  });
+  el.detail.querySelectorAll('.rack-slot-clear').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const rackId  = btn.dataset.rackId;
+      const slotNum = +btn.dataset.slotNum;
+      const rack    = state.refs.assets?.[rackId];
+      if (!rack) return;
+      const slots = (rack.slots || []).filter(s => s.slotNumber !== slotNum);
+      await upsert('assets', { ...rack, slots });
+      await refreshAll();
+      renderDetail();
+    });
+  });
+
   el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
     btn.addEventListener('click', () => {
       const childType    = btn.dataset.addChild;
@@ -1452,8 +1624,84 @@ async function saveDetailChanges(type, id) {
 async function renderForm() {
   const { formType: type, formId: id } = state;
   if (type === '__plant__') return; // already rendered
+
+  if (type === '__plc_slot__') {
+    const { rackId, slotNumber } = state.formPreset;
+    const rack     = state.refs.assets?.[rackId];
+    const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
+    await refreshAll();
+
+    const cardTypeOpts = ['Controller','Communication','Analog','Digital','Specialty']
+      .map(t => `<option value="${t}"${existing?.cardType === t ? ' selected' : ''}>${t}</option>`)
+      .join('');
+    el.formBody.innerHTML = `
+      <div class="fg"><label class="f-label">Card Name</label>
+        <input class="f-input" id="f-name" type="text" value="${esc(existing?.name || '')}"></div>
+      <div class="fg"><label class="f-label">Card Type</label>
+        <select class="f-select" id="f-cardType"><option value=""></option>${cardTypeOpts}</select></div>
+      <div class="fg"><label class="f-label">Part Number</label>
+        <input class="f-input" id="f-partNumber" type="text" value="${esc(existing?.partNumber || '')}"></div>
+      <div class="fg"><label class="f-label">Firmware Version</label>
+        <input class="f-input" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}"></div>
+      <div id="slot-cardtype-container"></div>
+      <div id="network-address-container"></div>
+      <div id="io-points-wrap" style="display:none">
+        <div class="form-section-hdr">IO Points</div>
+        <div id="io-points-container"></div>
+      </div>
+    `;
+
+    const renderSlotNetworkAddressFields = async () => {
+      const networkId = $('f-networkId')?.value;
+      const network   = state.refs.networks?.[networkId];
+      const fields    = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
+      const container = $('network-address-container');
+      if (!container) return;
+      if (!fields.length) { container.innerHTML = ''; return; }
+      let ph = `<div class="form-section-hdr">Network Address</div>`;
+      for (const f of fields) ph += await buildFormField(f, existing, 'assets');
+      container.innerHTML = ph;
+    };
+
+    const renderSlotCardTypeFields = async () => {
+      const cardType  = $('f-cardType')?.value;
+      const fields    = PLC_CARD_TYPE_FIELDS[cardType] || [];
+      const container = $('slot-cardtype-container');
+      if (!container) return;
+      if (!fields.length) { container.innerHTML = ''; } else {
+        let ph = '';
+        for (const f of fields) ph += await buildFormField(f, existing, 'assets');
+        container.innerHTML = ph;
+        if (cardType === 'Controller') {
+          $('f-networkId')?.addEventListener('change', renderSlotNetworkAddressFields);
+          await renderSlotNetworkAddressFields();
+        }
+      }
+      const ioWrap = $('io-points-wrap');
+      if (ioWrap) {
+        const isIo = cardType === 'Analog' || cardType === 'Digital';
+        ioWrap.style.display = isIo ? '' : 'none';
+        if (isIo) {
+          renderIoPointsTable();
+          const ioCountEl = $('f-ioPointCount');
+          if (ioCountEl) ioCountEl.addEventListener('change', syncIoPointCount);
+        }
+      }
+    };
+
+    $('f-cardType').addEventListener('change', renderSlotCardTypeFields);
+    await renderSlotCardTypeFields();
+    return;
+  }
   const cfg      = ENTITY[type];
-  const existing = id ? await getById(type, id) : null;
+  const rawExisting = id ? await getById(type, id) : null;
+  // For new forms, synthesize defaults from preset so dropdowns pre-select correctly
+  const existing = rawExisting ?? ((!id && state.formPreset)
+    ? {
+        ...(state.formPreset.extra || {}),
+        ...(state.formPreset.field ? { [state.formPreset.field]: state.formPreset.value } : {}),
+      }
+    : null);
   await refreshAll();
 
   const FORM_PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Clearance']);
@@ -1494,11 +1742,11 @@ async function renderForm() {
         <div class="form-section-hdr">Port Assignments</div>
         <div id="switch-ports-container"></div>
       </div>
-      <div id="rack-slots-wrap" style="display:none">
-        <div class="form-section-hdr">Rack Slots</div>
-        <div id="rack-slots-container"></div>
-      </div>
-      <div id="card-type-fields-container"></div>`;
+      <div id="card-type-fields-container"></div>
+      <div id="io-points-wrap" style="display:none">
+        <div class="form-section-hdr">IO Points</div>
+        <div id="io-points-container"></div>
+      </div>`;
     html += physicalHtml;
   }
 
@@ -1654,25 +1902,6 @@ async function renderForm() {
           renderSwitchPortsTable();
         });
       }
-      // Auto-populate rack slots when slotCount changes
-      const slotCountEl = $('f-slotCount');
-      if (slotCountEl) {
-        const updateRackSlots = () => {
-          const count   = Math.max(0, parseInt(slotCountEl.value) || 0);
-          const current = state.formRackSlots.length;
-          if (count > current) {
-            for (let i = current; i < count; i++)
-              state.formRackSlots.push({ slotNumber: i, assetId: '' });
-          } else if (count < current) {
-            state.formRackSlots.splice(count);
-          }
-          renderRackSlotsTable();
-          const rackWrap = $('rack-slots-wrap');
-          if (rackWrap) rackWrap.style.display = count > 0 ? '' : 'none';
-        };
-        slotCountEl.addEventListener('change', updateRackSlots);
-        updateRackSlots(); // render on initial load for edit forms
-      }
       // Wire card type → card type fields
       const cardTypeEl = $('f-cardType');
       if (cardTypeEl) {
@@ -1687,28 +1916,57 @@ async function renderForm() {
       const fields    = ENTITY.assets.cardTypeFields?.[cardType] || [];
       const container = $('card-type-fields-container');
       if (!container) return;
-      if (!fields.length) { container.innerHTML = ''; return; }
-      let ph = '', lastSection;
-      for (const f of fields) {
-        if (f.section !== lastSection) {
-          lastSection = f.section;
-          ph += `<div class="form-section-hdr">${esc(f.section)}</div>`;
+      if (!fields.length) { container.innerHTML = ''; } else {
+        let ph = '', lastSection;
+        for (const f of fields) {
+          if (f.section !== lastSection) {
+            lastSection = f.section;
+            ph += `<div class="form-section-hdr">${esc(f.section)}</div>`;
+          }
+          ph += await buildFormField(f, existing, type);
         }
-        ph += await buildFormField(f, existing, type);
+        container.innerHTML = ph;
+        if (cardType === 'Controller') {
+          $('f-networkId')?.addEventListener('change', renderNetworkAddressFields);
+          await renderNetworkAddressFields();
+        }
       }
-      container.innerHTML = ph;
+      // Show/hide IO points section and wire ioPointCount for Analog/Digital
+      const ioWrap = $('io-points-wrap');
+      if (ioWrap) {
+        const isIo = cardType === 'Analog' || cardType === 'Digital';
+        ioWrap.style.display = isIo ? '' : 'none';
+        if (isIo) {
+          renderIoPointsTable();
+          const ioCountEl = $('f-ioPointCount');
+          if (ioCountEl) ioCountEl.addEventListener('change', syncIoPointCount);
+        }
+      }
     };
 
     const renderClassSubclassField = async () => {
       const assetClass  = $('f-assetClass')?.value;
-      const subclasses  = ENTITY.assets.classSubclasses?.[assetClass] || [];
+      let   subclasses  = ENTITY.assets.classSubclasses?.[assetClass] || [];
       const subclassSel = $('f-assetSubclass');
       if (!subclassSel) return;
       const currentSub = existing?.assetSubclass || '';
+      // When editing, keep the item's current subclass even if it's no longer in the standard list
+      if (currentSub && id && !subclasses.includes(currentSub)) subclasses = [...subclasses, currentSub];
       subclassSel.innerHTML = '<option value=""></option>' +
         subclasses.map(s => `<option value="${s}"${s === currentSub ? ' selected' : ''}>${esc(s)}</option>`).join('');
       const wrap = subclassSel.closest('.fg');
       if (wrap) wrap.style.display = subclasses.length ? '' : 'none';
+
+      // Hide class selector when locked by preset (adding from PLCs page sets field='assetClass')
+      const classIsLocked = !id && (
+        state.formPreset?.extra?.assetClass ||
+        state.formPreset?.field === 'assetClass'
+      );
+      const classWrap = $('f-assetClass')?.closest('.fg');
+      if (classWrap) classWrap.style.display = classIsLocked ? 'none' : '';
+      // Hide subclass selector when locked by extra preset or no subclasses available
+      const subclassIsLocked = !id && state.formPreset?.extra?.assetSubclass;
+      if (wrap) wrap.style.display = (subclassIsLocked || !subclasses.length) ? 'none' : '';
 
       // Render class-level fields (e.g. networkId for flat classes)
       const classFieldDefs = ENTITY.assets.classFields?.[assetClass] || [];
@@ -1727,9 +1985,6 @@ async function renderForm() {
 
       await renderSubclassFields();
 
-      // Hide panel field for Cards (panel is inherited from the rack)
-      const panelWrap = $('f-panelId')?.closest('.fg');
-      if (panelWrap) panelWrap.style.display = $('f-assetSubclass')?.value === 'Card' ? 'none' : '';
     };
 
     $('f-assetSubclass')?.addEventListener('change', renderSubclassFields);
@@ -2096,40 +2351,37 @@ function renderSwitchPortsTable() {
   });
 }
 
-function renderRackSlotsTable() {
-  const container = $('rack-slots-container');
+
+function syncIoPointCount() {
+  const count = parseInt($('f-ioPointCount')?.value) || 0;
+  while (state.formIoPoints.length < count)
+    state.formIoPoints.push({ tagName: '', terminal: '', description: '' });
+  state.formIoPoints.length = count;
+  renderIoPointsTable();
+}
+
+function renderIoPointsTable() {
+  const container = $('io-points-container');
   if (!container) return;
-  const rows       = state.formRackSlots;
-  const selfId     = state.formId;
-  const controllerId = $('f-controllerId')?.value || '';
-  const controller   = controllerId ? state.refs.assets?.[controllerId] : null;
-
-  // Cards not yet assigned to a slot on this rack (or already assigned to this slot)
-  const usedCardIds = new Set(rows.map(r => r.assetId).filter(Boolean));
-  const makeCardOpts = (selectedId) =>
-    (state.cache.assets || [])
-      .filter(a => a.assetSubclass === 'Card' && a.id !== selfId &&
-                   (!usedCardIds.has(a.id) || a.id === selectedId))
-      .map(a => `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`)
-      .join('');
-
-  const slotRows = rows.map((r, i) => `
-    <div class="sp-port-row">
-      <div class="sp-port-row-top">
-        <input class="f-input" type="text" value="Slot ${r.slotNumber}" disabled style="flex:1;font-weight:600">
-      </div>
-      <select class="f-select rs-card" data-idx="${i}">
-        <option value="">— Empty —</option>
-        ${makeCardOpts(r.assetId)}
-      </select>
-    </div>`).join('');
-
-  container.innerHTML = slotRows || '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set a Slot Count to add slots.</div>';
-
-  container.querySelectorAll('.rs-card').forEach(sel => {
-    sel.addEventListener('change', () => {
-      state.formRackSlots[+sel.dataset.idx].assetId = sel.value;
-      renderRackSlotsTable(); // re-render to update usedCardIds exclusions
+  const rows = state.formIoPoints;
+  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rowsHtml = rows.map((r, i) => `
+    <div class="wiring-form-row io-point-row">
+      <span class="io-point-num">${i + 1}</span>
+      <input class="f-input io-tag"  type="text" placeholder="Tag Name"    value="${esc(r.tagName     || '')}" data-idx="${i}" data-field="tagName">
+      <input class="f-input io-term" type="text" placeholder="Terminal"    value="${esc(r.terminal    || '')}" data-idx="${i}" data-field="terminal">
+      <input class="f-input io-desc" type="text" placeholder="Description" value="${esc(r.description || '')}" data-idx="${i}" data-field="description">
+    </div>
+  `).join('');
+  container.innerHTML = rows.length
+    ? `<div class="io-point-header">
+        <span class="io-point-num">#</span>
+        <span>Tag Name</span><span>Terminal</span><span>Description</span>
+       </div>${rowsHtml}`
+    : '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set IO Point Count to populate rows.</div>';
+  container.querySelectorAll('.io-point-row input').forEach(input => {
+    input.addEventListener('change', () => {
+      state.formIoPoints[Number(input.dataset.idx)][input.dataset.field] = input.value;
     });
   });
 }
@@ -2194,6 +2446,44 @@ async function saveForm() {
     return;
   }
 
+  // PLC slot card save
+  if (type === '__plc_slot__') {
+    const { rackId, slotNumber } = state.formPreset;
+    const rack     = state.refs.assets?.[rackId];
+    if (!rack) { showToast('Rack not found', 'error'); return; }
+    const cardType = $('f-cardType')?.value || '';
+    const slotData = {
+      slotNumber,
+      name:            $('f-name')?.value.trim()            || '',
+      cardType,
+      partNumber:      $('f-partNumber')?.value.trim()      || '',
+      firmwareVersion: $('f-firmwareVersion')?.value.trim() || '',
+    };
+    for (const f of PLC_CARD_TYPE_FIELDS[cardType] || []) {
+      const el2 = $(`f-${f.key}`);
+      if (el2) slotData[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
+    }
+    if (cardType === 'Controller') {
+      const linkedNet = state.refs.networks?.[slotData.networkId];
+      for (const f of ENTITY.assets.networkTypeFields?.[linkedNet?.networkType] || []) {
+        const el2 = $(`f-${f.key}`);
+        if (el2) slotData[f.key] = el2.value.trim();
+      }
+    }
+    if (cardType === 'Analog' || cardType === 'Digital') {
+      slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
+    }
+    const slots = [...(rack.slots || [])];
+    const idx   = slots.findIndex(s => s.slotNumber === slotNumber);
+    if (idx >= 0) slots[idx] = slotData; else slots.push(slotData);
+    await upsert('assets', { ...rack, slots });
+    await refreshAll();
+    closeSheet();
+    showToast('Card saved', 'success');
+    renderDetail();
+    return;
+  }
+
   // Special case: plant info
   if (type === '__plant__') {
     const name = $('pf-name')?.value.trim();
@@ -2254,17 +2544,6 @@ async function saveForm() {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);
     }
-    // Rack slot assignments
-    if (item.assetSubclass === 'Rack') {
-      item.rackSlots = state.formRackSlots;
-    }
-    // Card type-specific fields
-    if (item.assetSubclass === 'Card') {
-      for (const f of ENTITY.assets.cardTypeFields?.[item.cardType] || []) {
-        const el2 = $(`f-${f.key}`);
-        if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
-      }
-    }
   }
 
   // Validate IP uniqueness across the network
@@ -2316,21 +2595,7 @@ async function saveForm() {
     }
   }
 
-  const saved = await upsert(type, item);
-
-  // PLC Controller: auto-create rack if none selected, or link to existing rack
-  if (type === 'assets' && saved.assetSubclass === 'Controller' && !state.formId) {
-    if (saved.rackId) {
-      const rack = state.refs.assets?.[saved.rackId];
-      if (rack) await upsert('assets', { ...rack, controllerId: saved.id });
-    } else {
-      const rack = await upsert('assets', {
-        name: `${saved.name} - Local`, assetClass: 'PLC', assetSubclass: 'Rack',
-        panelId: saved.panelId || '', controllerId: saved.id, slotCount: '0',
-      });
-      await upsert('assets', { ...saved, rackId: rack.id });
-    }
-  }
+  await upsert(type, item);
 
   await refreshAll();
   closeSheet();
@@ -2660,7 +2925,11 @@ function wireEvents() {
 
   // Add button
   el.addBtn.addEventListener('click', () => {
-    if (state.page !== 'home') openSheet(state.page);
+    if (state.page === 'plc') {
+      openSheet('assets', null, { field: 'assetClass', value: 'PLC' });
+    } else if (state.page !== 'home') {
+      openSheet(state.page);
+    }
   });
 
   // Form save / cancel
@@ -2673,7 +2942,7 @@ function wireEvents() {
   // Hash change
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '') || 'home';
-    if (ENTITY[hash] || hash === 'home') {
+    if (ENTITY[hash] || hash === 'home' || hash === 'plc') {
       if (hash !== state.page) navigate(hash);
     }
   });
@@ -2697,7 +2966,7 @@ async function init() {
     await initDB();
     wireEvents();
     const hash = window.location.hash.replace('#', '') || 'home';
-    const startPage = (ENTITY[hash] || hash === 'home') ? hash : 'home';
+    const startPage = (ENTITY[hash] || hash === 'home' || hash === 'plc') ? hash : 'home';
     navigate(startPage);
     initInstallPrompt();
   } catch (err) {
