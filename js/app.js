@@ -198,6 +198,7 @@ const ENTITY = {
       { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true },
       { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
+      { key: 'powerId',        label: 'Power', type: 'ref',      refStore: 'power'},
       { key: 'manufacturer',  label: 'Manufacturer',  type: 'text' },
       { key: 'partNumber',    label: 'Part Number',   type: 'text' },
       { key: 'description',   label: 'Description',   type: 'textarea' },
@@ -240,18 +241,25 @@ const ENTITY = {
       ],
       'HMI':            [
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetClass === 'PLC' },
+        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+        //  refFilter: a => a.assetClass === 'PLC' },
       ],
       'VFD':            [
+        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetClass === 'PLC' },
+        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+        //  refFilter: a => a.assetClass === 'PLC' },
       ],
       'Network Device': [
+        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
         { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        { key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-          refFilter: a => a.assetClass === 'PLC' },
+        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+        //  refFilter: a => a.assetClass === 'PLC' },
+      ],
+      'Hardwired Device':            [
+        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
+        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+        //  refFilter: a => a.assetClass === 'PLC' },
       ],
     },
     // Children shown on drill-in per subclass (extends getChildren)
@@ -582,7 +590,7 @@ function openSlotDetail(rackId, slotNumber) {
 async function openAssignOrCreate(childType, parentField, parentId) {
   await refreshAll();
   const cfg        = ENTITY[childType];
-  const unassigned = (state.cache[childType] || []).filter(i => !i[parentField]);
+  const unassigned = (state.cache[childType] || []).filter(i => Object.hasOwn(i, parentField) && !i[parentField]);
 
   if (!unassigned.length) {
     openSheet(childType, null, { field: parentField, value: parentId });
@@ -871,7 +879,7 @@ function areaCardHTML(area, counts) {
 
 /* ---- LIST VIEW ---- */
 async function renderList(type, opts = {}) {
-  await loadCache([type, 'areas', 'panels', 'power', 'safety', 'networks']);
+  await loadCache(['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
   let items = state.cache[type] || [];
   if (opts.preFilter) items = items.filter(opts.preFilter);
   const cfg        = ENTITY[type];
@@ -1100,11 +1108,11 @@ async function renderDetail({ preserveScroll = false } = {}) {
     if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
       const pts = slot?.ioPoints || [];
       const rowsHtml = pts.length
-        ? `<table class="wiring-det-table">
+        ? `<table class="wiring-det-table io-points-det-table">
              <thead><tr><th>#</th><th>Label</th><th>Terminal</th><th>Description</th></tr></thead>
              <tbody>${pts.map((r, i) => `
                <tr>
-                 <td class="wiring-det-terminal">${i}</td>
+                 <td>${i}</td>
                  <td>${esc(r.label || '')}</td>
                  <td>${esc(r.terminal || '')}</td>
                  <td>${esc(r.description || '')}</td>
@@ -1165,8 +1173,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
   const sectionMap = new Map();
   for (const f of getEffectiveFields(type, item)) {
     if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
-    // PLC racks have no meaningful subtype — hide the field
-    if (f.key === 'assetSubclass' && item.assetClass === 'PLC') continue;
+    if (f.key === 'assetSubclass' && !(ENTITY.assets.classSubclasses?.[item.assetClass]?.length)) continue;
     const rawVal = item[f.key];
     let displayVal;
     if (f.type === 'ref') {
@@ -1456,7 +1463,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
       const presetField  = btn.dataset.presetField;
       const presetVal    = btn.dataset.presetVal;
       const extraPresets = btn.dataset.extraPresets ? JSON.parse(btn.dataset.extraPresets) : {};
-      if ((childType === 'power' || childType === 'safety') && presetField === 'panelId') {
+      if (childType === 'assets' || ((childType === 'power' || childType === 'safety') && presetField === 'panelId')) {
         openAssignOrCreate(childType, presetField, presetVal);
       } else {
         openSheet(childType, null, { field: presetField, value: presetVal, extra: extraPresets });
@@ -1486,7 +1493,7 @@ function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
         <span class="section-label" style="margin:0">${esc(title)}</span>
         ${chevron}
       </button>
-      <div class="det-section-body" style="${expanded ? '' : 'display:none'}"
+      <div class="det-section-body" style="${expanded ? '' : 'display:none'}">
         ${bodyHtml}
       </div>
     </div>
@@ -2671,6 +2678,7 @@ async function saveForm() {
     await refreshAll();
     closeSheet();
     showToast(`${cfg.label} duplicated`, 'success');
+    renderPage();
     openDetail(type, saved.id);
     return;
   }

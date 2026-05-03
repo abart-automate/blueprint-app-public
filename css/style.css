@@ -1456,6 +1456,10 @@ body {
 }
 .wiring-det-table tr:last-child td { border-bottom: none; }
 .wiring-det-terminal { font-size: 14px; font-weight: 700; color: var(--text); }
+/* IO points table overrides: narrow # column, fixed Terminal column */
+.io-points-det-table th:first-child { width: 36px; text-align: center; }
+.io-points-det-table td:first-child { text-align: center; font-weight: 700; color: var(--muted); }
+.io-points-det-table td:nth-child(3) { width: 90px; }
 .sn-det-list { display: flex; flex-direction: column; gap: 10px; }
 .sn-det-row {
   padding: 10px 12px;
