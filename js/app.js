@@ -3,6 +3,7 @@
    ============================================================ */
 
 const SERIAL_FIELDS = [
+  { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['RS232','RS422','RS485','Modbus RTU','Other'], required: true },
   { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Serial Configuration',
     options: ['1200','2400','4800','9600','19200','38400','57600','115200'] },
   { key: 'dataBits', label: 'Data Bits', type: 'enum', section: 'Serial Configuration', options: ['7','8'] },
@@ -135,33 +136,35 @@ const ENTITY = {
     color: '#16a34a', bgColor: '#dcfce7', badgeClass: 'badge-network',
     fields: [
       { key: 'name',        label: 'Name',          type: 'text',  required: true },
-      { key: 'networkType', label: 'Protocol Type',  type: 'enum',  required: true,
-        options: ['Ethernet/IP','ControlNet','DeviceNet','Modbus TCP','Modbus RTU','Serial-RS232','Serial-RS485','Other'] },
-      { key: 'areaId',      label: 'Area',           type: 'ref',   refStore: 'areas' },
-      { key: 'panelId',     label: 'Panel',          type: 'ref',   refStore: 'panels' },
+      { key: 'networkType', label: 'Network Type',  type: 'enum',  required: true,
+        options: ['Ethernet','ControlNet','DeviceNet','DH+','Remote-IO','Serial','Other'] },
       { key: 'description', label: 'Description',    type: 'textarea' },
       { key: 'notes',       label: 'Notes',          type: 'textarea' },
     ],
     protocolFields: {
-      'Ethernet/IP': [
-        { key: 'ipRange',  label: 'IP Range / Subnet', type: 'text', section: 'Network Configuration' },
-        { key: 'gateway',  label: 'Gateway',            type: 'text', section: 'Network Configuration' },
-        { key: 'vlanId',   label: 'VLAN ID',            type: 'text', section: 'Network Configuration' },
-      ],
-      'Modbus TCP': [
+      'Ethernet': [
         { key: 'ipRange',  label: 'IP Range / Subnet', type: 'text', section: 'Network Configuration' },
         { key: 'gateway',  label: 'Gateway',            type: 'text', section: 'Network Configuration' },
         { key: 'vlanId',   label: 'VLAN ID',            type: 'text', section: 'Network Configuration' },
       ],
       'ControlNet': [
-        { key: 'cnChannel', label: 'Channel', type: 'text', section: 'Network Configuration' },
         ],
       'DeviceNet': [
         { key: 'powerId', label: 'Power Supply', type: 'ref', refStore: 'power', section: 'Network Configuration' },
+        { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Network Configuration',
+    options: ['125K','250K','500K'] },
        ],
-      'Modbus RTU':   SERIAL_FIELDS,
-      'Serial-RS232': SERIAL_FIELDS,
-      'Serial-RS485': SERIAL_FIELDS,
+      'DH+':   [
+        { key: 'dhChannel', label: 'Channel', type: 'enum', section: 'Network Configuration',
+    options: ['A','B'] },
+        { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Network Configuration',
+    options: ['57.6K','115.2K','230.4K'] },
+      ],
+      'Remote-IO':   [
+        { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Network Configuration',
+    options: ['57.6K','115.2K','230.4K'] },
+      ],
+      'Serial':   SERIAL_FIELDS,
     },
     getSubtitle: (item, refs) => {
       const panel = item.panelId ? refs?.panels?.[item.panelId]?.name : null;
@@ -200,12 +203,8 @@ const ENTITY = {
     ],
     // Fields shown based on the linked network's protocol type
     networkTypeFields: {
-      'Ethernet/IP': [
-        { key: 'ipAddress',  label: 'IP Address',   type: 'text', section: 'Network Address' },
-        { key: 'subnetMask', label: 'Subnet Mask',  type: 'text', section: 'Network Address' },
-        { key: 'gateway',    label: 'Gateway',      type: 'text', section: 'Network Address' },
-      ],
-      'Modbus TCP': [
+      'Ethernet': [
+        { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['Ethernet','Modbus TCP','Other'], required: true },
         { key: 'ipAddress',  label: 'IP Address',   type: 'text', section: 'Network Address' },
         { key: 'subnetMask', label: 'Subnet Mask',  type: 'text', section: 'Network Address' },
         { key: 'gateway',    label: 'Gateway',      type: 'text', section: 'Network Address' },
@@ -216,17 +215,16 @@ const ENTITY = {
       'DeviceNet': [
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' },
       ],
-      'Modbus RTU': [
-        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' },
+      'Serial': [
+        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' }
       ],
-      'Serial-RS232': [],
-      'Serial-RS485': [],
     },
     // Extra fields per device type subclass
     subclassFields: {
       General: [
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Device Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Device Details' },
+        { key: 'networkId',       label: 'Network',         type: 'ref',  refStore: 'networks' },
       ],
       Switch: [
         { key: 'switchManaged',   label: 'Switch Type',      type: 'enum', options: ['Managed','Unmanaged'], section: 'Switch Details' },
@@ -1498,6 +1496,21 @@ async function renderForm() {
       // Wire switchManaged change after its select is in the DOM
       const switchManagedSel = $('f-switchManaged');
       if (switchManagedSel) switchManagedSel.addEventListener('change', updateSwitchTables);
+      // Auto-populate port rows when portCount changes
+      const portCountEl = $('f-portCount');
+      if (portCountEl) {
+        portCountEl.addEventListener('change', () => {
+          const count   = Math.max(0, parseInt(portCountEl.value) || 0);
+          const current = state.formSwitchPorts.length;
+          if (count > current) {
+            for (let i = current + 1; i <= count; i++)
+              state.formSwitchPorts.push({ portName: `Port ${i}`, networkId: '', assetId: '' });
+          } else if (count < current) {
+            state.formSwitchPorts.splice(count);
+          }
+          renderSwitchPortsTable();
+        });
+      }
       updateSwitchTables();
     };
 
@@ -1693,14 +1706,15 @@ function renderSwitchNetworksTable() {
   const container = $('switch-networks-container');
   if (!container) return;
   const rows = state.formSwitchNetworks;
-  const netOpts = (state.cache.networks || [])
-    .map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+  const makeNetOpts = (selectedId) =>
+    (state.cache.networks || [])
+      .map(n => `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`).join('');
   const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
   let html = rows.map((r, i) => `
     <div class="wiring-form-row">
       <select class="f-select sn-network" data-idx="${i}">
         <option value="">— Select Network —</option>
-        ${netOpts.replace(`value="${r.networkId}"`, `value="${r.networkId}" selected`)}
+        ${makeNetOpts(r.networkId)}
       </select>
       <button type="button" class="wiring-rm-btn sn-rm" data-idx="${i}">${rmIcon}</button>
     </div>`).join('');
@@ -1709,12 +1723,18 @@ function renderSwitchNetworksTable() {
   container.querySelectorAll('.sn-network').forEach(sel => {
     sel.addEventListener('change', () => {
       state.formSwitchNetworks[+sel.dataset.idx].networkId = sel.value;
+      renderSwitchPortsTable(); // port network dropdowns depend on assigned networks
     });
   });
   container.querySelectorAll('.sn-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
+      const removedNetId = state.formSwitchNetworks[+btn.dataset.idx].networkId;
       state.formSwitchNetworks.splice(+btn.dataset.idx, 1);
+      // Clear any port that was using the removed network
+      if (removedNetId) {
+        state.formSwitchPorts.forEach(p => { if (p.networkId === removedNetId) p.networkId = ''; });
+      }
       renderSwitchNetworksTable();
     });
   });
@@ -1722,47 +1742,82 @@ function renderSwitchNetworksTable() {
     state.formSwitchNetworks.push({ networkId: '' });
     renderSwitchNetworksTable();
   });
+  renderSwitchPortsTable(); // keep port network dropdowns in sync
 }
 
 function renderSwitchPortsTable() {
   const container = $('switch-ports-container');
   if (!container) return;
   const rows = state.formSwitchPorts;
-  const netOpts   = (state.cache.networks || [])
-    .map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
-  const assetOpts = (state.cache.assets || [])
-    .map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
   const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  // Only networks assigned to this switch are available for ports
+  const assignedNetIds = new Set(state.formSwitchNetworks.map(r => r.networkId).filter(Boolean));
+  const assignedNets   = (state.cache.networks || []).filter(n => assignedNetIds.has(n.id));
+
+  const makeNetOpts = (selectedId) =>
+    assignedNets.map(n =>
+      `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`
+    ).join('');
+
+  // Devices on the port's network, or unassigned to any network
+  const makeDeviceOpts = (networkId, selectedId) =>
+    (state.cache.assets || [])
+      .filter(a => !networkId || !a.networkId || a.networkId === networkId)
+      .map(a =>
+        `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`
+      ).join('');
+
   let html = rows.map((r, i) => `
     <div class="wiring-form-row">
       <input class="f-input wiring-terminal sp-port" type="text" placeholder="Port" data-idx="${i}" value="${esc(r.portName || '')}">
       <select class="f-select sp-network" data-idx="${i}">
         <option value="">— Network —</option>
-        ${netOpts.replace(`value="${r.networkId}"`, `value="${r.networkId}" selected`)}
+        ${makeNetOpts(r.networkId)}
       </select>
       <select class="f-select sp-device" data-idx="${i}">
         <option value="">— Device —</option>
-        ${assetOpts.replace(`value="${r.assetId}"`, `value="${r.assetId}" selected`)}
+        ${makeDeviceOpts(r.networkId, r.assetId)}
       </select>
       <button type="button" class="wiring-rm-btn sp-rm" data-idx="${i}">${rmIcon}</button>
     </div>`).join('');
   html += `<button type="button" class="wiring-add-btn sp-add">+ Add Port</button>`;
   container.innerHTML = html;
+
   container.querySelectorAll('.sp-port').forEach(inp => {
     inp.addEventListener('change', () => {
       state.formSwitchPorts[+inp.dataset.idx].portName = inp.value;
     });
   });
+
   container.querySelectorAll('.sp-network').forEach(sel => {
     sel.addEventListener('change', () => {
-      state.formSwitchPorts[+sel.dataset.idx].networkId = sel.value;
+      const idx = +sel.dataset.idx;
+      const newNetId = sel.value;
+      // Clear device if it's not compatible with the new network
+      const currentAssetId = state.formSwitchPorts[idx].assetId;
+      if (currentAssetId) {
+        const asset = state.refs.assets?.[currentAssetId];
+        if (asset?.networkId && asset.networkId !== newNetId) {
+          state.formSwitchPorts[idx].assetId = '';
+        }
+      }
+      state.formSwitchPorts[idx].networkId = newNetId;
+      // Refresh only the device dropdown for this row
+      const row = container.querySelectorAll('.wiring-form-row')[idx];
+      const deviceSel = row?.querySelector('.sp-device');
+      if (deviceSel) {
+        deviceSel.innerHTML = `<option value="">— Device —</option>${makeDeviceOpts(newNetId, state.formSwitchPorts[idx].assetId)}`;
+      }
     });
   });
+
   container.querySelectorAll('.sp-device').forEach(sel => {
     sel.addEventListener('change', () => {
       state.formSwitchPorts[+sel.dataset.idx].assetId = sel.value;
     });
   });
+
   container.querySelectorAll('.sp-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -1770,8 +1825,10 @@ function renderSwitchPortsTable() {
       renderSwitchPortsTable();
     });
   });
+
   container.querySelector('.sp-add')?.addEventListener('click', () => {
-    state.formSwitchPorts.push({ portName: '', networkId: '', assetId: '' });
+    const nextNum = state.formSwitchPorts.length + 1;
+    state.formSwitchPorts.push({ portName: `Port ${nextNum}`, networkId: '', assetId: '' });
     renderSwitchPortsTable();
     const inputs = container.querySelectorAll('.sp-port');
     inputs[inputs.length - 1]?.focus();
