@@ -8,7 +8,7 @@ const PLC_CARD_TYPE_FIELDS = {
                   { key: 'signalType',   label: 'Signal Type',    type: 'enum',
                     options: ['4-20mA','0-10V','Thermocouple','RTD'] }],
   Digital:       [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
-                  { key: 'voltageLevel', label: 'Voltage Level',  type: 'enum',
+                  { key: 'voltageLevel', label: 'Voltage',  type: 'enum',
                     options: ['24VDC','120VAC','240VAC'] }],
   Communication: [{ key: 'networkId', label: 'Network',  type: 'ref', refStore: 'networks' },
                   { key: 'protocol',  label: 'Protocol', type: 'text' }],
@@ -49,7 +49,8 @@ const ENTITY = {
       { key: 'manufacturer',label: 'Manufacturer',     type: 'text' },
       { key: 'description', label: 'Description',      type: 'textarea' },
       // Nameplate Data
-      { key: 'npVoltage',        label: 'Voltage',          type: 'text',    section: 'Nameplate Data' },
+      { key: 'voltageLevel', label: 'Voltage',  type: 'enum', section: 'Nameplate Data',
+                    options: ['24VDC','120VAC','240VAC', '480VAC','600VAC'] },
       { key: 'npPhase',          label: 'Phase',            type: 'enum',    options: ['1','3'], section: 'Nameplate Data' },
       { key: 'npSccr',           label: 'SCCR',             type: 'text',    section: 'Nameplate Data' },
       { key: 'npFla',            label: 'FLA',              type: 'text',    section: 'Nameplate Data' },
@@ -108,12 +109,14 @@ const ENTITY = {
       { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
       { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
       // Input Power
-      { key: 'inVoltage',           label: 'Voltage',            type: 'text',                       section: 'Input Power' },
+      { key: 'inVoltage',           label: 'Voltage',            type: 'enum',                      section: 'Input Power',
+        options: ['24VDC','120VAC','240VAC', '480VAC','600VAC','Other'],},
       { key: 'inAmperage',          label: 'Amperage',           type: 'text',                       section: 'Input Power' },
       { key: 'inPhase',             label: 'Phase',              type: 'enum', options: ['1', '3'],  section: 'Input Power' },
       { key: 'inCircuitProtection', label: 'Circuit Protection', type: 'text',                       section: 'Input Power' },
       // Output Power
-      { key: 'outVoltage',  label: 'Voltage',  type: 'text',                      section: 'Output Power' },
+      { key: 'outVoltage',  label: 'Voltage',  type: 'enum',                      section: 'Output Power',
+        options: ['5VDC','24VDC','24VAC','120VAC','240VAC', '480VAC','600VAC', 'Other'],},
       { key: 'outAmperage', label: 'Amperage', type: 'text',                      section: 'Output Power' },
       { key: 'outPhase',    label: 'Phase',    type: 'enum', options: ['1', '3'], section: 'Output Power' },
       { key: 'notes', label: 'Notes', type: 'textarea' },
@@ -2687,11 +2690,8 @@ async function saveForm() {
   closeSheet();
   showToast(`${cfg.label} saved`, 'success');
 
-  if (state.detailType) {
-    renderDetail();
-  } else {
-    renderPage();
-  }
+  renderPage();
+  if (state.detailType) renderDetail();
 }
 
 /* ============================================================
@@ -2742,7 +2742,6 @@ async function deleteItem(type, id, name) {
   }
 
   await refreshAll();
-  state.detailStack = [];
   closeDetail();
   showToast(`${ENTITY[type].label} deleted`);
   renderPage();
@@ -2762,6 +2761,15 @@ async function cascadeDeleteItem(type, id) {
 /* ============================================================
    DUPLICATE
    ============================================================ */
+
+function uniqueCopyName(store, baseName) {
+  const existing = new Set((state.cache[store] || []).map(i => i.name));
+  const candidate = `${baseName} (copy)`;
+  if (!existing.has(candidate)) return candidate;
+  let n = 2;
+  while (existing.has(`${baseName} (copy ${n})`)) n++;
+  return `${baseName} (copy ${n})`;
+}
 
 async function duplicateItem(type, id) {
   await refreshAll();
@@ -2790,7 +2798,7 @@ async function duplicateItem(type, id) {
   }
 
   state.formDuplicateSource = { sourceId: id, duplicateChildren };
-  const copy = { ...original, name: `${original.name} (copy)` };
+  const copy = { ...original, name: uniqueCopyName(type, original.name) };
   openSheet(type, null, { copyFrom: copy });
 }
 
@@ -2801,7 +2809,7 @@ async function cascadeDuplicateChildren(type, sourceId, newParentId) {
       .filter(i => i[rel.field] === sourceId && (!rel.filter || rel.filter(i)));
     for (const child of children) {
       const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = child;
-      const childCopy = { ...rest, [rel.field]: newParentId, name: `${child.name} (copy)` };
+      const childCopy = { ...rest, [rel.field]: newParentId, name: uniqueCopyName(rel.store, child.name) };
       const saved = await upsert(rel.store, childCopy);
       await cascadeDuplicateChildren(rel.store, child.id, saved.id);
     }
