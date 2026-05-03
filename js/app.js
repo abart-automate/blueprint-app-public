@@ -310,6 +310,7 @@ const state = {
   detailStack:      [],   // [{type, id, slotNumber?}] – navigation history within detail panel
   detailSlotNumber: null, // slot index when viewing a PLC slot detail
   detailChanges:    {},   // { key: newValue } for inline edits in the detail view
+  formDuplicateSource: null, // { sourceId, duplicateChildren } set when duplicating an item
   pickerMeta:    null, // { childType, parentField, parentId, selected: Set } for assign picker
   cache:      {},     // { storeName: [items] }
   refs:       {},     // { storeName: { id: item } } – flat lookup maps
@@ -493,7 +494,7 @@ function openSheet(type, id = null, preset = null) {
   state.formType   = type;
   state.formId     = id;
   state.formPreset = preset;
-  const existing = id ? state.refs[type]?.[id] : null;
+  const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
   state.formImages      = existing?.images      ? [...existing.images]      : [];
   state.formNamedPhotos = existing?.namedPhotos ? {...existing.namedPhotos} : {};
   state.formWiringTables = {};
@@ -505,8 +506,13 @@ function openSheet(type, id = null, preset = null) {
   state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map(r => ({...r})) : [];
   state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map(r => ({...r}))    : [];
   state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map(r => ({...r}))       : [];
-  const subLabel = !id ? (preset?.extra?.assetSubclass || existing?.assetSubclass) : existing?.assetSubclass;
-  el.formTitle.textContent = (id ? 'Edit ' : 'Add ') + (subLabel || ENTITY[type].label);
+  const isCopy   = !id && !!preset?.copyFrom;
+  const subLabel = isCopy
+    ? (existing?.assetSubclass || null)
+    : (!id ? (preset?.extra?.assetSubclass || existing?.assetSubclass) : existing?.assetSubclass);
+  el.formTitle.textContent = isCopy
+    ? `Duplicate ${subLabel || ENTITY[type].label}`
+    : (id ? 'Edit ' : 'Add ') + (subLabel || ENTITY[type].label);
   renderForm();
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';
@@ -530,6 +536,7 @@ function closeSheet() {
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
   state.formIoPoints       = [];
+  state.formDuplicateSource = null;
   state.pickerMeta        = null;
 }
 
@@ -1354,6 +1361,9 @@ async function renderDetail({ preserveScroll = false } = {}) {
         ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}" readonly>`
         : `<div class="det-name-row">
              <div class="det-name">${esc(item.name)}</div>
+             <button class="det-edit-btn" id="det-duplicate" aria-label="Duplicate">
+               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+             </button>
              <button class="det-edit-btn" id="det-edit" aria-label="Edit">
                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
              </button>
@@ -1388,6 +1398,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
   });
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
 
+  el.detail.querySelector('#det-duplicate')?.addEventListener('click', () => duplicateItem(type, id));
   el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSheet(type, id));
 
   // Save bar buttons
@@ -1736,12 +1747,13 @@ async function renderForm() {
   const cfg      = ENTITY[type];
   const rawExisting = id ? await getById(type, id) : null;
   // For new forms, synthesize defaults from preset so dropdowns pre-select correctly
-  const existing = rawExisting ?? ((!id && state.formPreset)
-    ? {
-        ...(state.formPreset.extra || {}),
-        ...(state.formPreset.field ? { [state.formPreset.field]: state.formPreset.value } : {}),
-      }
-    : null);
+  const existing = rawExisting ?? (
+    !id && state.formPreset?.copyFrom ? state.formPreset.copyFrom :
+    !id && state.formPreset ? {
+      ...(state.formPreset.extra || {}),
+      ...(state.formPreset.field ? { [state.formPreset.field]: state.formPreset.value } : {}),
+    } : null
+  );
   await refreshAll();
 
   const FORM_PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Clearance']);
@@ -2612,6 +2624,17 @@ async function saveForm() {
     }
   }
 
+  // Enforce store-wide name uniqueness
+  const nameVal = item.name?.trim();
+  if (nameVal && ENTITY[type]) {
+    const conflict = (state.cache[type] || []).find(i => i.id !== item.id && i.name === nameVal);
+    if (conflict) {
+      showToast(`Name "${nameVal}" is already in use`, 'error');
+      $('f-name')?.focus();
+      return;
+    }
+  }
+
   // Validate required fields
   for (const f of getEffectiveFields(type, item)) {
     if (f.required && !item[f.key]) {
@@ -2636,7 +2659,21 @@ async function saveForm() {
     }
   }
 
-  await upsert(type, item);
+  const saved = await upsert(type, item);
+
+  // Post-save: cascade duplicate children if this was a duplication
+  if (state.formDuplicateSource) {
+    const { sourceId, duplicateChildren } = state.formDuplicateSource;
+    state.formDuplicateSource = null;
+    if (duplicateChildren) {
+      await cascadeDuplicateChildren(type, sourceId, saved.id);
+    }
+    await refreshAll();
+    closeSheet();
+    showToast(`${cfg.label} duplicated`, 'success');
+    openDetail(type, saved.id);
+    return;
+  }
 
   await refreshAll();
   closeSheet();
@@ -2712,6 +2749,55 @@ async function cascadeDeleteItem(type, id) {
     }
   }
   await remove(type, id);
+}
+
+/* ============================================================
+   DUPLICATE
+   ============================================================ */
+
+async function duplicateItem(type, id) {
+  await refreshAll();
+  const original = state.refs[type]?.[id];
+  if (!original) return;
+
+  const cfg = ENTITY[type];
+  const childRels = [];
+  for (const rel of cfg.getChildren || []) {
+    const children = (state.cache[rel.store] || [])
+      .filter(i => i[rel.field] === id && (!rel.filter || rel.filter(i)));
+    if (children.length) childRels.push({ ...rel, count: children.length });
+  }
+
+  let duplicateChildren = false;
+  if (childRels.length) {
+    const desc = childRels.map(r => `${r.count} ${r.label.toLowerCase()}`).join(', ');
+    el.confirmYes.textContent = 'Yes, duplicate all';
+    el.confirmNo.textContent  = 'No, just this item';
+    duplicateChildren = await confirm(
+      'Duplicate children?',
+      `"${original.name}" has ${desc}. Duplicate these too?`
+    );
+    el.confirmYes.textContent = 'Delete';
+    el.confirmNo.textContent  = 'Cancel';
+  }
+
+  state.formDuplicateSource = { sourceId: id, duplicateChildren };
+  const copy = { ...original, name: `${original.name} (copy)` };
+  openSheet(type, null, { copyFrom: copy });
+}
+
+async function cascadeDuplicateChildren(type, sourceId, newParentId) {
+  const cfg = ENTITY[type];
+  for (const rel of cfg.getChildren || []) {
+    const children = (state.cache[rel.store] || [])
+      .filter(i => i[rel.field] === sourceId && (!rel.filter || rel.filter(i)));
+    for (const child of children) {
+      const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = child;
+      const childCopy = { ...rest, [rel.field]: newParentId, name: `${child.name} (copy)` };
+      const saved = await upsert(rel.store, childCopy);
+      await cascadeDuplicateChildren(rel.store, child.id, saved.id);
+    }
+  }
 }
 
 /* ============================================================
