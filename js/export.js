@@ -87,68 +87,56 @@ async function exportToZip() {
 
 async function exportExcel() {
   try {
-    showExportProgress('Starting Excel export...');
+    if (typeof XLSX === 'undefined') {
+      throw new Error('XLSX library is not loaded');
+    }
 
-    const [areas, panels, power, safety, assets] = await Promise.all([
+    showExportProgress('Preparing Excel export...');
+
+    const [areas, panels, power, safety, networks, assets] = await Promise.all([
       getAll('areas'),
       getAll('panels'),
       getAll('power'),
       getAll('safety'),
+      getAll('networks'),
       getAll('assets')
     ]);
 
-    const panelByArea = new Map();
-    panels.forEach(panel => {
-      const areaId = panel.areaId;
-      if (!panelByArea.has(areaId)) panelByArea.set(areaId, []);
-      panelByArea.get(areaId).push(panel);
-    });
+    const refs = {
+      areas: buildMap(areas),
+      panels: buildMap(panels),
+      power: buildMap(power),
+      safety: buildMap(safety),
+      networks: buildMap(networks),
+      assets: buildMap(assets),
+    };
 
-    const zip = new JSZip();
+    const sheets = [
+      { store: 'areas', name: 'Areas', items: areas },
+      { store: 'panels', name: 'Panels', items: panels },
+      { store: 'power', name: 'Power', items: power },
+      { store: 'safety', name: 'Safety', items: safety },
+      { store: 'networks', name: 'Networks', items: networks },
+      { store: 'assets', name: 'Assets', items: assets }
+    ];
+
+    const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalItems = panels.length + power.length + safety.length + assets.length;
+    const totalSheets = sheets.length;
 
-    for (const area of areas) {
-      const areaFolder = zip.folder(sanitizeFilename(area.name));
-      processedCount = await processAreaExcel(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems);
+    for (const sheetDef of sheets) {
+      const worksheet = buildWorksheet(sheetDef.items, sheetDef.store, refs);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(sheetDef.name));
+      processedCount++;
+      updateProgress(processedCount, totalSheets, `Adding ${sheetDef.name} sheet...`);
     }
 
-    const unassignedPanels = panels.filter(p => !p.areaId);
-    if (unassignedPanels.length > 0) {
-      const fieldFolder = zip.folder('Field Folder (Unassigned Panels)');
-      for (const panel of unassignedPanels) {
-        const panelFolder = fieldFolder.folder(sanitizeFilename(panel.name));
-        await processPanel(panel, panelFolder);
-        processedCount++;
-        updateProgress(processedCount, totalItems);
-      }
-    }
-
-    const unassignedItems = [...power, ...safety, ...assets].filter(item => !item.panelId);
-    if (unassignedItems.length > 0) {
-      const fieldFolder = zip.folder('Field Folder (Unassigned Objects)');
-      for (const item of unassignedItems) {
-        const itemFolder = fieldFolder.folder(generateObjectFolderName(item, []));
-        await processObject(item, itemFolder);
-        processedCount++;
-        updateProgress(processedCount, totalItems);
-      }
-    }
-
-    updateProgress(totalItems, totalItems, 'Generating ZIP file...');
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `blueprint-excel-export-${new Date().toISOString().split('T')[0]}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    downloadBlob(blob, `blueprint-export-${new Date().toISOString().split('T')[0]}.xlsx`);
 
     hideExportProgress();
     showToast('Excel export completed successfully!', 'success');
-
   } catch (error) {
     console.error('Excel export failed:', error);
     hideExportProgress();
@@ -156,86 +144,152 @@ async function exportExcel() {
   }
 }
 
-async function processAreaExcel(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
-  const panels = panelByArea.get(area.id) || [];
-
-  if (panels.length > 0) {
-    const panelsFolder = areaFolder.folder('Panels');
-    for (const panel of panels) {
-      const panelFolder = panelsFolder.folder(sanitizeFilename(panel.name));
-      await processPanel(panel, panelFolder);
-      processedCount++;
-      updateProgress(processedCount, totalItems);
-    }
+function buildWorksheet(items, store, refs) {
+  if (!items || !items.length) {
+    return XLSX.utils.aoa_to_sheet([['No records']]);
   }
 
-  const areaPower = power.filter(p => {
-    const panel = panels.find(panel => panel.id === p.panelId);
-    return panel && panel.areaId === area.id;
-  });
-  if (areaPower.length > 0) {
-    const powerFolder = areaFolder.folder('Power');
-    for (const item of areaPower) {
-      const itemFolder = powerFolder.folder(generateObjectFolderName(item, areaPower));
-      await processObject(item, itemFolder);
-      processedCount++;
-      updateProgress(processedCount, totalItems);
-    }
-  }
+  const orderedKeys = getExportHeaders(items, store);
+  const headerLabels = orderedKeys.map(key => getFieldLabel(store, key, items[0]));
 
-  const areaSafety = safety.filter(s => {
-    const panel = panels.find(panel => panel.id === s.panelId);
-    return panel && panel.areaId === area.id;
-  });
-  if (areaSafety.length > 0) {
-    const safetyFolder = areaFolder.folder('Safety');
-    for (const item of areaSafety) {
-      const itemFolder = safetyFolder.folder(generateObjectFolderName(item, areaSafety));
-      await processObject(item, itemFolder);
-      processedCount++;
-      updateProgress(processedCount, totalItems);
-    }
-  }
+  const rows = items.map(item => orderedKeys.map(key => {
+    const rawValue = item[key];
+    return resolveExportValue(store, key, rawValue, item, refs);
+  }));
 
-  const areaAssets = assets.filter(a => {
-    const panel = panels.find(panel => panel.id === a.panelId);
-    return panel && panel.areaId === area.id;
-  });
-  if (areaAssets.length > 0) {
-    const assetsFolder = areaFolder.folder('Assets');
-    const assetsByClass = new Map();
-    areaAssets.forEach(item => {
-      const assetClass = item.assetClass || 'Unspecified';
-      if (!assetsByClass.has(assetClass)) assetsByClass.set(assetClass, []);
-      assetsByClass.get(assetClass).push(item);
+  const worksheet = XLSX.utils.aoa_to_sheet([headerLabels, ...rows]);
+  const range = XLSX.utils.decode_range(worksheet['!ref']);
+
+  worksheet['!cols'] = headerLabels.map(label => ({ wch: Math.max(Math.min(label.length + 6, 30), 10) }));
+  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
+
+  return worksheet;
+}
+
+function getExportHeaders(items, store) {
+  const preferredOrder = [
+    'id', 'name', 'description', 'assetClass', 'assetSubclass',
+    'panelId', 'areaId', 'assignedToType', 'assignedToId',
+    'networkId', 'networkType', 'ipAddress', 'macAddress',
+    'manufacturer', 'model', 'serialNumber', 'createdAt', 'updatedAt'
+  ];
+
+  const keySet = new Set();
+  items.forEach(item => {
+    Object.keys(item).forEach(key => {
+      if (key === 'images' || key === 'namedPhotos') return;
+      keySet.add(key);
     });
+  });
 
-    for (const assetClass of Array.from(assetsByClass.keys()).sort()) {
-      const classFolder = assetsFolder.folder(sanitizeFilename(assetClass));
-      const items = assetsByClass.get(assetClass) || [];
-      for (const item of items) {
-        const itemFolder = classFolder.folder(generateObjectFolderName(item, items));
-        await processObject(item, itemFolder);
-        processedCount++;
-        updateProgress(processedCount, totalItems);
-      }
+  const keys = Array.from(keySet);
+  keys.sort((a, b) => {
+    const ai = preferredOrder.indexOf(a);
+    const bi = preferredOrder.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return keys;
+}
+
+function serializeExportValue(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.length === 0 ? '' : JSON.stringify(value);
+  if (typeof value === 'object') return Object.keys(value).length === 0 ? '' : JSON.stringify(value);
+  return value;
+}
+
+function resolveExportValue(store, key, value, item, refs) {
+  if (value == null || value === '') return '';
+
+  const fieldDef = findFieldDef(store, key, item);
+  const refStore = fieldDef?.refStore || REF_FIELD_MAP[key];
+  if (refStore) {
+    const target = refs?.[refStore]?.get(value);
+    return target ? (target.name || '') : '';
+  }
+
+  if (key === 'assignedToId' && item.assignedToType) {
+    const assignStore = ASSIGN_STORE_MAP[item.assignedToType];
+    if (assignStore) {
+      const target = refs?.[assignStore]?.get(value);
+      return target ? (target.name || '') : '';
     }
   }
 
-  const unassignedInArea = [...power, ...safety, ...assets].filter(item =>
-    item.areaId === area.id && !item.panelId
-  );
-  if (unassignedInArea.length > 0) {
-    const fieldFolder = areaFolder.folder('Field Folder (Unassigned Objects)');
-    for (const item of unassignedInArea) {
-      const itemFolder = fieldFolder.folder(generateObjectFolderName(item, []));
-      await processObject(item, itemFolder);
-      processedCount++;
-      updateProgress(processedCount, totalItems);
-    }
+  return serializeExportValue(value);
+}
+
+function getFieldLabel(store, key, item) {
+  const fieldDef = findFieldDef(store, key, item);
+  return fieldDef?.label || prettifyKey(key);
+}
+
+function findFieldDef(store, key, item) {
+  const entity = ENTITY[store];
+  if (!entity) return null;
+
+  const searchFields = (fields) => fields?.find(f => f.key === key);
+  let fieldDef = searchFields(entity.fields);
+  if (fieldDef) return fieldDef;
+
+  if (store === 'assets') {
+    fieldDef = searchFields(entity.classFields?.[item?.assetClass] || []);
+    if (fieldDef) return fieldDef;
+    fieldDef = searchFields(entity.subclassFields?.[item?.assetSubclass] || []);
+    if (fieldDef) return fieldDef;
+    const networkType = entity.networkTypeFields?.[item?.networkType] ? item.networkType : null;
+    fieldDef = searchFields(entity.networkTypeFields?.[networkType] || []);
+    if (fieldDef) return fieldDef;
   }
 
-  return processedCount;
+  if (store === 'networks' && item?.networkType) {
+    fieldDef = searchFields(entity.protocolFields?.[item.networkType] || []);
+    if (fieldDef) return fieldDef;
+  }
+
+  return null;
+}
+
+function prettifyKey(key) {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/Id$/, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
+}
+
+const REF_FIELD_MAP = {
+  areaId: 'areas',
+  panelId: 'panels',
+  powerId: 'power',
+  safetyId: 'safety',
+  networkId: 'networks',
+};
+
+function buildMap(items) {
+  return new Map(items.map(item => [item.id, item]));
+}
+
+function sanitizeSheetName(name) {
+  const safe = name.replace(/[:\\/?*\[\]]/g, '_');
+  return safe.substring(0, 31);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function processArea(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
