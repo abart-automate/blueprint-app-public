@@ -1130,8 +1130,8 @@ async function renderDetail({ preserveScroll = false } = {}) {
       }
     }
 
-    // Network address fields for Controller cards
-    if (slot?.cardType === 'Controller' && network) {
+    // Network address fields for Controller and Communication cards
+    if ((slot?.cardType === 'Controller' || slot?.cardType === 'Communication') && network) {
       const netFields = ENTITY.assets.networkTypeFields?.[network.networkType] || [];
       for (const f of netFields) fieldsHtml += field(f.label, slot?.[f.key]);
     }
@@ -2740,7 +2740,7 @@ async function saveForm() {
       const el2 = $(`f-${f.key}`);
       if (el2) slotData[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
-    if (cardType === 'Controller') {
+    if (cardType === 'Controller' || cardType === 'Communication') {
       const linkedNet = state.refs.networks?.[slotData.networkId];
       for (const f of ENTITY.assets.networkTypeFields?.[linkedNet?.networkType] || []) {
         const el2 = $(`f-${f.key}`);
