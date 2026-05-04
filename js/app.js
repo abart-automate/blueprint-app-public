@@ -124,7 +124,8 @@ const ENTITY = {
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
     getChildren: [
       { label: 'Safety Circuits', store: 'safety', field: 'powerId' },
-      { label: 'Assets',   store: 'assets',   field: 'powerId'},
+      { label: 'Assets', store: 'assets', field: 'powerId',
+        countFn: (all, id) => all.filter(a => a.powerId === id || (a.assetClass === 'PLC' && a.slots?.some(s => s.powerBus?.some(pb => pb.type === 'Power' && pb.refId === id)))).length },
     ],
   },
 
@@ -141,7 +142,8 @@ const ENTITY = {
     ],
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
     getChildren: [
-      { label: 'Assets',   store: 'assets',   field: 'safetyId' },
+      { label: 'Assets', store: 'assets', field: 'safetyId',
+        countFn: (all, id) => all.filter(a => a.safetyId === id || (a.assetClass === 'PLC' && a.slots?.some(s => s.powerBus?.some(pb => pb.type === 'Safety Circuit' && pb.refId === id)))).length },
     ],
   },
 
@@ -188,7 +190,7 @@ const ENTITY = {
     },
     getChildren: [
       { label: 'Assets', store: 'assets', field: 'networkId',
-        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id)).length },
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === id))).length },
     ],
   },
 
@@ -1328,12 +1330,17 @@ async function renderDetail({ preserveScroll = false } = {}) {
             const inUse = (slot.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
             ioTag = `<span class="sn-det-field">IO<strong>${inUse}/${total}</strong></span>`;
           }
+          let ipTag = '';
+          if (slot.cardType === 'Controller' || slot.cardType === 'Communication') {
+            const addr = slot.ipAddress || slot.nodeAddress;
+            if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
+          }
           return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
             <div class="rack-slot-hdr">
               <span class="sn-det-name">Slot ${k}</span>
               <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${item.id}" data-slot-num="${k}" aria-label="Clear slot">${clearIcon}</button>
             </div>
-            <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}</div>
+            <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}${ipTag}</div>
           </div>`;
         }
         return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
@@ -1545,6 +1552,47 @@ function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
   `;
 }
 
+function getSlotLinkedRacks(parentType, parentId) {
+  return (state.cache.assets || [])
+    .filter(a => a.assetClass === 'PLC' && a.slots?.length)
+    .map(rack => {
+      const slots = rack.slots.filter(slot => {
+        if (parentType === 'networks')
+          return (slot.cardType === 'Controller' || slot.cardType === 'Communication') && slot.networkId === parentId;
+        if (parentType === 'power')
+          return slot.powerBus?.some(pb => pb.type === 'Power' && pb.refId === parentId);
+        if (parentType === 'safety')
+          return slot.powerBus?.some(pb => pb.type === 'Safety Circuit' && pb.refId === parentId);
+        return false;
+      });
+      return slots.length ? { rack, slots } : null;
+    })
+    .filter(Boolean);
+}
+
+function slotLinkedRackCardHTML(rack, slots) {
+  const cfg = ENTITY.assets;
+  const firstImg = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
+  const thumb = firstImg
+    ? `<img class="card-thumb" src="${firstImg}" alt="">`
+    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon('assets', 24)}</div>`;
+  const panelName = rack.panelId ? state.refs.panels?.[rack.panelId]?.name : '';
+  const slotLabel = slots.map(s => `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`).join(', ');
+  return `
+    <div class="card" data-id="${rack.id}">
+      <div class="card-row">
+        ${thumb}
+        <div class="card-body">
+          <div class="card-name-row">
+            <div class="card-name">${esc(rack.name)} <span class="card-class-inline">PLC Rack</span></div>
+          </div>
+          ${panelName ? `<div class="card-location">${esc(panelName)}</div>` : ''}
+          <div class="card-location" style="color:var(--primary);font-weight:500">${esc(slotLabel)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
 async function buildChildSections(type, id, item) {
   const cfg = ENTITY[type];
   const allChildren = [
@@ -1569,8 +1617,15 @@ async function buildChildSections(type, id, item) {
         : []
     );
 
-    const rows    = filtered.map(ci => cardHTML(child.store, ci)).join('');
-    const count   = filtered.length;
+    const slotLinked = (['networks', 'power', 'safety'].includes(type) && child.store === 'assets')
+      ? getSlotLinkedRacks(type, id).filter(({ rack }) => !filtered.some(f => f.id === rack.id))
+      : [];
+
+    const rows = [
+      ...filtered.map(ci => cardHTML(child.store, ci)),
+      ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots)),
+    ].join('');
+    const count = filtered.length + slotLinked.length;
     const title   = count > 0 ? `${esc(child.label)} (${count})` : esc(child.label);
     const bodyHtml = rows
       ? `<div class="card-list child-card-list" data-child-store="${child.store}">${rows}</div>`
@@ -1779,7 +1834,7 @@ async function renderForm() {
         let ph = '';
         for (const f of fields) ph += await buildFormField(f, existing, 'assets');
         container.innerHTML = ph;
-        if (cardType === 'Controller') {
+        if (cardType === 'Controller' || cardType === 'Communication') {
           $('f-networkId')?.addEventListener('change', renderSlotNetworkAddressFields);
           await renderSlotNetworkAddressFields();
         }
