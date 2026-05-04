@@ -44,7 +44,7 @@ const ENTITY = {
     requiredPhotoSlots: ['Nameplate', 'Front (Doors Closed)', 'Front (Doors Open)'],
     fields: [
       { key: 'name',        label: 'Name',             type: 'text',     required: true },
-      { key: 'areaId',      label: 'Area',             type: 'ref',      refStore: 'areas' },
+      { key: 'areaId',      label: 'Area',             type: 'ref',      refStore: 'areas', filterChip: true },
       { key: 'location',    label: 'Location',         type: 'text' },
       { key: 'manufacturer',label: 'Manufacturer',     type: 'text' },
       { key: 'description', label: 'Description',      type: 'textarea' },
@@ -93,7 +93,7 @@ const ENTITY = {
     ],
     fields: [
       { key: 'name',         label: 'Name',         type: 'text',     required: true },
-      { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels' },
+      { key: 'panelId',      label: 'Panel',        type: 'ref',      refStore: 'panels', filterChip: true },
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
@@ -134,7 +134,7 @@ const ENTITY = {
     color: '#dc2626', bgColor: '#fee2e2', badgeClass: 'badge-safety',
     fields: [
       { key: 'name',           label: 'Name',             type: 'text',     required: true },
-      { key: 'panelId',        label: 'Panel',            type: 'ref',      refStore: 'panels' },
+      { key: 'panelId',        label: 'Panel',            type: 'ref',      refStore: 'panels', filterChip: true },
       { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
       { key: 'safetyCategory', label: 'Safety Category',  type: 'enum',     options: ['CAT B','CAT 1','CAT 2','CAT 3','CAT 4','PLa','PLb','PLc','PLd','PLe','SIL 1','SIL 2','SIL 3'] },
       { key: 'description',    label: 'Description',      type: 'textarea' },
@@ -200,7 +200,7 @@ const ENTITY = {
     requiredPhotoSlots: ['Device Front', 'Part Number'],
     fields: [
       { key: 'name',          label: 'Name',          type: 'text', required: true },
-      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true },
+      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true, enumFilterChip: true },
       { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
       { key: 'powerId',        label: 'Power', type: 'ref',      refStore: 'power'},
@@ -722,8 +722,9 @@ async function renderPage() {
   if (state.page === 'plc') {
     await renderList('assets', {
       preFilter: a => a.assetClass === 'PLC',
-      label:  'PLC Rack',
-      plural: 'PLC Racks',
+      label:     'PLC Rack',
+      plural:    'PLC Racks',
+      chipField: 'panelId',
     });
     return;
   }
@@ -909,7 +910,7 @@ async function renderList(type, opts = {}) {
   const cfgLabel   = opts.label  || cfg.label;
   const cfgPlural  = opts.plural || cfg.plural;
 
-  const parentFilter = buildParentFilterChips(type, items);
+  const parentFilter = buildParentFilterChips(type, items, opts.chipField);
 
   el.main.innerHTML = `
     <div class="search-wrap">
@@ -931,7 +932,7 @@ async function renderList(type, opts = {}) {
     const q     = el.main.querySelector('#list-search')?.value?.toLowerCase() || '';
     const shown = items.filter(item => {
       const matchQ = !q || item.name?.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q) || item.tag?.toLowerCase().includes(q);
-      const matchP = activeParent === 'all' || matchParentChip(type, item, activeParent);
+      const matchP = activeParent === 'all' || matchParentChip(type, item, activeParent, opts.chipField);
       return matchQ && matchP;
     });
 
@@ -1046,21 +1047,8 @@ function cardHTML(type, item) {
 }
 
 /* ---- PARENT FILTER CHIPS ---- */
-function buildParentFilterChips(type, items) {
-  const parentField = ENTITY[type]?.fields.find(f => f.type === 'ref' && f.required);
-  if (!parentField) return { html: '', bind: () => {} };
-  const refStore = parentField.refStore;
-  const parentIds = [...new Set(items.map(i => i[parentField.key]).filter(Boolean))];
-  if (!parentIds.length) return { html: '', bind: () => {} };
-  const parents = parentIds.map(id => state.refs[refStore]?.[id]).filter(Boolean);
-  if (!parents.length) return { html: '', bind: () => {} };
-  const html = `
-    <div class="chips" id="filter-chips">
-      <button class="chip active" data-val="all">All</button>
-      ${parents.map(p => `<button class="chip" data-val="${p.id}">${esc(p.name)}</button>`).join('')}
-    </div>
-  `;
-  const bind = (container) => {
+function buildParentFilterChips(type, items, chipFieldKey) {
+  const bindChips = (container) => {
     const chips = container.querySelector('#filter-chips');
     if (!chips) return;
     chips.addEventListener('click', e => {
@@ -1071,13 +1059,56 @@ function buildParentFilterChips(type, items) {
       container.dispatchEvent(new CustomEvent('chip-change', { detail: chip.dataset.val }));
     });
   };
-  return { html, bind };
+
+  const parentField = chipFieldKey
+    ? ENTITY[type]?.fields.find(f => f.key === chipFieldKey)
+    : ENTITY[type]?.fields.find(f => f.type === 'ref' && (f.required || f.filterChip));
+  if (parentField) {
+    const refStore = parentField.refStore;
+    const parentIds = [...new Set(items.map(i => i[parentField.key]).filter(Boolean))];
+    const hasUnassigned = items.some(i => !i[parentField.key]);
+    if (!parentIds.length && !hasUnassigned) return { html: '', bind: () => {} };
+    const parents = parentIds.map(id => state.refs[refStore]?.[id]).filter(Boolean);
+    if (!parents.length && !hasUnassigned) return { html: '', bind: () => {} };
+    const html = `
+      <div class="chips" id="filter-chips">
+        <button class="chip active" data-val="all">All</button>
+        ${parents.map(p => `<button class="chip" data-val="${p.id}">${esc(p.name)}</button>`).join('')}
+        ${hasUnassigned ? `<button class="chip" data-val="unassigned">Unassigned</button>` : ''}
+      </div>
+    `;
+    return { html, bind: bindChips };
+  }
+
+  const enumField = ENTITY[type]?.fields.find(f => f.enumFilterChip);
+  if (enumField) {
+    const values = [...new Set(items.map(i => i[enumField.key]).filter(Boolean))];
+    if (!values.length) return { html: '', bind: () => {} };
+    const html = `
+      <div class="chips" id="filter-chips">
+        <button class="chip active" data-val="all">All</button>
+        ${values.map(v => `<button class="chip" data-val="${esc(v)}">${esc(v)}</button>`).join('')}
+      </div>
+    `;
+    return { html, bind: bindChips };
+  }
+
+  return { html: '', bind: () => {} };
 }
 
-function matchParentChip(type, item, parentId) {
-  const parentField = ENTITY[type]?.fields.find(f => f.type === 'ref' && f.required);
-  if (!parentField) return true;
-  return item[parentField.key] === parentId;
+function matchParentChip(type, item, parentId, chipFieldKey) {
+  const field = chipFieldKey
+    ? ENTITY[type]?.fields.find(f => f.key === chipFieldKey)
+    : ENTITY[type]?.fields.find(f => f.type === 'ref' && (f.required || f.filterChip));
+  if (field?.type === 'ref') {
+    if (parentId === 'unassigned') return !item[field.key];
+    return item[field.key] === parentId;
+  }
+  if (!chipFieldKey) {
+    const enumField = ENTITY[type]?.fields.find(f => f.enumFilterChip);
+    if (enumField) return item[enumField.key] === parentId;
+  }
+  return true;
 }
 
 /* ============================================================

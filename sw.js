@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.1.0';
 const CACHE_NAME = `plant-asset-${APP_VERSION}`;
 
 // All static files that make up the app shell.
@@ -9,6 +9,7 @@ const APP_SHELL = [
   './css/style.css',
   './js/db.js',
   './js/app.js',
+  './js/export.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
