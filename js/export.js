@@ -85,6 +85,159 @@ async function exportToZip() {
   }
 }
 
+async function exportExcel() {
+  try {
+    showExportProgress('Starting Excel export...');
+
+    const [areas, panels, power, safety, assets] = await Promise.all([
+      getAll('areas'),
+      getAll('panels'),
+      getAll('power'),
+      getAll('safety'),
+      getAll('assets')
+    ]);
+
+    const panelByArea = new Map();
+    panels.forEach(panel => {
+      const areaId = panel.areaId;
+      if (!panelByArea.has(areaId)) panelByArea.set(areaId, []);
+      panelByArea.get(areaId).push(panel);
+    });
+
+    const zip = new JSZip();
+    let processedCount = 0;
+    const totalItems = panels.length + power.length + safety.length + assets.length;
+
+    for (const area of areas) {
+      const areaFolder = zip.folder(sanitizeFilename(area.name));
+      processedCount = await processAreaExcel(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems);
+    }
+
+    const unassignedPanels = panels.filter(p => !p.areaId);
+    if (unassignedPanels.length > 0) {
+      const fieldFolder = zip.folder('Field Folder (Unassigned Panels)');
+      for (const panel of unassignedPanels) {
+        const panelFolder = fieldFolder.folder(sanitizeFilename(panel.name));
+        await processPanel(panel, panelFolder);
+        processedCount++;
+        updateProgress(processedCount, totalItems);
+      }
+    }
+
+    const unassignedItems = [...power, ...safety, ...assets].filter(item => !item.panelId);
+    if (unassignedItems.length > 0) {
+      const fieldFolder = zip.folder('Field Folder (Unassigned Objects)');
+      for (const item of unassignedItems) {
+        const itemFolder = fieldFolder.folder(generateObjectFolderName(item, []));
+        await processObject(item, itemFolder);
+        processedCount++;
+        updateProgress(processedCount, totalItems);
+      }
+    }
+
+    updateProgress(totalItems, totalItems, 'Generating ZIP file...');
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `blueprint-excel-export-${new Date().toISOString().split('T')[0]}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    hideExportProgress();
+    showToast('Excel export completed successfully!', 'success');
+
+  } catch (error) {
+    console.error('Excel export failed:', error);
+    hideExportProgress();
+    showToast('Excel export failed: ' + error.message, 'error');
+  }
+}
+
+async function processAreaExcel(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
+  const panels = panelByArea.get(area.id) || [];
+
+  if (panels.length > 0) {
+    const panelsFolder = areaFolder.folder('Panels');
+    for (const panel of panels) {
+      const panelFolder = panelsFolder.folder(sanitizeFilename(panel.name));
+      await processPanel(panel, panelFolder);
+      processedCount++;
+      updateProgress(processedCount, totalItems);
+    }
+  }
+
+  const areaPower = power.filter(p => {
+    const panel = panels.find(panel => panel.id === p.panelId);
+    return panel && panel.areaId === area.id;
+  });
+  if (areaPower.length > 0) {
+    const powerFolder = areaFolder.folder('Power');
+    for (const item of areaPower) {
+      const itemFolder = powerFolder.folder(generateObjectFolderName(item, areaPower));
+      await processObject(item, itemFolder);
+      processedCount++;
+      updateProgress(processedCount, totalItems);
+    }
+  }
+
+  const areaSafety = safety.filter(s => {
+    const panel = panels.find(panel => panel.id === s.panelId);
+    return panel && panel.areaId === area.id;
+  });
+  if (areaSafety.length > 0) {
+    const safetyFolder = areaFolder.folder('Safety');
+    for (const item of areaSafety) {
+      const itemFolder = safetyFolder.folder(generateObjectFolderName(item, areaSafety));
+      await processObject(item, itemFolder);
+      processedCount++;
+      updateProgress(processedCount, totalItems);
+    }
+  }
+
+  const areaAssets = assets.filter(a => {
+    const panel = panels.find(panel => panel.id === a.panelId);
+    return panel && panel.areaId === area.id;
+  });
+  if (areaAssets.length > 0) {
+    const assetsFolder = areaFolder.folder('Assets');
+    const assetsByClass = new Map();
+    areaAssets.forEach(item => {
+      const assetClass = item.assetClass || 'Unspecified';
+      if (!assetsByClass.has(assetClass)) assetsByClass.set(assetClass, []);
+      assetsByClass.get(assetClass).push(item);
+    });
+
+    for (const assetClass of Array.from(assetsByClass.keys()).sort()) {
+      const classFolder = assetsFolder.folder(sanitizeFilename(assetClass));
+      const items = assetsByClass.get(assetClass) || [];
+      for (const item of items) {
+        const itemFolder = classFolder.folder(generateObjectFolderName(item, items));
+        await processObject(item, itemFolder);
+        processedCount++;
+        updateProgress(processedCount, totalItems);
+      }
+    }
+  }
+
+  const unassignedInArea = [...power, ...safety, ...assets].filter(item =>
+    item.areaId === area.id && !item.panelId
+  );
+  if (unassignedInArea.length > 0) {
+    const fieldFolder = areaFolder.folder('Field Folder (Unassigned Objects)');
+    for (const item of unassignedInArea) {
+      const itemFolder = fieldFolder.folder(generateObjectFolderName(item, []));
+      await processObject(item, itemFolder);
+      processedCount++;
+      updateProgress(processedCount, totalItems);
+    }
+  }
+
+  return processedCount;
+}
+
 async function processArea(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
   const panels = panelByArea.get(area.id) || [];
 
@@ -127,18 +280,29 @@ async function processArea(area, areaFolder, panelByArea, power, safety, assets,
     }
   }
 
-  // Process all Assets items from panels in this area
+  // Process all Assets items from panels in this area, grouped by class
   const areaAssets = assets.filter(a => {
     const panel = panels.find(panel => panel.id === a.panelId);
     return panel && panel.areaId === area.id;
   });
   if (areaAssets.length > 0) {
     const assetsFolder = areaFolder.folder('Assets');
-    for (const item of areaAssets) {
-      const itemFolder = assetsFolder.folder(generateObjectFolderName(item, areaAssets));
-      await processObject(item, itemFolder);
-      processedCount++;
-      updateProgress(processedCount, totalItems);
+    const assetsByClass = new Map();
+    areaAssets.forEach(item => {
+      const assetClass = item.assetClass || 'Unspecified';
+      if (!assetsByClass.has(assetClass)) assetsByClass.set(assetClass, []);
+      assetsByClass.get(assetClass).push(item);
+    });
+
+    for (const assetClass of Array.from(assetsByClass.keys()).sort()) {
+      const classFolder = assetsFolder.folder(sanitizeFilename(assetClass));
+      const items = assetsByClass.get(assetClass) || [];
+      for (const item of items) {
+        const itemFolder = classFolder.folder(generateObjectFolderName(item, items));
+        await processObject(item, itemFolder);
+        processedCount++;
+        updateProgress(processedCount, totalItems);
+      }
     }
   }
 
@@ -313,3 +477,4 @@ function hideExportProgress() {
 
 // Make export function globally available
 window.exportToZip = exportToZip;
+window.exportExcel = exportExcel;
