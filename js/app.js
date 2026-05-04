@@ -87,7 +87,7 @@ const ENTITY = {
     label: 'Power', plural: 'Power', store: 'power',
     color: '#b45309', bgColor: '#fef3c7', badgeClass: 'badge-power',
     requiredPhotoSlots: ['Device', 'Part Number', 'Input Wiring', 'Output Wiring'],
-    wiringTables: [
+    itemTables: [
       { key: 'inputWiring',  label: 'Input Wiring'  },
       { key: 'outputWiring', label: 'Output Wiring' },
     ],
@@ -218,6 +218,10 @@ const ENTITY = {
       { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
+    getSubtitle: item => {
+      if (!item.assetClass) return '';
+      return item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass;
+    },
     // Fields shown based on the linked network's protocol type
     networkTypeFields: {
       'Ethernet': [
@@ -259,10 +263,21 @@ const ENTITY = {
         //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
         //  refFilter: a => a.assetClass === 'PLC' },
       ],
-      'Hardwired Device':            [
-        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
-        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
+      'Hardwired Device': [
+        { key: 'safetyId', label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
+        //{ key: 'controllerId', label: 'PLC Controller', type: 'ref', refStore: 'assets',
         //  refFilter: a => a.assetClass === 'PLC' },
+      ],
+    },
+    classItemTables: {
+      'VFD': [
+        { key: 'vfdParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' }
+      ],
+      'Network Device': [
+        { key: 'networkDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
+      ],
+      'Hardwired Device': [
+        { key: 'hardwiredWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
       ],
     },
     // Children shown on drill-in per subclass (extends getChildren)
@@ -314,7 +329,7 @@ const state = {
   formPreset: null,   // { field, value } for pre-selecting a parent
   formImages: [],         // working image list during form editing
   formNamedPhotos: {},    // { slotName: base64 } for required photo slots
-  formWiringTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
+  formItemTables: {},   // { [key]: [{terminal, label}] } for wiring table sections
   formSwitchNetworks: [], // [{networkId}] for managed switch/router network connections
   formSwitchPorts: [],    // [{portName, networkId, assetId}] for managed switch/router ports
   formIoPoints: [],       // [{label, terminal, description}] for PLC slot IO points
@@ -509,12 +524,10 @@ function openSheet(type, id = null, preset = null) {
   const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
   state.formImages      = existing?.images      ? [...existing.images]      : [];
   state.formNamedPhotos = existing?.namedPhotos ? {...existing.namedPhotos} : {};
-  state.formWiringTables = {};
+  state.formItemTables = {};
   const cfg = ENTITY[type];
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables)
-      state.formWiringTables[t.key] = existing?.[t.key] ? existing[t.key].map(r => ({...r})) : [];
-  }
+  for (const t of [...(cfg.itemTables || []), ...Object.values(cfg.classItemTables || {}).flat()])
+    state.formItemTables[t.key] = existing?.[t.key]?.map(r => ({...r})) ?? [];
   state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map(r => ({...r})) : [];
   state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map(r => ({...r}))    : [];
   state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map(r => ({...r}))       : [];
@@ -544,7 +557,7 @@ function closeSheet() {
   state.formPreset       = null;
   state.formImages       = [];
   state.formNamedPhotos  = {};
-  state.formWiringTables  = {};
+  state.formItemTables  = {};
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
   state.formIoPoints       = [];
@@ -946,7 +959,17 @@ async function renderList(type, opts = {}) {
 
 function cardHTML(type, item) {
   const cfg  = ENTITY[type];
-  const sub  = cfg.getSubtitle(item, state.refs);
+  const classLine = type === 'assets' && item.assetClass
+    ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
+    : '';
+  const locationLine = (() => {
+    const panel = item.panelId ? state.refs.panels?.[item.panelId]?.name : '';
+    const area  = item.areaId  ? state.refs.areas?.[item.areaId]?.name  : '';
+    if (panel && area) return `${area} / ${panel}`;
+    if (panel) return panel;
+    if (area) return area;
+    return type === 'assets' ? '' : (cfg.getSubtitle ? cfg.getSubtitle(item, state.refs) : '');
+  })();
   const firstImg = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
   const thumb = firstImg
     ? `<img class="card-thumb" src="${firstImg}" alt="">`
@@ -1007,10 +1030,10 @@ function cardHTML(type, item) {
         ${thumb}
         <div class="card-body">
           <div class="card-name-row">
-            <div class="card-name">${esc(item.name)}</div>
+            <div class="card-name">${esc(item.name)}${classLine ? ` <span class="card-class-inline">${esc(classLine)}</span>` : ''}</div>
             <button class="card-delete-btn" data-id="${item.id}" data-name="${esc(item.name)}" aria-label="Delete">${trashIcon}</button>
           </div>
-          ${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}
+          ${locationLine ? `<div class="card-location">${esc(locationLine)}</div>` : ''}
           ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
           ${countsHtml}
         </div>
@@ -1226,17 +1249,17 @@ async function renderDetail({ preserveScroll = false } = {}) {
     }
   }
 
-  // Wiring table cards (collapseable)
+  // Item table cards (collapseable)
   let wiringCards = '';
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables) {
-      const wRows = item[t.key] || [];
-      const rowsHtml = wRows.length
-        ? wRows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
-        : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
-      wiringCards += buildCollapsibleCard(t.label,
-        `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead><tbody>${rowsHtml}</tbody></table>`);
-    }
+  for (const t of itemTables(type, item)) {
+    const h1 = t.placeholder1 || 'Terminal';
+    const h2 = t.placeholder2 || 'Label';
+    const wRows = item[t.key] || [];
+    const rowsHtml = wRows.length
+      ? wRows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
+      : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
+    wiringCards += buildCollapsibleCard(t.label,
+      `<table class="wiring-det-table"><thead><tr><th>${esc(h1)}</th><th>${esc(h2)}</th></tr></thead><tbody>${rowsHtml}</tbody></table>`);
   }
 
   // Required photos card (collapseable)
@@ -1834,6 +1857,7 @@ async function renderForm() {
         <div id="switch-ports-container"></div>
       </div>
       <div id="card-type-fields-container"></div>
+      <div id="class-item-tables-container"></div>
       <div id="io-points-wrap" style="display:none">
         <div class="form-section-hdr">IO Points</div>
         <div id="io-points-container"></div>
@@ -1841,8 +1865,8 @@ async function renderForm() {
     html += physicalHtml;
   }
 
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables) {
+  if (cfg.itemTables) {
+    for (const t of cfg.itemTables) {
       html += `<div class="form-section-hdr">${esc(t.label)}</div><div id="wiring-table-${t.key}"></div>`;
     }
   }
@@ -1872,8 +1896,13 @@ async function renderForm() {
 
   el.formBody.innerHTML = html;
 
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables) renderWiringTable(t.key, t.label);
+  if (cfg.itemTables) {
+    for (const t of cfg.itemTables) renderItemTable(t.key, t.label);
+  }
+
+  if (type === 'assets') {
+    const currentAssetClass = $('f-assetClass')?.value;
+    renderClassItemTables(currentAssetClass);
   }
 
   if (cfg.requiredPhotoSlots) {
@@ -2075,6 +2104,7 @@ async function renderForm() {
       }
 
       await renderSubclassFields();
+      renderClassItemTables(assetClass);
 
     };
 
@@ -2557,15 +2587,35 @@ function renderPowerBusTable() {
   });
 }
 
-function renderWiringTable(key, label) {
+function renderClassItemTables(assetClass) {
+  const tables = ENTITY.assets.classItemTables?.[assetClass] || [];
+  const container = $('class-item-tables-container');
+  if (!container) return;
+  if (!tables.length) {
+    container.innerHTML = '';
+    return;
+  }
+  let html = '';
+  for (const t of tables) {
+    if (!state.formItemTables[t.key]) state.formItemTables[t.key] = [];
+    html += `
+      <div class="form-section-hdr">${esc(t.label)}</div>
+      <div id="wiring-table-${t.key}" class="wiring-table"></div>
+    `;
+  }
+  container.innerHTML = html;
+  for (const t of tables) renderItemTable(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label');
+}
+
+function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label') {
   const container = $(`wiring-table-${key}`);
   if (!container) return;
-  const rows = state.formWiringTables[key] || [];
+  const rows = state.formItemTables[key] || [];
   const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
   const rowsHtml = rows.map((r, i) => `
     <div class="wiring-form-row">
-      <input class="f-input wiring-terminal" type="text" placeholder="Terminal" value="${esc(r.terminal || '')}" data-wkey="${key}" data-idx="${i}" data-field="terminal">
-      <input class="f-input wiring-label"    type="text" placeholder="Label"    value="${esc(r.label    || '')}" data-wkey="${key}" data-idx="${i}" data-field="label">
+      <input class="f-input wiring-terminal" type="text" placeholder="${esc(placeholder1)}" value="${esc(r.terminal || '')}" data-wkey="${key}" data-idx="${i}" data-field="terminal">
+      <input class="f-input wiring-label"    type="text" placeholder="${esc(placeholder2)}" value="${esc(r.label    || '')}" data-wkey="${key}" data-idx="${i}" data-field="label">
       <button class="wiring-rm-btn" data-wkey="${key}" data-idx="${i}" type="button" aria-label="Remove row">${rmIcon}</button>
     </div>
   `).join('');
@@ -2576,19 +2626,19 @@ function renderWiringTable(key, label) {
   container.querySelectorAll('.wiring-form-row input').forEach(input => {
     input.addEventListener('change', () => {
       const { wkey, idx, field } = input.dataset;
-      state.formWiringTables[wkey][Number(idx)][field] = input.value;
+      state.formItemTables[wkey][Number(idx)][field] = input.value;
     });
   });
   container.querySelectorAll('.wiring-rm-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      state.formWiringTables[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
-      renderWiringTable(btn.dataset.wkey, label);
+      state.formItemTables[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
+      renderItemTable(btn.dataset.wkey, label, placeholder1, placeholder2);
     });
   });
   container.querySelector('.wiring-add-btn').addEventListener('click', () => {
-    state.formWiringTables[key].push({ terminal: '', label: '' });
-    renderWiringTable(key, label);
+    state.formItemTables[key].push({ terminal: '', label: '' });
+    renderItemTable(key, label, placeholder1, placeholder2);
     const inputs = container.querySelectorAll('.wiring-terminal');
     inputs[inputs.length - 1]?.focus();
   });
@@ -2768,10 +2818,8 @@ async function saveForm() {
 
   item.images = [...state.formImages];
   if (cfg.requiredPhotoSlots) item.namedPhotos = {...state.formNamedPhotos};
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables)
-      item[t.key] = (state.formWiringTables[t.key] || []).filter(r => r.terminal || r.label);
-  }
+  for (const t of itemTables(type, item))
+    item[t.key] = (state.formItemTables[t.key] || []).filter(r => r.terminal || r.label);
 
   // Ensure preset fields are set if not captured from DOM (e.g. fields not yet rendered)
   if (state.formPreset && !state.formId) {
@@ -3102,6 +3150,14 @@ function getIpPrefix(ipRange) {
   return parts.length >= 3 ? parts.slice(0, 3).join('.') + '.' : '';
 }
 
+function itemTables(type, item) {
+  const cfg = ENTITY[type];
+  return [
+    ...(cfg.itemTables || []),
+    ...(cfg.classItemTables?.[item?.assetClass] || []),
+  ];
+}
+
 function getEffectiveFields(type, item) {
   const cfg           = ENTITY[type];
   const base          = cfg.fields || [];
@@ -3129,11 +3185,9 @@ function calcCompleteness(type, item) {
       if (item.namedPhotos?.[slot]) filled++;
     }
   }
-  if (cfg.wiringTables) {
-    for (const t of cfg.wiringTables) {
-      total++;
-      if ((item[t.key] || []).some(r => r.terminal || r.label)) filled++;
-    }
+  for (const t of itemTables(type, item)) {
+    total++;
+    if ((item[t.key] || []).some(r => r.terminal || r.label)) filled++;
   }
   return total === 0 ? 100 : Math.round((filled / total) * 100);
 }

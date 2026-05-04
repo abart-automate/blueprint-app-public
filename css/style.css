@@ -1279,9 +1279,36 @@ body {
   justify-content: space-between;
   gap: 8px;
 }
+.card-name-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
 .card-name-row .card-name {
   flex: 1;
   min-width: 0;
+}
+.card-class {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-class-inline {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.card-location {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-delete-btn {
   flex-shrink: 0;
