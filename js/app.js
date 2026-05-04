@@ -338,6 +338,7 @@ const el = {
   main:      $('app-main'),
   backBtn:   $('back-btn'),
   addBtn:    $('add-btn'),
+  exportBtn: $('export-btn'),
   pageTitle: $('page-title'),
   detail:    $('detail-panel'),
   backdrop:  $('sheet-backdrop'),
@@ -685,14 +686,17 @@ function setHeaderForPage(page) {
     el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
+    el.exportBtn.style.visibility = 'visible';
   } else if (page === 'plc') {
     el.pageTitle.textContent   = 'PLCs';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'visible';
+    el.exportBtn.style.visibility = 'hidden';
   } else {
     el.pageTitle.textContent   = ENTITY[page].plural;
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'visible';
+    el.exportBtn.style.visibility = 'hidden';
   }
 }
 
@@ -3184,6 +3188,16 @@ function wireEvents() {
       openSheet('assets', null, { field: 'assetClass', value: 'PLC' });
     } else if (state.page !== 'home') {
       openSheet(state.page);
+    }
+  });
+
+  // Export button
+  el.exportBtn.addEventListener('click', async () => {
+    el.confirmYes.textContent = 'Yes';
+    el.confirmNo.textContent  = 'Cancel';
+    const ok = await confirm('Export Data', 'Export all data to ZIP file? This may take a moment for large datasets.');
+    if (ok) {
+      exportToZip();
     }
   });
 
