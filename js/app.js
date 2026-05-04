@@ -318,6 +318,7 @@ const state = {
   formSwitchNetworks: [], // [{networkId}] for managed switch/router network connections
   formSwitchPorts: [],    // [{portName, networkId, assetId}] for managed switch/router ports
   formIoPoints: [],       // [{label, terminal, description}] for PLC slot IO points
+  formPowerBus: [],       // [{type, refId, wiring:[{terminal,label}]}] for Analog/Digital power bus
   detailStack:      [],   // [{type, id, slotNumber?}] – navigation history within detail panel
   detailSlotNumber: null, // slot index when viewing a PLC slot detail
   detailChanges:    {},   // { key: newValue } for inline edits in the detail view
@@ -547,6 +548,7 @@ function closeSheet() {
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
   state.formIoPoints       = [];
+  state.formPowerBus       = [];
   state.formDuplicateSource = null;
   state.pickerMeta        = null;
 }
@@ -560,6 +562,9 @@ function openSlotForm(rackId, slotNumber) {
   state.formImages   = [];
   state.formIoPoints = existing?.ioPoints
     ? existing.ioPoints.map(r => ({ label: r.label ?? r.tagName ?? 'Spare', terminal: r.terminal || '', description: r.description || '' }))
+    : [];
+  state.formPowerBus = existing?.powerBus
+    ? existing.powerBus.map(e => ({ type: e.type || 'Power', refId: e.refId || '', wiring: (e.wiring || []).map(w => ({...w})) }))
     : [];
   el.formTitle.textContent = existing
     ? `Slot ${slotNumber} — Edit Card`
@@ -1126,6 +1131,19 @@ async function renderDetail({ preserveScroll = false } = {}) {
       ioCard = buildCollapsibleCard('IO Points', rowsHtml, { expanded: true });
     }
 
+    let powerBusCards = '';
+    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+      for (const entry of (slot?.powerBus || [])) {
+        const store  = entry.type === 'Safety Circuit' ? 'safety' : 'power';
+        const device = state.refs[store]?.[entry.refId];
+        const wRows  = entry.wiring || [];
+        const wiringHtml = wRows.length
+          ? `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead><tbody>${wRows.map(w => `<tr><td class="wiring-det-terminal">${esc(w.terminal)}</td><td>${esc(w.label)}</td></tr>`).join('')}</tbody></table>`
+          : `<div class="wiring-empty">No wiring entries</div>`;
+        powerBusCards += buildCollapsibleCard(`Power Bus — ${device?.name || entry.type}`, wiringHtml);
+      }
+    }
+
     el.detail.innerHTML = `
       <div class="det-header">
         <button class="icon-btn" id="det-back" aria-label="Back">${backIcon}</button>
@@ -1145,6 +1163,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
           <div class="det-fields">${fieldsHtml}</div>
         </div>
         ${ioCard}
+        ${powerBusCards}
       </div>
     `;
 
@@ -1710,6 +1729,10 @@ async function renderForm() {
         <div class="form-section-hdr">IO Points</div>
         <div id="io-points-container"></div>
       </div>
+      <div id="power-bus-wrap" style="display:none">
+        <div class="form-section-hdr">Power Bus</div>
+        <div id="power-bus-container"></div>
+      </div>
     `;
 
     const renderSlotNetworkAddressFields = async () => {
@@ -1747,6 +1770,12 @@ async function renderForm() {
           const ioCountEl = $('f-ioPointCount');
           if (ioCountEl) ioCountEl.addEventListener('change', syncIoPointCount);
         }
+      }
+      const pbWrap = $('power-bus-wrap');
+      if (pbWrap) {
+        const isIo = cardType === 'Analog' || cardType === 'Digital';
+        pbWrap.style.display = isIo ? '' : 'none';
+        if (isIo) renderPowerBusTable();
       }
     };
 
@@ -2448,6 +2477,86 @@ function renderIoPointsTable() {
   });
 }
 
+function renderPowerBusTable() {
+  const container = $('power-bus-container');
+  if (!container) return;
+  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  const makeDeviceOpts = (type, selectedId) => {
+    const store = type === 'Safety Circuit' ? 'safety' : 'power';
+    return (state.cache[store] || [])
+      .map(item => `<option value="${item.id}"${item.id === selectedId ? ' selected' : ''}>${esc(item.name)}</option>`)
+      .join('');
+  };
+
+  const makeWiringRows = (ei, wiring) => wiring.map((w, wi) => `
+    <div class="wiring-form-row pb-wiring-row">
+      <input class="f-input wiring-terminal" type="text" placeholder="Terminal" value="${esc(w.terminal || '')}" data-entry="${ei}" data-widx="${wi}" data-field="terminal">
+      <input class="f-input wiring-label"    type="text" placeholder="Label"    value="${esc(w.label    || '')}" data-entry="${ei}" data-widx="${wi}" data-field="label">
+      <button class="wiring-rm-btn" type="button" data-entry="${ei}" data-widx="${wi}" aria-label="Remove wiring row">${rmIcon}</button>
+    </div>`).join('');
+
+  container.innerHTML = state.formPowerBus.map((entry, i) => `
+    <div class="sn-network-row pb-entry" data-pb-idx="${i}">
+      <div class="sn-network-row-top">
+        <select class="f-select pb-type" data-idx="${i}">
+          <option value="Power"${entry.type === 'Power' ? ' selected' : ''}>Power</option>
+          <option value="Safety Circuit"${entry.type === 'Safety Circuit' ? ' selected' : ''}>Safety Circuit</option>
+        </select>
+        <button type="button" class="wiring-rm-btn pb-entry-rm" data-idx="${i}" aria-label="Remove power bus entry">${rmIcon}</button>
+      </div>
+      <select class="f-select pb-device" data-idx="${i}">
+        <option value="">— Select Device —</option>
+        ${makeDeviceOpts(entry.type, entry.refId)}
+      </select>
+      <div class="pb-wiring-wrap" data-entry="${i}">
+        ${makeWiringRows(i, entry.wiring)}
+        <button type="button" class="wiring-add-btn pb-wrow-add" data-entry="${i}">+ Add Wiring Row</button>
+      </div>
+    </div>`).join('') +
+    `<button type="button" class="wiring-add-btn pb-add">+ Add Power Bus</button>`;
+
+  container.querySelectorAll('.pb-type').forEach(sel => {
+    sel.addEventListener('change', () => {
+      state.formPowerBus[+sel.dataset.idx].type  = sel.value;
+      state.formPowerBus[+sel.dataset.idx].refId = '';
+      renderPowerBusTable();
+    });
+  });
+  container.querySelectorAll('.pb-device').forEach(sel => {
+    sel.addEventListener('change', () => { state.formPowerBus[+sel.dataset.idx].refId = sel.value; });
+  });
+  container.querySelectorAll('.pb-wiring-row input').forEach(input => {
+    input.addEventListener('change', () => {
+      state.formPowerBus[+input.dataset.entry].wiring[+input.dataset.widx][input.dataset.field] = input.value;
+    });
+  });
+  container.querySelectorAll('.wiring-rm-btn[data-widx]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      state.formPowerBus[+btn.dataset.entry].wiring.splice(+btn.dataset.widx, 1);
+      renderPowerBusTable();
+    });
+  });
+  container.querySelectorAll('.pb-wrow-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.formPowerBus[+btn.dataset.entry].wiring.push({ terminal: '', label: '' });
+      renderPowerBusTable();
+    });
+  });
+  container.querySelectorAll('.pb-entry-rm').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      state.formPowerBus.splice(+btn.dataset.idx, 1);
+      renderPowerBusTable();
+    });
+  });
+  container.querySelector('.pb-add')?.addEventListener('click', () => {
+    state.formPowerBus.push({ type: 'Power', refId: '', wiring: [] });
+    renderPowerBusTable();
+  });
+}
+
 function renderWiringTable(key, label) {
   const container = $(`wiring-table-${key}`);
   if (!container) return;
@@ -2535,6 +2644,9 @@ async function saveForm() {
     }
     if (cardType === 'Analog' || cardType === 'Digital') {
       slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
+      slotData.powerBus = state.formPowerBus
+        .filter(e => e.refId)
+        .map(e => ({ type: e.type, refId: e.refId, wiring: e.wiring.filter(w => w.terminal || w.label) }));
     }
     const slots = [...(rack.slots || [])];
     const idx   = slots.findIndex(s => s.slotNumber === slotNumber);
