@@ -24,6 +24,30 @@ const SERIAL_FIELDS = [
   { key: 'stopBits', label: 'Stop Bits', type: 'enum', section: 'Serial Configuration', options: ['1','2'] },
 ];
 
+/* ---- ICON SVG CONSTANTS ---- */
+/* ---- SHARED FIELD ARRAYS ---- */
+const PHYS_SIZE_FIELDS = [
+  { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
+  { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
+  { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
+];
+const CLEARANCE_FIELDS = [
+  { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
+  { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
+  { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
+  { key: 'clrBack',   label: 'Back (in)',   type: 'text', section: 'Clearance' },
+  { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
+  { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
+];
+
+/* ---- ICON SVG CONSTANTS ---- */
+const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+const ICON_TRASH   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+const ICON_BACK    = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+const ICON_EDIT    = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+const ICON_PLUS    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+const ICON_CHEVRON = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
 const ENTITY = {
   areas: {
     label: 'Area', plural: 'Areas', store: 'areas',
@@ -97,17 +121,8 @@ const ENTITY = {
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
-      // Physical Sizing
-      { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
-      { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
-      { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
-      // Clearance
-      { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
-      { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
-      { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
-      { key: 'clrBack',   label: 'Back (in)',   type: 'text', section: 'Clearance' },
-      { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
-      { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
+      ...PHYS_SIZE_FIELDS,
+      ...CLEARANCE_FIELDS,
       // Input Power
       { key: 'inVoltage',           label: 'Voltage',            type: 'enum',                      section: 'Input Power',
         options: ['24VDC','120VAC','240VAC', '480VAC','600VAC','Other'],},
@@ -207,17 +222,8 @@ const ENTITY = {
       { key: 'manufacturer',  label: 'Manufacturer',  type: 'text' },
       { key: 'partNumber',    label: 'Part Number',   type: 'text' },
       { key: 'description',   label: 'Description',   type: 'textarea' },
-      // Physical Sizing
-      { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
-      { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
-      { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
-      // Clearance
-      { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
-      { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
-      { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
-      { key: 'clrBack',   label: 'Back (in)',   type: 'text', section: 'Clearance' },
-      { key: 'clrLeft',   label: 'Left (in)',   type: 'text', section: 'Clearance' },
-      { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
+      ...PHYS_SIZE_FIELDS,
+      ...CLEARANCE_FIELDS,
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
     getSubtitle: item => {
@@ -249,31 +255,24 @@ const ENTITY = {
         { key: 'slotCount', label: 'Slot Count', type: 'text' },
       ],
       'HMI':            [
-        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-        //  refFilter: a => a.assetClass === 'PLC' },
+        { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
       ],
       'VFD':            [
-        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
-        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-        //  refFilter: a => a.assetClass === 'PLC' },
+        { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
+        { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
       ],
       'Network Device': [
-        { key: 'safetyId',        label: 'Safety Circuit', type: 'ref',      refStore: 'safety'},
-        { key: 'networkId',    label: 'Network',         type: 'ref', refStore: 'networks' },
-        //{ key: 'controllerId', label: 'PLC Controller',  type: 'ref', refStore: 'assets',
-        //  refFilter: a => a.assetClass === 'PLC' },
+        { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
+        { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
       ],
       'Hardwired Device': [
         { key: 'safetyId', label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
-        //{ key: 'controllerId', label: 'PLC Controller', type: 'ref', refStore: 'assets',
-        //  refFilter: a => a.assetClass === 'PLC' },
       ],
     },
     classItemTables: {
       'VFD': [
-        { key: 'vfdParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' }
+        { key: 'deviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' },
+        { key: 'vfdParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' },
       ],
       'Network Device': [
         { key: 'networkDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
@@ -633,7 +632,7 @@ async function openAssignOrCreate(childType, parentField, parentId) {
   );
 
   const checkIcon = `<svg class="picker-check-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const plusIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+  const plusIcon  = ICON_PLUS;
 
   el.formBody.innerHTML = `
     <div style="margin-bottom:20px">
@@ -740,15 +739,6 @@ async function renderHome() {
   const counts = {};
   for (const key of Object.keys(ENTITY)) counts[key] = state.cache[key]?.length ?? 0;
 
-  const icons = {
-    areas:    `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
-    panels:   `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
-    power:    `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
-    safety:   `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-    networks: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="1" y="16" width="6" height="6" rx="1"/><rect x="17" y="16" width="6" height="6" rx="1"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="4" y1="16" x2="12" y2="14"/><line x1="20" y1="16" x2="12" y2="14"/></svg>`,
-    assets:   `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
-  };
-
   el.main.innerHTML = `
     <div class="home-hero">
       <div class="home-plant-name">${esc(plantName)}</div>
@@ -760,7 +750,7 @@ async function renderHome() {
     <div class="stats-grid">
       ${Object.entries(ENTITY).map(([key, cfg]) => `
         <div class="stat-card" data-nav="${key}">
-          <div class="stat-icon" style="background:${cfg.bgColor};color:${cfg.color}">${icons[key]}</div>
+          <div class="stat-icon" style="background:${cfg.bgColor};color:${cfg.color}">${entityIcon(key, 22)}</div>
           <div class="stat-info">
             <div class="stat-count">${counts[key]}</div>
             <div class="stat-label">${cfg.plural}</div>
@@ -1032,7 +1022,7 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
         </div>`).join('')}
     </div>` : '';
 
-  const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+  const trashIcon = ICON_TRASH;
   const pct = calcCompleteness(type, item);
   const barColor = pct >= 75 ? 'var(--success)' : 'var(--danger)';
 
@@ -1153,18 +1143,21 @@ async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
   const savedScroll = preserveScroll ? el.detail.scrollTop : 0;
+  if (type === '__plc_slot__') return renderSlotDetail(savedScroll);
+  return renderEntityDetail(savedScroll);
+}
 
-  // Slot detail — renders card data embedded in the rack's slots array
-  if (type === '__plc_slot__') {
-    await refreshAll();
+async function renderSlotDetail(savedScroll) {
+  const { detailId: id } = state;
+  await refreshAll();
     const rack = state.refs.assets?.[id];
     if (!rack) { closeDetail(); return; }
     const slotNumber = state.detailSlotNumber;
     const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
     const network = slot?.networkId ? state.refs.networks?.[slot.networkId] : null;
 
-    const editIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-    const backIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+    const editIcon = ICON_EDIT;
+    const backIcon  = ICON_BACK;
 
     const field = (label, val) => val
       ? `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval">${esc(val)}</div></div>`
@@ -1271,10 +1264,11 @@ async function renderDetail({ preserveScroll = false } = {}) {
     el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
       img.addEventListener('click', () => openLightbox(img.src));
     });
-    el.detail.scrollTop = savedScroll;
-    return;
-  }
+  el.detail.scrollTop = savedScroll;
+}
 
+async function renderEntityDetail(savedScroll) {
+  const { detailType: type, detailId: id } = state;
   const cfg  = ENTITY[type];
   const item = await getById(type, id);
   if (!item) { state.detailStack = []; closeDetail(); return; }
@@ -1375,9 +1369,9 @@ async function renderDetail({ preserveScroll = false } = {}) {
     const slotCount  = parseInt(item.slotCount) || 0;
     const slotsMap   = new Map((item.slots || []).map(s => [s.slotNumber, s]));
     const cardCount  = (item.slots || []).length;
-    const chevron    = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-    const title      = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
-    const clearIcon  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    const chevron   = ICON_CHEVRON;
+    const title     = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
+    const clearIcon = ICON_RM;
 
     let slotRows = '';
     if (slotCount === 0) {
@@ -1476,7 +1470,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
   el.detail.innerHTML = `
     <div class="det-header">
       <button class="det-back-btn" id="det-back" aria-label="Back">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        ${ICON_BACK}
       </button>
     </div>
     ${buildDetailCompletenessHtml(type, item)}
@@ -1489,7 +1483,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
              </button>
              <button class="det-edit-btn" id="det-edit" aria-label="Edit">
-               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+               ${ICON_EDIT}
              </button>
            </div>`
       }
@@ -1603,7 +1597,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
 }
 
 function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
-  const chevron = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  const chevron = ICON_CHEVRON;
   return `
     <div class="det-card det-collapsible">
       <button class="det-section-toggle" aria-expanded="${expanded}">
@@ -1672,8 +1666,8 @@ async function buildChildSections(type, id, item) {
   ];
   if (!allChildren.length) return '';
 
-  const plusIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-  const chevron  = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  const plusIcon = ICON_PLUS;
+  const chevron  = ICON_CHEVRON;
 
   let html = '';
   for (const child of allChildren) {
@@ -1850,11 +1844,13 @@ async function saveDetailChanges(type, id) {
    ============================================================ */
 
 async function renderForm() {
-  const { formType: type, formId: id } = state;
-  if (type === '__plant__') return; // already rendered
+  if (state.formType === '__plant__') return;
+  if (state.formType === '__plc_slot__') return renderSlotForm();
+  return renderEntityForm();
+}
 
-  if (type === '__plc_slot__') {
-    const { rackId, slotNumber } = state.formPreset;
+async function renderSlotForm() {
+  const { rackId, slotNumber } = state.formPreset;
     const rack     = state.refs.assets?.[rackId];
     const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
     await refreshAll();
@@ -1931,8 +1927,10 @@ async function renderForm() {
 
     $('f-cardType').addEventListener('change', renderSlotCardTypeFields);
     await renderSlotCardTypeFields();
-    return;
-  }
+}
+
+async function renderEntityForm() {
+  const { formType: type, formId: id } = state;
   const cfg      = ENTITY[type];
   const rawExisting = id ? await getById(type, id) : null;
   // For new forms, synthesize defaults from preset so dropdowns pre-select correctly
@@ -2433,7 +2431,7 @@ function renderSwitchNetworksTable() {
     (state.cache.networks || [])
       .filter(n => n.networkType === 'Ethernet' && (!takenNetIds.has(n.id) || n.id === selectedId))
       .map(n => `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`).join('');
-  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rmIcon = ICON_RM;
 
   const buildAddrFields = (r, i) => {
     const net     = state.refs.networks?.[r.networkId];
@@ -2510,7 +2508,7 @@ function renderSwitchPortsTable() {
   const container = $('switch-ports-container');
   if (!container) return;
   const rows = state.formSwitchPorts;
-  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rmIcon = ICON_RM;
 
   // Only networks assigned to this switch are available for ports
   const assignedNetIds = new Set(state.formSwitchNetworks.map(r => r.networkId).filter(Boolean));
@@ -2612,7 +2610,7 @@ function renderIoPointsTable() {
   const container = $('io-points-container');
   if (!container) return;
   const rows = state.formIoPoints;
-  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rmIcon = ICON_RM;
   const rowsHtml = rows.map((r, i) => `
     <div class="wiring-form-row io-point-row">
       <span class="io-point-num">${i}</span>
@@ -2637,7 +2635,7 @@ function renderIoPointsTable() {
 function renderPowerBusTable() {
   const container = $('power-bus-container');
   if (!container) return;
-  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rmIcon = ICON_RM;
 
   const makeDeviceOpts = (type, selectedId) => {
     const store = type === 'Safety Circuit' ? 'safety' : 'power';
@@ -2738,7 +2736,7 @@ function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = '
   const container = $(`wiring-table-${key}`);
   if (!container) return;
   const rows = state.formItemTables[key] || [];
-  const rmIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const rmIcon = ICON_RM;
   const rowsHtml = rows.map((r, i) => `
     <div class="wiring-form-row">
       <input class="f-input wiring-terminal" type="text" placeholder="${esc(placeholder1)}" value="${esc(r.terminal || '')}" data-wkey="${key}" data-idx="${i}" data-field="terminal">
@@ -2777,25 +2775,29 @@ function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = '
 
 async function saveForm() {
   const type = state.formType;
-  if (type === '__picker__') {
-    const { childType, parentField, parentId, selected } = state.pickerMeta || {};
-    if (!selected?.size) return;
-    for (const id of selected) {
-      const existing = state.refs[childType]?.[id];
-      if (existing) await upsert(childType, { ...existing, [parentField]: parentId });
-    }
-    await refreshAll();
-    const count = selected.size;
-    const pcfg  = ENTITY[childType];
-    closeSheet();
-    showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
-    if (state.detailType) renderDetail();
-    else renderPage();
-    return;
-  }
+  if (type === '__picker__')   return savePickerForm();
+  if (type === '__plc_slot__') return saveSlotForm();
+  if (type === '__plant__')    return savePlantForm();
+  return saveEntityForm();
+}
 
-  // PLC slot card save
-  if (type === '__plc_slot__') {
+async function savePickerForm() {
+  const { childType, parentField, parentId, selected } = state.pickerMeta || {};
+  if (!selected?.size) return;
+  for (const id of selected) {
+    const existing = state.refs[childType]?.[id];
+    if (existing) await upsert(childType, { ...existing, [parentField]: parentId });
+  }
+  await refreshAll();
+  const count = selected.size;
+  const pcfg  = ENTITY[childType];
+  closeSheet();
+  showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
+  if (state.detailType) renderDetail();
+  else renderPage();
+}
+
+async function saveSlotForm() {
     const { rackId, slotNumber } = state.formPreset;
     const rack     = state.refs.assets?.[rackId];
     if (!rack) { showToast('Rack not found', 'error'); return; }
@@ -2833,21 +2835,20 @@ async function saveForm() {
     closeSheet();
     showToast('Card saved', 'success');
     renderDetail({ preserveScroll: true });
-    return;
-  }
+}
 
-  // Special case: plant info
-  if (type === '__plant__') {
-    const name = $('pf-name')?.value.trim();
-    if (!name) { showToast('Plant name is required', 'error'); return; }
-    await setSetting('plantName', name);
-    await setSetting('plantDesc', $('pf-desc')?.value.trim() || '');
-    closeSheet();
-    showToast('Plant info saved', 'success');
-    renderPage();
-    return;
-  }
+async function savePlantForm() {
+  const name = $('pf-name')?.value.trim();
+  if (!name) { showToast('Plant name is required', 'error'); return; }
+  await setSetting('plantName', name);
+  await setSetting('plantDesc', $('pf-desc')?.value.trim() || '');
+  closeSheet();
+  showToast('Plant info saved', 'success');
+  renderPage();
+}
 
+async function saveEntityForm() {
+  const type = state.formType;
   const cfg = ENTITY[type];
   const item = state.formId ? (await getById(type, state.formId)) || {} : {};
 
