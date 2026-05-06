@@ -3164,7 +3164,7 @@ async function showExportOptions() {
             </div>
             <div class="export-option-text">
               <div class="export-option-title">Excel</div>
-              <div class="export-option-desc">Export as .xlsx with one sheet per object type</div>
+              <div class="export-option-desc">Export as .xlsx — one sheet per asset class, importable for offline edits</div>
             </div>
           </button>
         </div>
@@ -3241,6 +3241,12 @@ function importData() {
 }
 
 async function processImportFile(file) {
+  // Route .xlsx files to the Excel merge importer
+  if (file.name.toLowerCase().endsWith('.xlsx')) {
+    await processXlsxImport(file);
+    return;
+  }
+
   try {
     const text = await file.text();
     let payload;

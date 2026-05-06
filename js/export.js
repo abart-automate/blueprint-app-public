@@ -103,33 +103,49 @@ async function exportExcel() {
     ]);
 
     const refs = {
-      areas: buildMap(areas),
-      panels: buildMap(panels),
-      power: buildMap(power),
-      safety: buildMap(safety),
+      areas:    buildMap(areas),
+      panels:   buildMap(panels),
+      power:    buildMap(power),
+      safety:   buildMap(safety),
       networks: buildMap(networks),
-      assets: buildMap(assets),
+      assets:   buildMap(assets),
     };
 
-    const sheets = [
-      { store: 'areas', name: 'Areas', items: areas },
-      { store: 'panels', name: 'Panels', items: panels },
-      { store: 'power', name: 'Power', items: power },
-      { store: 'safety', name: 'Safety', items: safety },
-      { store: 'networks', name: 'Networks', items: networks },
-      { store: 'assets', name: 'Assets', items: assets }
-    ];
+    // Partition assets by class
+    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'VFD', 'Network Device', 'Hardwired Device'];
+    const assetsByClass = {};
+    for (const cls of assetClasses) {
+      assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
+    }
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = sheets.length;
+    const totalSheets = 15;
 
-    for (const sheetDef of sheets) {
-      const worksheet = buildWorksheet(sheetDef.items, sheetDef.store, refs);
-      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(sheetDef.name));
+    const addSheet = (name, worksheet) => {
+      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
       processedCount++;
-      updateProgress(processedCount, totalSheets, `Adding ${sheetDef.name} sheet...`);
-    }
+      updateProgress(processedCount, totalSheets, `Adding ${name} sheet...`);
+    };
+
+    // Entity sheets
+    addSheet('Areas',    buildWorksheet(areas,    'areas',    refs));
+    addSheet('Panels',   buildWorksheet(panels,   'panels',   refs));
+    addSheet('Power',    buildWorksheet(power,    'power',    refs));
+    addSheet('Safety',   buildWorksheet(safety,   'safety',   refs));
+    addSheet('Networks', buildWorksheet(networks, 'networks', refs));
+
+    // Asset class sheets + sub-data sheets
+    addSheet('Network Switch', buildAssetClassSheet(assetsByClass['Network Switch'], 'Network Switch', refs));
+    addSheet('Switch Networks', buildSwitchNetworksSheet(assetsByClass['Network Switch'], refs));
+    addSheet('Switch Ports',    buildSwitchPortsSheet(assetsByClass['Network Switch'], refs));
+    addSheet('PLC',            buildAssetClassSheet(assetsByClass['PLC'],             'PLC',             refs));
+    addSheet('PLC Slots',      buildPlcSlotsSheet(assetsByClass['PLC'], refs));
+    addSheet('HMI',            buildAssetClassSheet(assetsByClass['HMI'],             'HMI',             refs));
+    addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'],             'VFD',             refs));
+    addSheet('VFD Parameters', buildVfdParametersSheet(assetsByClass['VFD'], refs));
+    addSheet('Network Device',   buildAssetClassSheet(assetsByClass['Network Device'],   'Network Device',   refs));
+    addSheet('Hardwired Device', buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
 
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -144,18 +160,126 @@ async function exportExcel() {
   }
 }
 
-function buildWorksheet(items, store, refs) {
+// Keys excluded from each asset class's main sheet (handled by sub-data sheets)
+const ASSET_CLASS_EXCLUDE_KEYS = {
+  'Network Switch': ['switchPorts', 'switchNetworks'],
+  'PLC':            ['slots'],
+  'VFD':            ['vfdParameters'],
+};
+
+function buildAssetClassSheet(assets, assetClass, refs) {
+  const excludeKeys = ASSET_CLASS_EXCLUDE_KEYS[assetClass] || [];
+  return buildWorksheet(assets, 'assets', refs, { excludeKeys });
+}
+
+function buildSwitchNetworksSheet(switchAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Network ID', 'Network Name'];
+  const rows = [];
+  for (const asset of switchAssets) {
+    for (const sn of (asset.switchNetworks || [])) {
+      const network = refs.networks?.get(sn.networkId);
+      rows.push([asset.id, asset.name || '', sn.networkId || '', network?.name || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildSwitchPortsSheet(switchAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Port Name', 'Network ID', 'Network Name', 'Connected Asset ID', 'Connected Asset Name'];
+  const rows = [];
+  for (const asset of switchAssets) {
+    for (const port of (asset.switchPorts || [])) {
+      const network = refs.networks?.get(port.networkId);
+      const connected = refs.assets?.get(port.assetId);
+      rows.push([
+        asset.id, asset.name || '',
+        port.portName || '',
+        port.networkId || '', network?.name || '',
+        port.assetId || '', connected?.name || '',
+      ]);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildPlcSlotsSheet(plcAssets, refs) {
+  const headers = [
+    'Asset ID', 'Asset Name', 'Slot Number', 'Name', 'Card Type',
+    'Part Number', 'Firmware Version', 'Network ID', 'Network Name',
+    'IO Point Count', 'Voltage', 'Protocol', 'IP Address', 'Node Address',
+    'IO Points', 'Power Bus',
+  ];
+  const rows = [];
+  for (const asset of plcAssets) {
+    for (const slot of (asset.slots || [])) {
+      const network = refs.networks?.get(slot.networkId);
+      rows.push([
+        asset.id, asset.name || '',
+        slot.slotNumber ?? '',
+        slot.name || '',
+        slot.cardType || '',
+        slot.partNumber || '',
+        slot.firmwareVersion || '',
+        slot.networkId || '', network?.name || '',
+        slot.ioPointCount || '',
+        slot.voltageLevel || '',
+        slot.protocol || '',
+        slot.ipAddress || '',
+        slot.nodeAddress || '',
+        slot.ioPoints?.length  ? JSON.stringify(slot.ioPoints)  : '',
+        slot.powerBus?.length  ? JSON.stringify(slot.powerBus)  : '',
+      ]);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildVfdParametersSheet(vfdAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Parameter', 'Value'];
+  const rows = [];
+  for (const asset of vfdAssets) {
+    for (const param of (asset.vfdParameters || [])) {
+      rows.push([asset.id, asset.name || '', param.parameter || '', param.value || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildSubDataSheet(headers, rows) {
+  const data = rows.length ? [headers, ...rows] : [headers, ['No records']];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 14) }));
+  if (rows.length) {
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
+  }
+  return ws;
+}
+
+// options.excludeKeys: string[] — keys to omit from this sheet
+function buildWorksheet(items, store, refs, options = {}) {
   if (!items || !items.length) {
     return XLSX.utils.aoa_to_sheet([['No records']]);
   }
 
-  const orderedKeys = getExportHeaders(items, store);
-  const headerLabels = orderedKeys.map(key => getFieldLabel(store, key, items[0]));
+  const { excludeKeys = [] } = options;
+  const orderedKeys = getExportHeaders(items, store, excludeKeys);
 
-  const rows = items.map(item => orderedKeys.map(key => {
-    const rawValue = item[key];
-    return resolveExportValue(store, key, rawValue, item, refs);
-  }));
+  // Build column specs; ref fields get two columns: resolved name + raw ID
+  const columnSpec = [];
+  for (const key of orderedKeys) {
+    const label = getFieldLabel(store, key, items[0]);
+    if (REF_FIELD_MAP[key] || key === 'assignedToId') {
+      columnSpec.push({ header: label,          getValue: item => resolveExportValue(store, key, item[key], item, refs) });
+      const idHeader = key === 'assignedToId' ? 'Assigned To ID' : label + ' ID';
+      columnSpec.push({ header: idHeader,       getValue: item => item[key] || '' });
+    } else {
+      columnSpec.push({ header: label,          getValue: item => resolveExportValue(store, key, item[key], item, refs) });
+    }
+  }
+
+  const headerLabels = columnSpec.map(c => c.header);
+  const rows = items.map(item => columnSpec.map(c => c.getValue(item)));
 
   const worksheet = XLSX.utils.aoa_to_sheet([headerLabels, ...rows]);
   const range = XLSX.utils.decode_range(worksheet['!ref']);
@@ -166,7 +290,7 @@ function buildWorksheet(items, store, refs) {
   return worksheet;
 }
 
-function getExportHeaders(items, store) {
+function getExportHeaders(items, store, excludeKeys = []) {
   const preferredOrder = [
     'id', 'name', 'description', 'assetClass', 'assetSubclass',
     'panelId', 'areaId', 'assignedToType', 'assignedToId',
@@ -174,10 +298,12 @@ function getExportHeaders(items, store) {
     'manufacturer', 'model', 'serialNumber', 'createdAt', 'updatedAt'
   ];
 
+  const excludeSet = new Set(excludeKeys);
   const keySet = new Set();
   items.forEach(item => {
     Object.keys(item).forEach(key => {
       if (key === 'images' || key === 'namedPhotos') return;
+      if (excludeSet.has(key)) return;
       keySet.add(key);
     });
   });
@@ -265,10 +391,10 @@ function prettifyKey(key) {
 }
 
 const REF_FIELD_MAP = {
-  areaId: 'areas',
-  panelId: 'panels',
-  powerId: 'power',
-  safetyId: 'safety',
+  areaId:    'areas',
+  panelId:   'panels',
+  powerId:   'power',
+  safetyId:  'safety',
   networkId: 'networks',
 };
 
@@ -448,12 +574,10 @@ function generateObjectFolderName(item, siblings) {
 }
 
 function sanitizeFilename(name) {
-  // Remove/replace invalid filename characters
   return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
 function base64ToBlob(base64) {
-  // Remove data URL prefix if present
   const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');
   const byteCharacters = atob(cleanBase64);
   const byteNumbers = new Array(byteCharacters.length);
@@ -465,7 +589,6 @@ function base64ToBlob(base64) {
 }
 
 function showExportProgress(message) {
-  // Remove any existing modal
   hideExportProgress();
 
   const backdrop = document.createElement('div');
@@ -517,7 +640,7 @@ function updateProgress(current, total, message = null) {
 
   const percent = total > 0 ? (current / total) * 100 : 0;
   fill.style.width = `${percent}%`;
-  count.textContent = `${current} / ${total} objects`;
+  count.textContent = `${current} / ${total} sheets`;
 
   if (message) {
     text.textContent = message;
@@ -529,6 +652,6 @@ function hideExportProgress() {
   if (modal) modal.remove();
 }
 
-// Make export function globally available
-window.exportToZip = exportToZip;
-window.exportExcel = exportExcel;
+// Make export functions globally available
+window.exportToZip  = exportToZip;
+window.exportExcel  = exportExcel;
