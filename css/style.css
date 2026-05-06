@@ -1310,6 +1310,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.card-network {
+  font-size: 12px;
+  color: var(--primary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .card-delete-btn {
   flex-shrink: 0;
   background: none;

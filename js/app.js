@@ -960,7 +960,7 @@ async function renderList(type, opts = {}) {
   render();
 }
 
-function cardHTML(type, item) {
+function cardHTML(type, item, { contextNetworkId } = {}) {
   const cfg  = ENTITY[type];
   const classLine = type === 'assets' && item.assetClass
     ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
@@ -972,6 +972,39 @@ function cardHTML(type, item) {
     if (panel) return panel;
     if (area) return area;
     return type === 'assets' ? '' : (cfg.getSubtitle ? cfg.getSubtitle(item, state.refs) : '');
+  })();
+  const networkLine = (() => {
+    if (type !== 'assets') return '';
+    if (item.assetClass === 'PLC') {
+      const parts = (item.slots || [])
+        .filter(s => (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId &&
+          (!contextNetworkId || s.networkId === contextNetworkId))
+        .map(s => {
+          const net = state.refs.networks?.[s.networkId];
+          if (!net) return '';
+          const addr = s.ipAddress || s.nodeAddress || '';
+          return addr ? `${net.name} — ${addr}` : net.name;
+        })
+        .filter(Boolean);
+      return parts.join(', ');
+    }
+    if (item.switchNetworks?.length) {
+      const relevant = contextNetworkId
+        ? item.switchNetworks.filter(sn => sn.networkId === contextNetworkId)
+        : item.switchNetworks;
+      const parts = relevant.map(sn => {
+        const net = state.refs.networks?.[sn.networkId];
+        if (!net) return '';
+        const addr = sn.ipAddress || sn.nodeAddress || '';
+        return addr ? `${net.name} — ${addr}` : net.name;
+      }).filter(Boolean);
+      if (parts.length) return parts.join(', ');
+    }
+    if (!item.networkId) return '';
+    const net = state.refs.networks?.[item.networkId];
+    if (!net) return '';
+    const addr = item.ipAddress || item.nodeAddress || '';
+    return addr ? `${net.name} — ${addr}` : net.name;
   })();
   const firstImg = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
   const thumb = firstImg
@@ -1037,6 +1070,7 @@ function cardHTML(type, item) {
             <button class="card-delete-btn" data-id="${item.id}" data-name="${esc(item.name)}" aria-label="Delete">${trashIcon}</button>
           </div>
           ${locationLine ? `<div class="card-location">${esc(locationLine)}</div>` : ''}
+          ${networkLine ? `<div class="card-network">${esc(networkLine)}</div>` : ''}
           ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
           ${countsHtml}
         </div>
@@ -1608,7 +1642,13 @@ function slotLinkedRackCardHTML(rack, slots) {
     ? `<img class="card-thumb" src="${firstImg}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon('assets', 24)}</div>`;
   const panelName = rack.panelId ? state.refs.panels?.[rack.panelId]?.name : '';
-  const slotLabel = slots.map(s => `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`).join(', ');
+  const slotLines = slots.map(s => {
+    const label = `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
+    const net = state.refs.networks?.[s.networkId];
+    const addr = s.ipAddress || s.nodeAddress || '';
+    const netPart = net ? (addr ? ` — ${net.name} — ${addr}` : ` — ${net.name}`) : '';
+    return esc(label + netPart);
+  });
   return `
     <div class="card" data-id="${rack.id}">
       <div class="card-row">
@@ -1618,7 +1658,7 @@ function slotLinkedRackCardHTML(rack, slots) {
             <div class="card-name">${esc(rack.name)} <span class="card-class-inline">PLC Rack</span></div>
           </div>
           ${panelName ? `<div class="card-location">${esc(panelName)}</div>` : ''}
-          <div class="card-location" style="color:var(--primary);font-weight:500">${esc(slotLabel)}</div>
+          ${slotLines.map(l => `<div class="card-location" style="color:var(--primary);font-weight:500">${l}</div>`).join('')}
         </div>
       </div>
     </div>`;
@@ -1652,8 +1692,9 @@ async function buildChildSections(type, id, item) {
       ? getSlotLinkedRacks(type, id).filter(({ rack }) => !filtered.some(f => f.id === rack.id))
       : [];
 
+    const cardOpts = type === 'networks' && child.store === 'assets' ? { contextNetworkId: id } : {};
     const rows = [
-      ...filtered.map(ci => cardHTML(child.store, ci)),
+      ...filtered.map(ci => cardHTML(child.store, ci, cardOpts)),
       ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots)),
     ].join('');
     const count = filtered.length + slotLinked.length;
