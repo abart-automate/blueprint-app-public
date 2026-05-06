@@ -4,9 +4,7 @@
 
 const PLC_CARD_TYPE_FIELDS = {
   Controller:    [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
-  Analog:        [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
-                  { key: 'signalType',   label: 'Signal Type',    type: 'enum',
-                    options: ['4-20mA','0-10V','Thermocouple','RTD'] }],
+  Analog:        [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' }],
   Digital:       [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
                   { key: 'voltageLevel', label: 'Voltage',  type: 'enum',
                     options: ['24VDC','120VAC','240VAC'] }],
@@ -121,6 +119,7 @@ const ENTITY = {
       { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
       { key: 'partNumber',   label: 'Part Number',  type: 'text' },
       { key: 'description',  label: 'Description',  type: 'textarea' },
+      { key: 'drawingRef', label: 'Drawing Reference', type: 'text'},
       ...PHYS_SIZE_FIELDS,
       ...CLEARANCE_FIELDS,
       // Input Power
@@ -153,6 +152,7 @@ const ENTITY = {
       { key: 'powerId',        label: 'Power (optional)', type: 'ref',      refStore: 'power',   required: false },
       { key: 'safetyCategory', label: 'Safety Category',  type: 'enum',     options: ['CAT B','CAT 1','CAT 2','CAT 3','CAT 4','PLa','PLb','PLc','PLd','PLe','SIL 1','SIL 2','SIL 3'] },
       { key: 'description',    label: 'Description',      type: 'textarea' },
+      { key: 'drawingRef', label: 'Drawing Reference', type: 'text'},
       { key: 'notes',          label: 'Notes',            type: 'textarea' },
     ],
     getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '—',
@@ -222,6 +222,7 @@ const ENTITY = {
       { key: 'manufacturer',  label: 'Manufacturer',  type: 'text' },
       { key: 'partNumber',    label: 'Part Number',   type: 'text' },
       { key: 'description',   label: 'Description',   type: 'textarea' },
+      { key: 'drawingRef', label: 'Drawing Reference', type: 'text'},
       ...PHYS_SIZE_FIELDS,
       ...CLEARANCE_FIELDS,
       { key: 'notes', label: 'Notes', type: 'textarea' },
@@ -252,7 +253,7 @@ const ENTITY = {
     // Class-level fields shown per device class
     classFields: {
       'PLC': [
-        { key: 'slotCount', label: 'Slot Count', type: 'text' },
+        { key: 'slotCount', label: 'Slot Count', type: 'text'},
       ],
       'HMI':            [
         { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
@@ -575,7 +576,7 @@ function openSlotForm(rackId, slotNumber) {
   state.formPreset   = { rackId, slotNumber };
   state.formImages   = [];
   state.formIoPoints = existing?.ioPoints
-    ? existing.ioPoints.map(r => ({ label: r.label ?? r.tagName ?? 'Spare', terminal: r.terminal || '', description: r.description || '' }))
+    ? existing.ioPoints.map(r => ({ label: r.label ?? r.tagName ?? 'Spare', signalType: r.signalType || '', wiringType: r.wiringType || '' }))
     : [];
   state.formPowerBus = existing?.powerBus
     ? existing.powerBus.map(e => ({ type: e.type || 'Power', refId: e.refId || '', wiring: (e.wiring || []).map(w => ({...w})) }))
@@ -1173,7 +1174,6 @@ async function renderSlotDetail(savedScroll) {
 
     // Base fields every card has
     let fieldsHtml = field('Part Number', slot?.partNumber)
-      + field('Revision', slot?.revision)
       + field('Firmware Version', slot?.firmwareVersion)
       + (ioUsage ? field('IO In Use', ioUsage) : '');
 
@@ -1197,16 +1197,20 @@ async function renderSlotDetail(savedScroll) {
     // IO points table for Analog/Digital
     let ioCard = '';
     if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+      const isAnalog = slot.cardType === 'Analog';
       const pts = slot?.ioPoints || [];
       const rowsHtml = pts.length
         ? `<table class="wiring-det-table io-points-det-table">
-             <thead><tr><th>#</th><th>Label</th><th>Terminal</th><th>Description</th></tr></thead>
+             <thead><tr>
+               <th>#</th>
+               ${isAnalog ? '<th>Signal Type</th><th>Wiring Type</th>' : ''}
+               <th>Label</th>
+             </tr></thead>
              <tbody>${pts.map((r, i) => `
                <tr>
                  <td>${i}</td>
+                 ${isAnalog ? `<td>${esc(r.signalType || '')}</td><td>${esc(r.wiringType || '')}</td>` : ''}
                  <td>${esc(r.label || '')}</td>
-                 <td>${esc(r.terminal || '')}</td>
-                 <td>${esc(r.description || '')}</td>
                </tr>`).join('')}
              </tbody>
            </table>`
@@ -1867,8 +1871,6 @@ async function renderSlotForm() {
         <input class="f-input" id="f-partNumber" type="text" value="${esc(existing?.partNumber || '')}"></div>
       <div class="fg"><label class="f-label">Firmware Version</label>
         <input class="f-input" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}"></div>
-      <div class="fg"><label class="f-label">Revision</label>
-        <input class="f-input" id="f-revision" type="text" value="${esc(existing?.revision || '')}"></div>
       <div id="slot-cardtype-container"></div>
       <div id="network-address-container"></div>
       <div id="io-points-wrap" style="display:none">
@@ -2599,35 +2601,56 @@ function renderSwitchPortsTable() {
 
 
 function syncIoPointCount() {
-  const count = parseInt($('f-ioPointCount')?.value) || 0;
+  const count    = parseInt($('f-ioPointCount')?.value) || 0;
+  const cardType = $('f-cardType')?.value;
   while (state.formIoPoints.length < count)
-    state.formIoPoints.push({ label: 'Spare', terminal: '', description: '' });
+    state.formIoPoints.push(cardType === 'Analog'
+      ? { label: 'Spare', signalType: '', wiringType: '' }
+      : { label: 'Spare' });
   state.formIoPoints.length = count;
   renderIoPointsTable();
 }
 
+const IO_SIGNAL_OPTS = ['1-5V','0-10V','0-20mA','4-20mA','RTD','Other'];
+const IO_WIRING_OPTS = ['2-Wire','3-Wire','4-Wire'];
+
 function renderIoPointsTable() {
   const container = $('io-points-container');
   if (!container) return;
-  const rows = state.formIoPoints;
-  const rmIcon = ICON_RM;
-  const rowsHtml = rows.map((r, i) => `
-    <div class="wiring-form-row io-point-row">
-      <span class="io-point-num">${i}</span>
-      <input class="f-input io-tag"  type="text" placeholder="Label"       value="${esc(r.label       || '')}" data-idx="${i}" data-field="label">
-      <input class="f-input io-term" type="text" placeholder="Terminal"    value="${esc(r.terminal    || '')}" data-idx="${i}" data-field="terminal">
-      <input class="f-input io-desc" type="text" placeholder="Description" value="${esc(r.description || '')}" data-idx="${i}" data-field="description">
-    </div>
-  `).join('');
+  const rows     = state.formIoPoints;
+  const isAnalog = $('f-cardType')?.value === 'Analog';
+  container.classList.toggle('io-analog', isAnalog);
+
+  const rowsHtml = rows.map((r, i) => {
+    if (isAnalog) {
+      const sigOpts = IO_SIGNAL_OPTS.map(o => `<option value="${o}"${r.signalType === o ? ' selected' : ''}>${o}</option>`).join('');
+      const wirOpts = IO_WIRING_OPTS.map(o => `<option value="${o}"${r.wiringType === o ? ' selected' : ''}>${o}</option>`).join('');
+      return `
+        <div class="wiring-form-row io-point-row">
+          <span class="io-point-num">${i}</span>
+          <select class="f-select io-signal" data-idx="${i}" data-field="signalType"><option value=""></option>${sigOpts}</select>
+          <select class="f-select io-wiring" data-idx="${i}" data-field="wiringType"><option value=""></option>${wirOpts}</select>
+          <input  class="f-input io-tag" type="text" placeholder="Label" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
+        </div>`;
+    }
+    return `
+      <div class="wiring-form-row io-point-row">
+        <span class="io-point-num">${i}</span>
+        <input class="f-input io-tag" type="text" placeholder="Label" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
+      </div>`;
+  }).join('');
+
   container.innerHTML = rows.length
     ? `<div class="io-point-header">
         <span class="io-point-num">#</span>
-        <span>Label</span><span>Terminal</span><span>Description</span>
+        ${isAnalog ? '<span>Signal Type</span><span>Wiring Type</span>' : ''}
+        <span>Label</span>
        </div>${rowsHtml}`
     : '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set IO Point Count to populate rows.</div>';
-  container.querySelectorAll('.io-point-row input').forEach(input => {
-    input.addEventListener('change', () => {
-      state.formIoPoints[Number(input.dataset.idx)][input.dataset.field] = input.value;
+
+  container.querySelectorAll('.io-point-row input, .io-point-row select').forEach(el => {
+    el.addEventListener('change', () => {
+      state.formIoPoints[Number(el.dataset.idx)][el.dataset.field] = el.value;
     });
   });
 }
@@ -2808,7 +2831,6 @@ async function saveSlotForm() {
       cardType,
       partNumber:      $('f-partNumber')?.value.trim()      || '',
       firmwareVersion: $('f-firmwareVersion')?.value.trim() || '',
-      revision:        $('f-revision')?.value.trim()        || '',
     };
     for (const f of PLC_CARD_TYPE_FIELDS[cardType] || []) {
       const el2 = $(`f-${f.key}`);

@@ -1599,7 +1599,7 @@ body {
    ===================================================== */
 .io-point-header {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr 1fr;
+  grid-template-columns: 28px 1fr;
   gap: 8px;
   padding: 0 0 4px 0;
   font-size: 11px;
@@ -1610,9 +1610,14 @@ body {
 }
 .io-point-row {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr 1fr;
+  grid-template-columns: 28px 1fr;
   gap: 8px;
   margin-bottom: 6px;
+}
+/* Analog: # + Signal Type (fixed) + Wiring Type (fixed) + Label (flex) */
+.io-analog .io-point-header,
+.io-analog .io-point-row {
+  grid-template-columns: 28px 100px 80px 1fr;
 }
 .io-point-num {
   display: flex;
@@ -1650,10 +1655,15 @@ body {
 }
 .wiring-det-table tr:last-child td { border-bottom: none; }
 .wiring-det-terminal { font-size: 14px; font-weight: 700; color: var(--text); }
-/* IO points table overrides: narrow # column, fixed Terminal column */
-.io-points-det-table th:first-child { width: 36px; text-align: center; }
-.io-points-det-table td:first-child { text-align: center; font-weight: 700; color: var(--muted); }
-.io-points-det-table td:nth-child(3) { width: 90px; }
+/* IO points table overrides */
+.io-points-det-table th:first-child,
+.io-points-det-table td:first-child  { width: 36px; text-align: center; }
+.io-points-det-table td:first-child  { font-weight: 700; color: var(--muted); }
+/* Signal Type and Wiring Type: fixed narrow columns; Label takes the rest */
+.io-points-det-table th:nth-child(2),
+.io-points-det-table td:nth-child(2) { width: 80px; }
+.io-points-det-table th:nth-child(3),
+.io-points-det-table td:nth-child(3) { width: 80px; }
 .sn-det-list { display: flex; flex-direction: column; gap: 10px; }
 .sn-det-row {
   padding: 10px 12px;
