@@ -120,7 +120,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 15;
+    const totalSheets = 21;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -131,21 +131,27 @@ async function exportExcel() {
     // Entity sheets
     addSheet('Areas',    buildWorksheet(areas,    'areas',    refs));
     addSheet('Panels',   buildWorksheet(panels,   'panels',   refs));
-    addSheet('Power',    buildWorksheet(power,    'power',    refs));
+    addSheet('Power',    buildWorksheet(power,    'power',    refs, { excludeKeys: ['inputWiring', 'outputWiring'] }));
+    addSheet('Power Wiring', buildPowerWiringSheet(power, refs));
     addSheet('Safety',   buildWorksheet(safety,   'safety',   refs));
     addSheet('Networks', buildWorksheet(networks, 'networks', refs));
 
     // Asset class sheets + sub-data sheets
-    addSheet('Network Switch', buildAssetClassSheet(assetsByClass['Network Switch'], 'Network Switch', refs));
+    addSheet('Network Switch',  buildAssetClassSheet(assetsByClass['Network Switch'], 'Network Switch', refs));
     addSheet('Switch Networks', buildSwitchNetworksSheet(assetsByClass['Network Switch'], refs));
     addSheet('Switch Ports',    buildSwitchPortsSheet(assetsByClass['Network Switch'], refs));
-    addSheet('PLC',            buildAssetClassSheet(assetsByClass['PLC'],             'PLC',             refs));
-    addSheet('PLC Slots',      buildPlcSlotsSheet(assetsByClass['PLC'], refs));
-    addSheet('HMI',            buildAssetClassSheet(assetsByClass['HMI'],             'HMI',             refs));
-    addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'],             'VFD',             refs));
+    addSheet('PLC',                buildAssetClassSheet(assetsByClass['PLC'], 'PLC', refs));
+    addSheet('PLC Slots',          buildPlcSlotsSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Digital Wiring', buildPlcDigitalWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Analog Wiring',  buildPlcAnalogWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('HMI', buildAssetClassSheet(assetsByClass['HMI'], 'HMI', refs));
+    addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'], 'VFD', refs));
+    addSheet('VFD Wiring',     buildVfdWiringSheet(assetsByClass['VFD'], refs));
     addSheet('VFD Parameters', buildVfdParametersSheet(assetsByClass['VFD'], refs));
-    addSheet('Network Device',   buildAssetClassSheet(assetsByClass['Network Device'],   'Network Device',   refs));
-    addSheet('Hardwired Device', buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
+    addSheet('Network Device',        buildAssetClassSheet(assetsByClass['Network Device'],   'Network Device',   refs));
+    addSheet('Network Device Wiring', buildNetworkDeviceWiringSheet(assetsByClass['Network Device'], refs));
+    addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
+    addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
 
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -162,9 +168,11 @@ async function exportExcel() {
 
 // Keys excluded from each asset class's main sheet (handled by sub-data sheets)
 const ASSET_CLASS_EXCLUDE_KEYS = {
-  'Network Switch': ['switchPorts', 'switchNetworks'],
-  'PLC':            ['slots'],
-  'VFD':            ['vfdParameters'],
+  'Network Switch':   ['switchPorts', 'switchNetworks'],
+  'PLC':              ['slots'],
+  'VFD':              ['vfdParameters', 'deviceWiring'],
+  'Network Device':   ['networkDeviceWiring'],
+  'Hardwired Device': ['hardwiredWiring'],
 };
 
 function buildAssetClassSheet(assets, assetClass, refs) {
@@ -235,11 +243,89 @@ function buildPlcSlotsSheet(plcAssets, refs) {
 }
 
 function buildVfdParametersSheet(vfdAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Parameter', 'Value'];
+  const headers = ['Asset ID', 'Asset Name', 'Section', 'Parameter', 'Value'];
   const rows = [];
   for (const asset of vfdAssets) {
     for (const param of (asset.vfdParameters || [])) {
-      rows.push([asset.id, asset.name || '', param.parameter || '', param.value || '']);
+      rows.push([asset.id, asset.name || '', 'Parameters', param.parameter || '', param.value || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildPowerWiringSheet(powerItems, refs) {
+  const headers = ['Power ID', 'Power Name', 'Section', 'Terminal', 'Label'];
+  const rows = [];
+  const tableDefs = [
+    { key: 'inputWiring',  label: 'Input Wiring' },
+    { key: 'outputWiring', label: 'Output Wiring' },
+  ];
+  for (const item of powerItems) {
+    for (const tbl of tableDefs) {
+      for (const row of (item[tbl.key] || [])) {
+        rows.push([item.id, item.name || '', tbl.label, row.terminal || '', row.label || '']);
+      }
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildVfdWiringSheet(vfdAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
+  const rows = [];
+  for (const asset of vfdAssets) {
+    for (const row of (asset.deviceWiring || [])) {
+      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildNetworkDeviceWiringSheet(networkDeviceAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
+  const rows = [];
+  for (const asset of networkDeviceAssets) {
+    for (const row of (asset.networkDeviceWiring || [])) {
+      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildHardwiredWiringSheet(hardwiredAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
+  const rows = [];
+  for (const asset of hardwiredAssets) {
+    for (const row of (asset.hardwiredWiring || [])) {
+      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildPlcDigitalWiringSheet(plcAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label'];
+  const rows = [];
+  for (const asset of plcAssets) {
+    for (const slot of (asset.slots || [])) {
+      if (slot.cardType !== 'Digital') continue;
+      (slot.ioPoints || []).forEach((pt, idx) => {
+        rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', idx + 1, pt.label || '']);
+      });
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+function buildPlcAnalogWiringSheet(plcAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label', 'Signal Type', 'Wiring Type'];
+  const rows = [];
+  for (const asset of plcAssets) {
+    for (const slot of (asset.slots || [])) {
+      if (slot.cardType !== 'Analog') continue;
+      (slot.ioPoints || []).forEach((pt, idx) => {
+        rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', idx + 1, pt.label || '', pt.signalType || '', pt.wiringType || '']);
+      });
     }
   }
   return buildSubDataSheet(headers, rows);
@@ -248,7 +334,10 @@ function buildVfdParametersSheet(vfdAssets, refs) {
 function buildSubDataSheet(headers, rows) {
   const data = rows.length ? [headers, ...rows] : [headers, ['No records']];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 14) }));
+  ws['!cols'] = headers.map(h => ({
+    wch: Math.max(h.length + 4, 14),
+    ...(h === 'ID' || h.endsWith(' ID') ? { hidden: true } : {}),
+  }));
   if (rows.length) {
     const range = XLSX.utils.decode_range(ws['!ref']);
     ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
@@ -262,19 +351,21 @@ function buildWorksheet(items, store, refs, options = {}) {
     return XLSX.utils.aoa_to_sheet([['No records']]);
   }
 
+  const HIDDEN_KEYS = new Set(['id', 'createdAt', 'updatedAt']);
   const { excludeKeys = [] } = options;
   const orderedKeys = getExportHeaders(items, store, excludeKeys);
 
-  // Build column specs; ref fields get two columns: resolved name + raw ID
+  // Build column specs; ref fields get two columns: resolved name + raw ID (always hidden)
   const columnSpec = [];
   for (const key of orderedKeys) {
     const label = getFieldLabel(store, key, items[0]);
+    const hideMain = HIDDEN_KEYS.has(key);
     if (REF_FIELD_MAP[key] || key === 'assignedToId') {
-      columnSpec.push({ header: label,          getValue: item => resolveExportValue(store, key, item[key], item, refs) });
+      columnSpec.push({ header: label,      getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
       const idHeader = key === 'assignedToId' ? 'Assigned To ID' : label + ' ID';
-      columnSpec.push({ header: idHeader,       getValue: item => item[key] || '' });
+      columnSpec.push({ header: idHeader,   getValue: item => item[key] || '', hidden: true });
     } else {
-      columnSpec.push({ header: label,          getValue: item => resolveExportValue(store, key, item[key], item, refs) });
+      columnSpec.push({ header: label,      getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
     }
   }
 
@@ -284,7 +375,10 @@ function buildWorksheet(items, store, refs, options = {}) {
   const worksheet = XLSX.utils.aoa_to_sheet([headerLabels, ...rows]);
   const range = XLSX.utils.decode_range(worksheet['!ref']);
 
-  worksheet['!cols'] = headerLabels.map(label => ({ wch: Math.max(Math.min(label.length + 6, 30), 10) }));
+  worksheet['!cols'] = columnSpec.map(c => ({
+    wch: Math.max(Math.min(c.header.length + 6, 30), 10),
+    ...(c.hidden ? { hidden: true } : {}),
+  }));
   worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
 
   return worksheet;
