@@ -1454,9 +1454,25 @@ async function renderEntityDetail(savedScroll) {
         ? item.switchPorts.map(r => {
             const net   = state.refs.networks?.[r.networkId];
             const asset = state.refs.assets?.[r.assetId];
+            let slotLabel = '';
+            let ipAddr    = '';
+            if (asset?.assetClass === 'PLC') {
+              const matchSlot = (asset.slots || []).find(s =>
+                (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === r.networkId
+              );
+              if (matchSlot) {
+                slotLabel = `Slot ${matchSlot.slotNumber}${matchSlot.name ? ` — ${matchSlot.name}` : ''}`;
+                ipAddr = matchSlot.ipAddress || matchSlot.nodeAddress || '';
+              }
+            } else {
+              ipAddr = asset?.ipAddress || asset?.nodeAddress || '';
+            }
             const pills = [
-              net   ? `<span class="sn-det-field">Network<strong>${esc(net.name)}</strong></span>`   : '',
+              net         ? `<span class="sn-det-field">Network<strong>${esc(net.name)}</strong></span>`    : '',
+              net?.vlanId ? `<span class="sn-det-field">VLAN<strong>${esc(net.vlanId)}</strong></span>`     : '',
               `<span class="sn-det-field">Device<strong>${esc(asset?.name || 'No Connection')}</strong></span>`,
+              slotLabel   ? `<span class="sn-det-field">Slot<strong>${esc(slotLabel)}</strong></span>`      : '',
+              ipAddr      ? `<span class="sn-det-field">IP<strong>${esc(ipAddr)}</strong></span>`            : '',
             ].filter(Boolean).join('');
             return `<div class="sn-det-row">
               <div class="sn-det-name">${esc(r.portName || '—')}</div>
@@ -2521,14 +2537,33 @@ function renderSwitchPortsTable() {
       `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`
     ).join('');
 
-  // Devices on the port's network, or unassigned — excluding this switch itself
+  // Devices on the port's network — Ethernet-capable only, excluding this switch itself
   const selfId = state.formId;
   const makeDeviceOpts = (networkId, selectedId) =>
     (state.cache.assets || [])
-      .filter(a => a.id !== selfId && (!networkId || !a.networkId || a.networkId === networkId))
-      .map(a =>
-        `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`
-      ).join('');
+      .filter(a => {
+        if (a.id === selfId) return false;
+        if (a.assetClass === 'PLC') {
+          return (a.slots || []).some(s =>
+            (s.cardType === 'Controller' || s.cardType === 'Communication') &&
+            state.refs.networks?.[s.networkId]?.networkType === 'Ethernet' &&
+            (!networkId || s.networkId === networkId)
+          );
+        }
+        const assetNet = state.refs.networks?.[a.networkId];
+        if (!assetNet || assetNet.networkType !== 'Ethernet') return false;
+        return !networkId || a.networkId === networkId;
+      })
+      .map(a => {
+        let label = a.name;
+        if (a.assetClass === 'PLC' && networkId) {
+          const matchSlot = (a.slots || []).find(s =>
+            (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === networkId
+          );
+          if (matchSlot) label += ` — Slot ${matchSlot.slotNumber}${matchSlot.name ? ` (${matchSlot.name})` : ''}`;
+        }
+        return `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(label)}</option>`;
+      }).join('');
 
   let html = rows.map((r, i) => `
     <div class="sp-port-row">
