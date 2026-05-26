@@ -14,7 +14,10 @@
       "Bash(ConvertTo-Json)",
       "Bash(Out-String)",
       "Bash(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -File)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Repos\\\\blueprint-app\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)"
     ]
   }
 }
