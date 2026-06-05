@@ -1,6 +1,6 @@
 // IndexedDB layer for Plant Asset Manager
 const DB_NAME = 'PlantAssetDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'];
 
 let _db = null;
