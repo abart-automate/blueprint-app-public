@@ -1149,6 +1149,33 @@ body {
 .home-data-btns .btn {
   flex: 1;
 }
+.home-install-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--primary-lt);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.home-install-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.home-install-body { flex: 1; min-width: 0; }
+.home-install-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.home-install-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.home-install-btn { flex-shrink: 0; font-size: 13px; padding: 7px 14px; }
+.home-footer { text-align: center; padding: 8px 0 4px; }
+.home-version { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* =====================================================
    IMAGE LIGHTBOX
@@ -1451,43 +1478,6 @@ body {
 }
 
 /* =====================================================
-   PWA INSTALL BANNER (Android / Chrome)
-   ===================================================== */
-.install-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  flex-shrink: 0;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-}
-.install-banner-btns {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.install-banner-btns button {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-}
-#install-now-btn {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-
-/* =====================================================
    PWA UPDATE BANNER
    ===================================================== */
 .update-banner {
@@ -1522,6 +1512,23 @@ body {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
+}
+
+/* =====================================================
+   OFFLINE INDICATOR BAR
+   ===================================================== */
+.offline-bar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 16px;
+  flex-shrink: 0;
+  background: #78350f;
+  color: #fef3c7;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 /* =====================================================

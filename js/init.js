@@ -1,3 +1,5 @@
+const APP_VERSION = '1.2.2'; // keep in sync with sw.js
+
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
@@ -12,6 +14,7 @@ async function init() {
     const startPage = (ENTITY[hash] || hash === 'home' || hash === 'plc') ? hash : 'home';
     navigate(startPage);
     initInstallPrompt();
+    initOfflineIndicator();
   } catch (err) {
     console.error('Init failed:', err);
     document.querySelector('#app-main').innerHTML = `
@@ -28,45 +31,50 @@ async function init() {
    PWA INSTALL PROMPT (Android / Chrome only)
    ============================================================ */
 
+let _deferredInstallPrompt = null;
+
 function initInstallPrompt() {
   if (window.matchMedia('(display-mode: standalone)').matches) return;
 
-  let deferredPrompt = null;
-
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
-    deferredPrompt = e;
-    showInstallBanner();
+    _deferredInstallPrompt = e;
+    if (state.page === 'home') renderHome();
   });
 
   window.addEventListener('appinstalled', () => {
-    hideInstallBanner();
-    deferredPrompt = null;
+    _deferredInstallPrompt = null;
+    if (state.page === 'home') renderHome();
   });
+}
 
-  function showInstallBanner() {
-    if (document.getElementById('install-banner')) return;
-    const el = document.createElement('div');
-    el.id = 'install-banner';
-    el.className = 'install-banner';
-    el.innerHTML = `<span>Install blueprint</span>
-      <div class="install-banner-btns">
-        <button id="install-now-btn">Install</button>
-        <button id="install-skip-btn">Not now</button>
-      </div>`;
-    document.getElementById('bottom-nav').before(el);
-    document.getElementById('install-now-btn').onclick = async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') hideInstallBanner();
-    };
-    document.getElementById('install-skip-btn').onclick = hideInstallBanner;
-  }
+/* ============================================================
+   OFFLINE INDICATOR
+   ============================================================ */
 
-  function hideInstallBanner() {
-    document.getElementById('install-banner')?.remove();
-  }
+function initOfflineIndicator() {
+  const bar = document.createElement('div');
+  bar.id = 'offline-bar';
+  bar.className = 'offline-bar';
+  bar.setAttribute('aria-live', 'polite');
+  bar.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5"
+      stroke-linecap="round" stroke-linejoin="round">
+      <line x1="1" y1="1" x2="23" y2="23"/>
+      <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+      <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+      <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+      <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+      <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+      <circle cx="12" cy="20" r="1"/>
+    </svg>
+    <span>Offline</span>`;
+  document.getElementById('bottom-nav').before(bar);
+  const update = () => { bar.style.display = navigator.onLine ? 'none' : 'flex'; };
+  update();
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
 }
 
 /* ============================================================
@@ -79,7 +87,7 @@ function initUpdateBanner() {
   banner.id = 'update-banner';
   banner.className = 'update-banner';
   banner.innerHTML =
-    '<span>A new version is available.</span>' +
+    `<span>Update to v${APP_VERSION} available.</span>` +
     '<div class="update-banner-btns">' +
     '<button id="update-later-btn">Later</button>' +
     '<button id="update-now-btn">Update Now</button>' +

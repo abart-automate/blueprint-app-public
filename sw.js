@@ -1,4 +1,4 @@
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2'; // keep in sync with js/init.js
 const CACHE_NAME = `plant-asset-${APP_VERSION}`;
 
 // All static files that make up the app shell.
@@ -18,7 +18,10 @@ const APP_SHELL = [
   './js/operations.js',
   './js/app.js',
   './js/export.js',
+  './js/import.js',
   './js/init.js',
+  './js/vendor/jszip.min.js',
+  './js/vendor/xlsx.full.min.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'

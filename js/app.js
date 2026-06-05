@@ -295,6 +295,9 @@ async function renderHome() {
   const counts = {};
   for (const key of Object.keys(ENTITY)) counts[key] = state.cache[key]?.length ?? 0;
 
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+  const showInstall = !isStandalone && !!_deferredInstallPrompt;
+
   el.main.innerHTML = `
     <div class="home-hero">
       <div class="home-plant-name">${esc(plantName)}</div>
@@ -314,6 +317,24 @@ async function renderHome() {
         </div>
       `).join('')}
     </div>
+    ${showInstall ? `
+    <div class="home-install-card">
+      <div class="home-install-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </div>
+      <div class="home-install-body">
+        <div class="home-install-title">Install blueprint</div>
+        <div class="home-install-desc">Add to your home screen for offline use</div>
+      </div>
+      <button class="btn btn-primary home-install-btn" id="home-install-btn">Install</button>
+    </div>
+    ` : ''}
     <div class="home-data-actions">
       <div class="section-label">Data Management</div>
       <div class="home-data-btns">
@@ -327,6 +348,9 @@ async function renderHome() {
         </button>
       </div>
     </div>
+    <div class="home-footer">
+      <span class="home-version">v${APP_VERSION}</span>
+    </div>
   `;
 
   el.main.querySelector('#home-edit-plant').addEventListener('click', () => openPlantForm());
@@ -335,6 +359,17 @@ async function renderHome() {
   });
   el.main.querySelector('#home-export-btn').addEventListener('click', showExportOptions);
   el.main.querySelector('#home-import-btn').addEventListener('click', importData);
+  if (showInstall) {
+    el.main.querySelector('#home-install-btn').addEventListener('click', async () => {
+      if (!_deferredInstallPrompt) return;
+      _deferredInstallPrompt.prompt();
+      const { outcome } = await _deferredInstallPrompt.userChoice;
+      if (outcome === 'accepted') {
+        _deferredInstallPrompt = null;
+        renderHome();
+      }
+    });
+  }
 }
 
 function openPlantForm() {
