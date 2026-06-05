@@ -4,6 +4,13 @@
    explicitly return or render. Depends on: state, ENTITY.
    ============================================================ */
 
+/* ---- MEDIA TYPE CONSTANTS ---- */
+
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACCEPTED_VIDEO_TYPES = ['video/mp4'];
+const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
+const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
+
 /* ---- HTML ESCAPING ---- */
 
 function esc(str) {
@@ -68,7 +75,8 @@ function calcCompleteness(type, item) {
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
       total++;
-      if (item.namedPhotos?.[slot]) filled++;
+      const sv = item.namedPhotos?.[slot];
+      if (Array.isArray(sv) ? sv.length > 0 : !!sv) filled++;
     }
   }
   for (const t of itemTables(type, item)) {
@@ -167,21 +175,36 @@ function entityIcon(type, size = 22) {
   return icons[type] || '';
 }
 
-/* ---- IMAGE RESIZE ---- */
+/* ---- MEDIA PROCESSING ---- */
 
-function resizeImage(file, maxPx = 1400) {
-  return new Promise(resolve => {
+// Validates file type and returns { blob, mimeType }.
+// Images are resized to max 1400px and re-encoded as JPEG blobs.
+// Throws a user-readable Error for unsupported types.
+async function processMediaFile(file) {
+  if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
+    throw new Error(
+      `Unsupported file: ${file.name} (${file.type || 'unknown type'})\n` +
+      `Accepted images: JPEG, PNG, WebP\nAccepted videos: MP4`
+    );
+  }
+  if (ACCEPTED_VIDEO_TYPES.includes(file.type)) {
+    return { blob: file, mimeType: file.type };
+  }
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    reader.onerror = reject;
     reader.onload = e => {
       const img = new Image();
+      img.onerror = reject;
       img.onload = () => {
+        const maxPx = 1400;
         const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
         const w = Math.round(img.width  * scale);
         const h = Math.round(img.height * scale);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
+        canvas.toBlob(blob => resolve({ blob, mimeType: 'image/jpeg' }), 'image/jpeg', 0.82);
       };
       img.src = e.target.result;
     };
@@ -189,18 +212,90 @@ function resizeImage(file, maxPx = 1400) {
   });
 }
 
+// Converts a legacy base64 data URL to a { blob, mimeType } media item.
+function base64ToMediaItem(dataUrl) {
+  const [header, b64] = dataUrl.split(',');
+  const mimeType = (header.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return { blob: new Blob([arr], { type: mimeType }), mimeType };
+}
+
+/* ---- OBJECT URL LIFECYCLE ---- */
+
+const _mediaUrls = [];
+
+// Creates and tracks a blob object URL. Call revokeAllMediaUrls() when done.
+// If mediaItem has a _legacySrc (base64 string), returns it directly without creating a URL.
+function createMediaUrl(mediaItem) {
+  if (mediaItem._legacySrc) return mediaItem._legacySrc;
+  const url = URL.createObjectURL(mediaItem.blob);
+  _mediaUrls.push(url);
+  return url;
+}
+
+function revokeAllMediaUrls() {
+  _mediaUrls.forEach(u => URL.revokeObjectURL(u));
+  _mediaUrls.length = 0;
+}
+
+// Returns a displayable src string for use in card thumbnail <img> elements.
+// Handles legacy base64 strings, new {blob,mimeType} items, and arrays (namedPhotos slots).
+// Object URLs created here are untracked — acceptable for short-lived card list renders.
+function getCardThumbSrc(mediaValue) {
+  const item = Array.isArray(mediaValue) ? mediaValue[0] : mediaValue;
+  if (!item) return null;
+  if (typeof item === 'string') return item;
+  if (item._legacySrc) return item._legacySrc;
+  return URL.createObjectURL(item.blob);
+}
+
+// Normalises a stored media value into Array<{blob,mimeType}>.
+// Handles: undefined, legacy base64 string, single blob item, or array of either.
+function _normalizeMediaItems(value) {
+  if (!value) return [];
+  const arr = Array.isArray(value) ? value : [value];
+  return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
+}
+
 /* ---- LIGHTBOX ---- */
 
-function openLightbox(src) {
+// Opens a fullscreen lightbox for an image or video media item.
+// Accepts { blob, mimeType } or a legacy { _legacySrc } item.
+function openMediaLightbox(mediaItem) {
   let lb = document.querySelector('.lightbox');
   if (!lb) {
     lb = document.createElement('div');
-    lb.className = 'lightbox open';
-    lb.innerHTML = `<img src=""><button class="lightbox-close">✕</button>`;
-    lb.querySelector('.lightbox-close').onclick = () => lb.remove();
-    lb.onclick = e => { if (e.target === lb) lb.remove(); };
+    lb.className = 'lightbox';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'lightbox-close';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = () => _closeLightbox(lb);
+    lb.onclick = e => { if (e.target === lb) _closeLightbox(lb); };
+    lb.appendChild(closeBtn);
     document.querySelector('#app').appendChild(lb);
   }
-  lb.querySelector('img').src = src;
+  lb.querySelectorAll('img, video').forEach(el => el.remove());
+
+  const src = createMediaUrl(mediaItem);
+  const isVideo = mediaItem.mimeType?.startsWith('video/');
+  if (isVideo) {
+    const video = document.createElement('video');
+    video.src = src;
+    video.controls = true;
+    video.autoplay = true;
+    lb.insertBefore(video, lb.firstChild);
+  } else {
+    const img = document.createElement('img');
+    img.src = src;
+    lb.insertBefore(img, lb.firstChild);
+  }
   lb.classList.add('open');
+}
+
+function _closeLightbox(lb) {
+  const video = lb.querySelector('video');
+  if (video) video.pause();
+  lb.remove();
 }

@@ -6,7 +6,8 @@
 
 /* esc, resolveRef, resolveRefName, getEffectiveFields, itemTables, getIpPrefix,
    calcCompleteness, calcArea/PanelDevicesCompleteness, buildDetailCompletenessHtml,
-   entityIcon, resizeImage, openLightbox are defined in js/utils.js. */
+   entityIcon, processMediaFile, base64ToMediaItem, createMediaUrl, revokeAllMediaUrls,
+   openMediaLightbox are defined in js/utils.js. */
 
 /* ============================================================
    BACK BUTTON / DETAIL PANEL
@@ -70,8 +71,15 @@ function openSheet(type, id = null, preset = null) {
   state.formId     = id;
   state.formPreset = preset;
   const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
-  state.formImages      = existing?.images      ? [...existing.images]      : [];
-  state.formNamedPhotos = existing?.namedPhotos ? {...existing.namedPhotos} : {};
+  state.formImages = (existing?.images || []).map(
+    x => (typeof x === 'string' ? base64ToMediaItem(x) : x)
+  );
+  state.formNamedPhotos = Object.fromEntries(
+    Object.entries(existing?.namedPhotos || {}).map(([k, v]) => {
+      const arr = Array.isArray(v) ? v : (v ? [v] : []);
+      return [k, arr.map(x => (typeof x === 'string' ? base64ToMediaItem(x) : x))];
+    })
+  );
   state.formItemTables = {};
   const cfg = ENTITY[type];
   for (const t of [...(cfg.itemTables || []), ...Object.values(cfg.classItemTables || {}).flat()])
@@ -100,6 +108,7 @@ function closeSheet() {
   el.formSave.textContent = 'Save';
   el.formSave.disabled    = false;
   setTimeout(() => { el.sheet.style.display = 'none'; el.formBody.innerHTML = ''; }, 300);
+  revokeAllMediaUrls();
   state.formType         = null;
   state.formId           = null;
   state.formPreset       = null;
@@ -543,9 +552,10 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
     const addr = item.ipAddress || item.nodeAddress || '';
     return addr ? `${net.name} — ${addr}` : net.name;
   })();
-  const firstImg = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
-  const thumb = firstImg
-    ? `<img class="card-thumb" src="${firstImg}" alt="">`
+  const firstMedia = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
+  const thumbSrc = getCardThumbSrc(firstMedia);
+  const thumb = thumbSrc
+    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
 
   const allChildren = [

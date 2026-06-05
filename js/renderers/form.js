@@ -3,9 +3,9 @@
    Renders the bottom-sheet form for creating/editing entities,
    PLC slots, and the plant settings form.
    Depends on: state, ENTITY, ASSIGN_STORE_MAP, PLC_CARD_TYPE_FIELDS,
-               esc, getIpPrefix, resizeImage, getById, refreshAll,
-               renderItemTable, renderClassItemTables, renderNamedPhotoSlots,
-               renderImagePreviews, renderIoPointsTable, syncIoPointCount,
+               esc, getIpPrefix, getById, refreshAll,
+               renderMediaSlot, renderMediaGallery, renderItemTable,
+               renderClassItemTables, renderIoPointsTable, syncIoPointCount,
                renderSwitchNetworksTable, renderSwitchPortsTable, renderPowerBusTable.
    ============================================================ */
 
@@ -164,23 +164,18 @@ async function renderEntityForm() {
   }
 
   if (cfg.requiredPhotoSlots) {
-    html += `<div class="form-section-hdr">Required Photos</div><div id="named-photo-slots">`;
+    html += `<div class="form-section-hdr">Required Media</div><div id="named-photo-slots">`;
     for (const slot of cfg.requiredPhotoSlots) {
       const slotId = `np-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
-      html += `<div class="named-photo-slot"><div class="named-photo-slot-label">${esc(slot)}</div><div id="${slotId}" class="named-photo-area"></div></div>`;
+      html += `<div class="named-photo-slot"><div class="named-photo-slot-label">${esc(slot)}</div><div id="${slotId}" class="named-photo-area img-grid"></div></div>`;
     }
     html += `</div>`;
   }
 
   if (!cfg.noImages) {
     html += `
-      <div class="form-section-hdr">Other Photos</div>
+      <div class="form-section-hdr">Other Media</div>
       <div class="fg">
-        <label class="img-upload" id="img-upload-label">
-          <input type="file" id="img-file-input" accept="image/*" multiple>
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          Tap to add images
-        </label>
         <div id="img-preview-grid" class="img-grid"></div>
       </div>
     `;
@@ -198,20 +193,25 @@ async function renderEntityForm() {
   }
 
   if (cfg.requiredPhotoSlots) {
-    renderNamedPhotoSlots(cfg.requiredPhotoSlots);
+    for (const slot of cfg.requiredPhotoSlots) {
+      const slotId = `np-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+      const area = $(slotId);
+      if (!area) continue;
+      const reSlot = () => renderMediaSlot(area, slot, state.formNamedPhotos[slot] || [], {
+        onAdd:    items => { state.formNamedPhotos[slot] = [...(state.formNamedPhotos[slot] || []), ...items]; reSlot(); },
+        onRemove: i     => { (state.formNamedPhotos[slot] || []).splice(i, 1); reSlot(); },
+      });
+      reSlot();
+    }
   }
 
   if (!cfg.noImages) {
-    renderImagePreviews();
-    const fileInput = $('img-file-input');
-    fileInput.addEventListener('change', async () => {
-      for (const file of Array.from(fileInput.files)) {
-        const b64 = await resizeImage(file);
-        state.formImages.push(b64);
-      }
-      fileInput.value = '';
-      renderImagePreviews();
+    const grid = $('img-preview-grid');
+    const reGallery = () => renderMediaGallery(grid, state.formImages, {
+      onAdd:    items => { state.formImages.push(...items); reGallery(); },
+      onRemove: i     => { state.formImages.splice(i, 1); reGallery(); },
     });
+    reGallery();
   }
 
   const assignTypeSelect = $('f-assign-type');

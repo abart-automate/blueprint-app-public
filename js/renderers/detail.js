@@ -130,9 +130,6 @@ async function renderSlotDetail(savedScroll) {
         body.style.display = expanded ? 'none' : 'block';
       });
     });
-    el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
-      img.addEventListener('click', () => openLightbox(img.src));
-    });
   el.detail.scrollTop = savedScroll;
 }
 
@@ -192,31 +189,25 @@ async function renderEntityDetail(savedScroll) {
       `<table class="wiring-det-table"><thead><tr><th>${esc(h1)}</th><th>${esc(h2)}</th></tr></thead><tbody>${rowsHtml}</tbody></table>`);
   }
 
-  // Required photos card (collapseable)
+  // Required media card (collapseable) — slots rendered into placeholders after innerHTML set
   let requiredPhotosCard = '';
   if (cfg.requiredPhotoSlots) {
-    const photoItems = cfg.requiredPhotoSlots.map(slot => {
-      const src = item.namedPhotos?.[slot];
+    const slotsHtml = cfg.requiredPhotoSlots.map(slot => {
+      const slotId = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
       return `
         <div class="named-photo-det-item">
           <div class="named-photo-det-label">${esc(slot)}</div>
-          ${src
-            ? `<img class="named-photo-det-img" src="${src}" alt="${esc(slot)}" data-lightbox>`
-            : `<div class="named-photo-det-empty">Not captured</div>`
-          }
+          <div id="${slotId}" class="img-grid"></div>
         </div>
       `;
     }).join('');
-    requiredPhotosCard = buildCollapsibleCard('Required Photos', photoItems);
+    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml);
   }
 
-  // Other photos card (collapseable)
+  // Other media card (collapseable) — gallery rendered into placeholder after innerHTML set
   let otherPhotosCard = '';
   if (!cfg.noImages) {
-    const galleryHtml = item.images?.length
-      ? `<div class="det-gallery">${item.images.map(src => `<img src="${src}" alt="" data-lightbox>`).join('')}</div>`
-      : `<div style="color:var(--muted);font-size:14px;padding:4px 0">No photos added.</div>`;
-    otherPhotosCard = buildCollapsibleCard('Other Photos', galleryHtml);
+    otherPhotosCard = buildCollapsibleCard('Other Media', `<div id="det-gallery" class="img-grid"></div>`);
   }
 
   // Assignment badge for networks/assets
@@ -396,9 +387,18 @@ async function renderEntityDetail(savedScroll) {
 
   state.detailChanges = {};
 
-  el.detail.querySelectorAll('[data-lightbox]').forEach(img => {
-    img.addEventListener('click', () => openLightbox(img.src));
-  });
+  if (cfg.requiredPhotoSlots) {
+    for (const slot of cfg.requiredPhotoSlots) {
+      const slotId = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+      const container = document.getElementById(slotId);
+      if (container) renderMediaSlot(container, slot, _normalizeMediaItems(item.namedPhotos?.[slot]), { readonly: true });
+    }
+  }
+  if (!cfg.noImages) {
+    const gallery = document.getElementById('det-gallery');
+    if (gallery) renderMediaGallery(gallery, _normalizeMediaItems(item.images), { readonly: true });
+  }
+
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
 
   el.detail.querySelector('#det-duplicate')?.addEventListener('click', () => duplicateItem(type, id));
@@ -516,9 +516,10 @@ function getSlotLinkedRacks(parentType, parentId) {
 
 function slotLinkedRackCardHTML(rack, slots) {
   const cfg = ENTITY.assets;
-  const firstImg = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
-  const thumb = firstImg
-    ? `<img class="card-thumb" src="${firstImg}" alt="">`
+  const firstMedia = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
+  const thumbSrc = getCardThumbSrc(firstMedia);
+  const thumb = thumbSrc
+    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon('assets', 24)}</div>`;
   const panelName = rack.panelId ? state.refs.panels?.[rack.panelId]?.name : '';
   const slotLines = slots.map(s => {

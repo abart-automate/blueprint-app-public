@@ -597,58 +597,47 @@ async function processArea(area, areaFolder, panelByArea, power, safety, assets,
   return processedCount;
 }
 
-async function processPanel(panel, panelFolder) {
-  // Export panel data.json
-  const data = { ...panel };
-  delete data.namedPhotos;
-  delete data.images;
-  panelFolder.file('data.json', JSON.stringify(data, null, 2));
+// Returns { blob, ext } from either a legacy base64 string or a { blob, mimeType } media item.
+function _mediaItemToExport(value) {
+  if (typeof value === 'string') return { blob: base64ToBlob(value), ext: 'jpg' };
+  const ext = value.mimeType === 'video/mp4' ? 'mp4' : 'jpg';
+  return { blob: value.blob, ext };
+}
 
-  // Export panel photos in photos/ subfolder
-  const photosFolder = panelFolder.folder('Photos');
-  if (panel.namedPhotos) {
-    for (const [slotName, base64] of Object.entries(panel.namedPhotos)) {
-      if (base64) {
-        const blob = base64ToBlob(base64);
-        photosFolder.file(`${sanitizeFilename(slotName)}.jpg`, blob);
-      }
+// Writes namedPhotos (object of arrays or legacy strings) and images array to a JSZip folder.
+function _exportMedia(entity, photosFolder) {
+  if (entity.namedPhotos) {
+    for (const [slotName, slotValue] of Object.entries(entity.namedPhotos)) {
+      const items = Array.isArray(slotValue) ? slotValue : (slotValue ? [slotValue] : []);
+      items.forEach((item, i) => {
+        const { blob, ext } = _mediaItemToExport(item);
+        const suffix = items.length > 1 ? `-${i + 1}` : '';
+        photosFolder.file(`${sanitizeFilename(slotName)}${suffix}.${ext}`, blob);
+      });
     }
   }
-  if (panel.images && panel.images.length > 0) {
-    panel.images.forEach((base64, index) => {
-      if (base64) {
-        const blob = base64ToBlob(base64);
-        photosFolder.file(`${index + 1}.jpg`, blob);
-      }
+  if (entity.images?.length) {
+    entity.images.forEach((item, i) => {
+      const { blob, ext } = _mediaItemToExport(item);
+      photosFolder.file(`${i + 1}.${ext}`, blob);
     });
   }
 }
 
+async function processPanel(panel, panelFolder) {
+  const data = { ...panel };
+  delete data.namedPhotos;
+  delete data.images;
+  panelFolder.file('data.json', JSON.stringify(data, null, 2));
+  _exportMedia(panel, panelFolder.folder('Photos'));
+}
+
 async function processObject(item, itemFolder) {
-  // Export data.json (exclude photo data)
   const data = { ...item };
   delete data.namedPhotos;
   delete data.images;
   itemFolder.file('data.json', JSON.stringify(data, null, 2));
-
-  // Export all photos in photos/ subfolder
-  const photosFolder = itemFolder.folder('photos');
-  if (item.namedPhotos) {
-    for (const [slotName, base64] of Object.entries(item.namedPhotos)) {
-      if (base64) {
-        const blob = base64ToBlob(base64);
-        photosFolder.file(`${sanitizeFilename(slotName)}.jpg`, blob);
-      }
-    }
-  }
-  if (item.images && item.images.length > 0) {
-    item.images.forEach((base64, index) => {
-      if (base64) {
-        const blob = base64ToBlob(base64);
-        photosFolder.file(`${index + 1}.jpg`, blob);
-      }
-    });
-  }
+  _exportMedia(item, itemFolder.folder('photos'));
 }
 
 function generateObjectFolderName(item, siblings) {

@@ -1,66 +1,95 @@
 /* ============================================================
-   TABLE & PHOTO-SLOT RENDERERS
+   TABLE & MEDIA RENDERERS
    All dynamic table UIs rendered into the form sheet.
-   Depends on: state, ENTITY, ICON_RM, esc, getIpPrefix, resizeImage.
+   Depends on: state, ENTITY, esc, getIpPrefix,
+               processMediaFile, createMediaUrl, openMediaLightbox (utils.js).
    ============================================================ */
 
-/* ---- IMAGE PREVIEWS ---- */
+/* ---- SHARED MEDIA RENDERER ---- */
 
-function renderImagePreviews() {
-  const grid = $('img-preview-grid');
-  if (!grid) return;
-  grid.innerHTML = state.formImages.map((src, i) => `
-    <div class="img-thumb">
-      <img src="${src}" alt="">
-      <button class="img-rm" data-idx="${i}">✕</button>
-    </div>
-  `).join('');
-  grid.querySelectorAll('.img-rm').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      state.formImages.splice(Number(btn.dataset.idx), 1);
-      renderImagePreviews();
-    });
-  });
+const _CAMERA_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+
+// Returns a .img-thumb DOM element for one media item.
+// onRemove: called when ✕ clicked; onClick: called when media clicked.
+function renderMediaThumb(mediaItem, { onRemove, onClick } = {}) {
+  const div = document.createElement('div');
+  div.className = 'img-thumb';
+  const src = createMediaUrl(mediaItem);
+  const isVideo = mediaItem.mimeType?.startsWith('video/');
+  const media = document.createElement(isVideo ? 'video' : 'img');
+  if (isVideo) media.muted = true;
+  media.src = src;
+  if (onClick) media.addEventListener('click', onClick);
+  div.appendChild(media);
+  if (onRemove) {
+    const btn = document.createElement('button');
+    btn.className = 'img-rm';
+    btn.type = 'button';
+    btn.textContent = '✕';
+    btn.addEventListener('click', e => { e.stopPropagation(); onRemove(); });
+    div.appendChild(btn);
+  }
+  return div;
 }
 
-/* ---- NAMED PHOTO SLOTS ---- */
-
-function renderNamedPhotoSlots(slots) {
-  const cameraIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
-  for (const slot of slots) {
-    const slotId = `np-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
-    const area = $(slotId);
-    if (!area) continue;
-    const src = state.formNamedPhotos[slot];
-    if (src) {
-      area.innerHTML = `
-        <div class="img-thumb named-img-thumb">
-          <img src="${src}" alt="${esc(slot)}">
-          <button class="img-rm" type="button">✕</button>
-        </div>
-      `;
-      area.querySelector('.img-rm').addEventListener('click', e => {
-        e.stopPropagation();
-        delete state.formNamedPhotos[slot];
-        renderNamedPhotoSlots(slots);
-      });
-    } else {
-      area.innerHTML = `
-        <label class="named-photo-upload">
-          <input type="file" accept="image/*">
-          ${cameraIcon}
-          <span>Tap to capture</span>
-        </label>
-      `;
-      area.querySelector('input[type="file"]').addEventListener('change', async e => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const b64 = await resizeImage(file);
-        state.formNamedPhotos[slot] = b64;
-        renderNamedPhotoSlots(slots);
-      });
+// Private: creates a file input label that validates files via processMediaFile.
+// multiple: allow multiple file selection. onFiles: called with Array<{blob,mimeType}>.
+function _makeUploadInput(multiple, onFiles) {
+  const label = document.createElement('label');
+  label.className = 'named-photo-upload';
+  label.innerHTML = `<input type="file" accept="${ACCEPTED_MEDIA_ACCEPT}"${multiple ? ' multiple' : ''}>${_CAMERA_ICON}<span>Tap to add</span>`;
+  const input = label.querySelector('input');
+  input.addEventListener('change', async () => {
+    const files = Array.from(input.files);
+    input.value = '';
+    const results = [];
+    for (const file of files) {
+      try { results.push(await processMediaFile(file)); }
+      catch (err) { showToast(err.message, 'error'); }
     }
+    if (results.length) onFiles(results);
+  });
+  return label;
+}
+
+// Renders a scrollable grid of media thumbs into containerEl.
+// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
+function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly } = {}) {
+  containerEl.innerHTML = '';
+  if (!mediaItems.length && readonly) {
+    containerEl.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:4px 0">No media added.</div>`;
+    return;
+  }
+  mediaItems.forEach((item, i) => {
+    containerEl.appendChild(renderMediaThumb(item, {
+      onRemove: readonly ? null : () => onRemove(i),
+      onClick:  () => openMediaLightbox(item),
+    }));
+  });
+  if (!readonly) {
+    const upload = _makeUploadInput(true, onAdd);
+    upload.querySelector('span').textContent = 'Tap to add media';
+    containerEl.appendChild(upload);
+  }
+}
+
+// Renders media items for one named slot into containerEl.
+// slotName is passed for potential aria/title use by callers.
+// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
+function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, readonly } = {}) {
+  containerEl.innerHTML = '';
+  if (!mediaItems.length && readonly) {
+    containerEl.innerHTML = `<div class="named-photo-det-empty">Not captured</div>`;
+    return;
+  }
+  mediaItems.forEach((item, i) => {
+    containerEl.appendChild(renderMediaThumb(item, {
+      onRemove: readonly ? null : () => onRemove(i),
+      onClick:  () => openMediaLightbox(item),
+    }));
+  });
+  if (!readonly) {
+    containerEl.appendChild(_makeUploadInput(true, onAdd));
   }
 }
 
