@@ -1,5 +1,3 @@
-const APP_VERSION = '1.2.2'; // keep in sync with sw.js
-
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,

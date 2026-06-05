@@ -1,12 +1,14 @@
-const APP_VERSION = '1.3.0'; // keep in sync with js/init.js
+importScripts('./js/version.js');
+
 const CACHE_NAME = `plant-asset-${APP_VERSION}`;
 
 // All static files that make up the app shell.
-// Bump APP_VERSION whenever any of these files change.
+// Bump APP_VERSION in js/version.js whenever any of these files change.
 const APP_SHELL = [
   './',
   './index.html',
   './css/style.css',
+  './js/version.js',
   './js/db.js',
   './js/entity-config.js',
   './js/state.js',
