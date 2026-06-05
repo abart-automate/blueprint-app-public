@@ -25,8 +25,8 @@ async function savePickerForm() {
   const pcfg  = ENTITY[childType];
   closeSheet();
   showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
+  renderPage();
   if (state.detailType) renderDetail();
-  else renderPage();
 }
 
 async function saveSlotForm() {
@@ -65,6 +65,7 @@ async function saveSlotForm() {
     await refreshAll();
     closeSheet();
     showToast('Card saved', 'success');
+    renderPage();
     renderDetail({ preserveScroll: true });
 }
 
