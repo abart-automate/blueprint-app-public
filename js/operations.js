@@ -279,6 +279,27 @@ async function cascadeDeleteItem(type, id) {
 }
 
 /* ============================================================
+   CLEAR ALL DATA
+   ============================================================ */
+
+async function clearAllData() {
+  el.confirmYes.textContent = 'Clear All';
+  el.confirmNo.textContent  = 'Cancel';
+  const ok = await confirm(
+    'Clear All Data',
+    'This will permanently delete all areas, panels, equipment, and media. This cannot be undone.'
+  );
+  if (!ok) return;
+  for (const name of ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings']) {
+    await clearStore(name);
+  }
+  revokeAllMediaUrls();
+  await refreshAll();
+  showToast('All data cleared', 'success');
+  renderPage();
+}
+
+/* ============================================================
    DUPLICATE
    ============================================================ */
 
