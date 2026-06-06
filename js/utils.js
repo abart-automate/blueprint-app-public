@@ -7,7 +7,7 @@
 /* ---- MEDIA TYPE CONSTANTS ---- */
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ACCEPTED_VIDEO_TYPES = ['video/mp4'];
+const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/mov'];
 const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
 const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
 
