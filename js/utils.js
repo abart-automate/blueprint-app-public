@@ -7,7 +7,7 @@
 /* ---- MEDIA TYPE CONSTANTS ---- */
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/mov'];
+const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/quicktime'];
 const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
 const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
 
@@ -184,7 +184,7 @@ async function processMediaFile(file) {
   if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
     throw new Error(
       `Unsupported file: ${file.name} (${file.type || 'unknown type'})\n` +
-      `Accepted images: JPEG, PNG, WebP\nAccepted videos: MP4`
+      `Accepted images: JPEG, PNG, WebP\nAccepted videos: MP4, MOV`
     );
   }
   if (ACCEPTED_VIDEO_TYPES.includes(file.type)) {

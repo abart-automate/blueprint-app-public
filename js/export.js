@@ -600,7 +600,7 @@ async function processArea(area, areaFolder, panelByArea, power, safety, assets,
 // Returns { blob, ext } from either a legacy base64 string or a { blob, mimeType } media item.
 function _mediaItemToExport(value) {
   if (typeof value === 'string') return { blob: base64ToBlob(value), ext: 'jpg' };
-  const ext = value.mimeType === 'video/mp4' ? 'mp4' : 'jpg';
+  const ext = value.mimeType === 'video/mp4' ? 'mp4' : value.mimeType === 'video/quicktime' ? 'mov' : 'jpg';
   return { blob: value.blob, ext };
 }
 
