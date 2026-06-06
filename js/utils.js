@@ -174,11 +174,17 @@ function calcChecklistAutoItems() {
   }
   const assetClassOptions = ENTITY.assets.fields.find(f => f.key === 'assetClass').options;
   const allAssets = state.cache.assets || [];
+  const subItems = [];
   for (const cls of assetClassOptions) {
     const clsItems = allAssets.filter(a => a.assetClass === cls);
     if (!clsItems.length) continue;
     const done = clsItems.filter(a => calcCompleteness('assets', a) >= COMPLETION_THRESHOLD).length;
-    items.push({ key: `asset-${cls}`, label: cls, done, total: clsItems.length });
+    subItems.push({ key: `asset-${cls}`, label: cls, done, total: clsItems.length });
+  }
+  if (subItems.length) {
+    const totalDone = subItems.reduce((s, i) => s + i.done, 0);
+    const totalAll  = subItems.reduce((s, i) => s + i.total, 0);
+    items.push({ key: 'assets', label: ENTITY.assets.plural, done: totalDone, total: totalAll, subItems });
   }
   return items;
 }

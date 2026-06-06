@@ -12,6 +12,7 @@ const KNOWN_SHEET_NAMES = new Set([
   'PLC', 'PLC Slots', 'HMI', 'VFD', 'VFD Parameters',
   'Network Device', 'Hardwired Device',
   'Power Wiring', 'VFD Wiring', 'Network Device Wiring', 'Hardwired Device Wiring',
+  'Checklist',
 ]);
 
 async function processXlsxImport(file) {
@@ -64,6 +65,7 @@ async function processXlsxImport(file) {
     await importEntitySheets(wb, nameToId, idExists, stats);
     await importAssetSheets(wb, nameToId, idExists, stats);
     await importSubdataSheets(wb, nameToId, idExists);
+    await importChecklistSheet(wb);
 
     await refreshAll();
     renderPage();
@@ -179,6 +181,17 @@ async function importAssetSheets(wb, nameToId, idExists, stats) {
 // ---------------------------------------------------------------------------
 // Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, VFD Params)
 // ---------------------------------------------------------------------------
+
+async function importChecklistSheet(wb) {
+  const ws = wb.Sheets['Checklist'];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
+  const customItems = rows
+    .filter(r => r[1] === 'Custom')
+    .map(r => ({ id: crypto.randomUUID(), label: String(r[0] ?? '').trim(), completed: r[2] === 'Complete' }))
+    .filter(i => i.label);
+  if (customItems.length) await setSetting('checklistItems', customItems);
+}
 
 async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchNetworksSheet(wb, nameToId, idExists);

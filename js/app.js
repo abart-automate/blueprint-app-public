@@ -384,22 +384,41 @@ async function renderHome() {
   }
 }
 
+const _expandedAutoKeys = new Set();
+
 function buildChecklistHtml(autoItems, customItems) {
   const autoRows = autoItems.map(item => {
-    const complete = item.done === item.total;
-    return `<div class="checklist-item checklist-item-auto${complete ? ' checklist-done' : ''}">
+    const complete  = item.done === item.total;
+    const hasSubs   = !!item.subItems?.length;
+    const expanded  = _expandedAutoKeys.has(item.key);
+
+    const row = `<div class="checklist-item checklist-item-auto${complete ? ' checklist-done' : ''}">
       <span class="checklist-check-icon${complete ? ' checklist-icon-complete' : ''}">${complete ? ICON_CHECK : ICON_CIRCLE}</span>
       <span class="checklist-label">${esc(item.label)}</span>
       <span class="checklist-count">${item.done}/${item.total}</span>
+      ${hasSubs ? `<button class="checklist-expand-btn${expanded ? ' expanded' : ''}" data-key="${esc(item.key)}" aria-label="Toggle subtypes">${ICON_CHEVRON}</button>` : ''}
     </div>`;
+
+    if (!hasSubs) return row;
+
+    const subRows = item.subItems.map(sub => {
+      const sc = sub.done === sub.total;
+      return `<div class="checklist-item checklist-subitem checklist-item-auto${sc ? ' checklist-done' : ''}">
+        <span class="checklist-check-icon${sc ? ' checklist-icon-complete' : ''}">${sc ? ICON_CHECK : ICON_CIRCLE}</span>
+        <span class="checklist-label">${esc(sub.label)}</span>
+        <span class="checklist-count">${sub.done}/${sub.total}</span>
+      </div>`;
+    }).join('');
+
+    return `${row}<div class="checklist-subgroup" data-parent="${esc(item.key)}"${expanded ? '' : ' hidden'}>${subRows}</div>`;
   }).join('');
 
   const customRows = customItems.map(item => `
-    <div class="checklist-item">
+    <div class="checklist-item${item.completed ? ' checklist-done' : ''}">
       <button class="checklist-toggle-btn" data-cid="${esc(item.id)}" aria-label="Toggle task">
         <span class="${item.completed ? 'checklist-icon-complete' : ''}">${item.completed ? ICON_CHECK : ICON_CIRCLE}</span>
       </button>
-      <span class="checklist-label${item.completed ? ' checklist-done-text' : ''}">${esc(item.label)}</span>
+      <span class="checklist-label">${esc(item.label)}</span>
       <button class="checklist-delete-btn" data-cid="${esc(item.id)}" aria-label="Delete task">${ICON_RM}</button>
     </div>`).join('');
 
@@ -424,6 +443,18 @@ function bindChecklistEvents() {
     container.innerHTML = buildChecklistHtml(calcChecklistAutoItems(), items);
     bindChecklistEvents();
   };
+
+  container.querySelectorAll('.checklist-expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      const sub = container.querySelector(`.checklist-subgroup[data-parent="${key}"]`);
+      if (!sub) return;
+      const nowExpanded = !_expandedAutoKeys.has(key);
+      nowExpanded ? _expandedAutoKeys.add(key) : _expandedAutoKeys.delete(key);
+      sub.hidden = !nowExpanded;
+      btn.classList.toggle('expanded', nowExpanded);
+    });
+  });
 
   container.querySelectorAll('.checklist-toggle-btn').forEach(btn => {
     btn.addEventListener('click', async () => {

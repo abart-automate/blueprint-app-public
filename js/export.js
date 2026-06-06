@@ -63,6 +63,17 @@ async function exportToZip() {
       }
     }
 
+    // Checklist snapshot at ZIP root
+    const checklistCustom = (await getSetting('checklistItems')) || [];
+    zip.file('data.json', JSON.stringify({
+      version: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      checklist: {
+        autoItems: calcChecklistAutoItems(),
+        customItems: checklistCustom,
+      },
+    }, null, 2));
+
     // Generate and download ZIP
     updateProgress(totalItems, totalItems, 'Generating ZIP file...');
     const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -118,9 +129,12 @@ async function exportExcel() {
       assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
     }
 
+    const checklistCustom = (await getSetting('checklistItems')) || [];
+    const checklistAuto   = calcChecklistAutoItems();
+
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 21;
+    const totalSheets = 22;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -152,6 +166,7 @@ async function exportExcel() {
     addSheet('Network Device Wiring', buildNetworkDeviceWiringSheet(assetsByClass['Network Device'], refs));
     addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
     addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
+    addSheet('Checklist', buildChecklistSheet(checklistAuto, checklistCustom));
 
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -164,6 +179,22 @@ async function exportExcel() {
     hideExportProgress();
     showToast('Excel export failed: ' + error.message, 'error');
   }
+}
+
+function buildChecklistSheet(autoItems, customItems) {
+  const rows = [['Label', 'Type', 'Status', 'Done', 'Total', 'Progress']];
+  for (const item of autoItems) {
+    const status = item.done === item.total ? 'Complete' : 'In Progress';
+    rows.push([item.label, 'Auto', status, item.done, item.total, `${item.done}/${item.total}`]);
+    for (const sub of item.subItems || []) {
+      const ss = sub.done === sub.total ? 'Complete' : 'In Progress';
+      rows.push([`  ${sub.label}`, 'Auto-Sub', ss, sub.done, sub.total, `${sub.done}/${sub.total}`]);
+    }
+  }
+  for (const item of customItems) {
+    rows.push([item.label, 'Custom', item.completed ? 'Complete' : 'Incomplete', '', '', '']);
+  }
+  return XLSX.utils.aoa_to_sheet(rows);
 }
 
 // Keys excluded from each asset class's main sheet (handled by sub-data sheets)
