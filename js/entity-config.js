@@ -86,8 +86,8 @@ const ENTITY = {
       { key: 'physW', label: 'Width',  type: 'text', section: 'Physical Sizing' },
       { key: 'physD', label: 'Depth',  type: 'text', section: 'Physical Sizing' },
       // Backpanel Sizing
-      { key: 'bpH', label: 'Height', type: 'text', section: 'Backpanel Sizing' },
-      { key: 'bpW', label: 'Width',  type: 'text', section: 'Backpanel Sizing' },
+      { key: 'bpH', label: 'Backpanel Height', type: 'text', section: 'Backpanel Sizing' },
+      { key: 'bpW', label: 'Backpanel Width',  type: 'text', section: 'Backpanel Sizing' },
       // Clearance
       { key: 'clrFront',  label: 'Front',  type: 'text', section: 'Clearance' },
       { key: 'clrBack',   label: 'Back',   type: 'text', section: 'Clearance' },

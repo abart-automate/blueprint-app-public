@@ -17,7 +17,11 @@ function renderMediaThumb(mediaItem, { onRemove, onClick } = {}) {
   const src = createMediaUrl(mediaItem);
   const isVideo = mediaItem.mimeType?.startsWith('video/');
   const media = document.createElement(isVideo ? 'video' : 'img');
-  if (isVideo) media.muted = true;
+  if (isVideo) {
+    media.muted = true;
+    media.preload = 'metadata';
+    media.addEventListener('loadedmetadata', () => { media.currentTime = 0.001; });
+  }
   media.src = src;
   if (onClick) media.addEventListener('click', onClick);
   div.appendChild(media);

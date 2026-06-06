@@ -11,6 +11,7 @@ const KNOWN_SHEET_NAMES = new Set([
   'Network Switch', 'Switch Networks', 'Switch Ports',
   'PLC', 'PLC Slots', 'HMI', 'VFD', 'VFD Parameters',
   'Network Device', 'Hardwired Device',
+  'Power Wiring', 'VFD Wiring', 'Network Device Wiring', 'Hardwired Device Wiring',
 ]);
 
 async function processXlsxImport(file) {
@@ -184,6 +185,10 @@ async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
   await importVfdParametersSheet(wb, nameToId, idExists);
+  await importPowerWiringSheet(wb, nameToId, idExists);
+  await importAssetWiringSheet(wb, 'VFD Wiring',              'deviceWiring',        nameToId, idExists);
+  await importAssetWiringSheet(wb, 'Network Device Wiring',   'networkDeviceWiring', nameToId, idExists);
+  await importAssetWiringSheet(wb, 'Hardwired Device Wiring', 'hardwiredWiring',     nameToId, idExists);
 }
 
 async function importSwitchNetworksSheet(wb, nameToId, idExists) {
@@ -277,6 +282,41 @@ async function importVfdParametersSheet(wb, nameToId, idExists) {
   }
 }
 
+async function importPowerWiringSheet(wb, nameToId, idExists) {
+  const ws = wb.Sheets['Power Wiring'];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const grouped = groupByParentAsset(rows, 'Power ID', 'Power Name', nameToId, idExists, 'power');
+  for (const [powerId, powerRows] of grouped) {
+    const item = await getById('power', powerId);
+    if (!item) continue;
+    item.inputWiring = powerRows
+      .filter(r => str(r['Section']) === 'Input Wiring')
+      .map(r => ({ terminal: str(r['Terminal']), label: str(r['Label']) }))
+      .filter(r => r.terminal || r.label);
+    item.outputWiring = powerRows
+      .filter(r => str(r['Section']) === 'Output Wiring')
+      .map(r => ({ terminal: str(r['Terminal']), label: str(r['Label']) }))
+      .filter(r => r.terminal || r.label);
+    await upsert('power', item);
+  }
+}
+
+async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId, idExists) {
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const grouped = groupByParentAsset(rows, 'Asset ID', 'Asset Name', nameToId, idExists);
+  for (const [assetId, assetRows] of grouped) {
+    const asset = await getById('assets', assetId);
+    if (!asset) continue;
+    asset[wiringKey] = assetRows
+      .map(r => ({ terminal: str(r['Terminal']), label: str(r['Label']) }))
+      .filter(r => r.terminal || r.label);
+    await upsert('assets', asset);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -298,14 +338,14 @@ function resolveRefId(rawId, name, store, nameToId, idExists) {
   return null;
 }
 
-function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists) {
+function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists, store = 'assets') {
   const grouped = new Map();
   for (const row of rows) {
     if (isPlaceholderRow(row)) continue;
-    const assetId = resolveRefId(str(row[idCol]), str(row[nameCol]), 'assets', nameToId, idExists);
-    if (!assetId) continue;
-    if (!grouped.has(assetId)) grouped.set(assetId, []);
-    grouped.get(assetId).push(row);
+    const id = resolveRefId(str(row[idCol]), str(row[nameCol]), store, nameToId, idExists);
+    if (!id) continue;
+    if (!grouped.has(id)) grouped.set(id, []);
+    grouped.get(id).push(row);
   }
   return grouped;
 }

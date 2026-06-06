@@ -248,6 +248,7 @@ function getCardThumbSrc(mediaValue) {
   if (!item) return null;
   if (typeof item === 'string') return item;
   if (item._legacySrc) return item._legacySrc;
+  if (item.mimeType?.startsWith('video/')) return null;
   return URL.createObjectURL(item.blob);
 }
 
