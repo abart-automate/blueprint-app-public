@@ -108,6 +108,11 @@ async function importEntitySheets(wb, nameToId, idExists, stats) {
         stats.errors++;
       }
     }
+
+    // Refresh maps so downstream sheets can resolve refs added in this pass
+    const refreshed = await getAll(store);
+    nameToId[store] = buildNameMap(refreshed);
+    idExists[store] = new Set(refreshed.map(i => i.id));
   }
 }
 
@@ -163,6 +168,11 @@ async function importAssetSheets(wb, nameToId, idExists, stats) {
       }
     }
   }
+
+  // Refresh asset maps so sub-data sheets can resolve newly-added asset names/IDs
+  const refreshed = await getAll('assets');
+  nameToId.assets = buildNameMap(refreshed);
+  idExists.assets = new Set(refreshed.map(i => i.id));
 }
 
 // ---------------------------------------------------------------------------

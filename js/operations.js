@@ -433,6 +433,57 @@ async function showExportOptions() {
    IMPORT / EXPORT WRAPPERS
    ============================================================ */
 
+async function _blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function _serializeEntityMedia(entity) {
+  const out = { ...entity };
+  if (out.images?.length) {
+    out.images = await Promise.all(out.images.map(async item => {
+      if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
+      return item;
+    }));
+  }
+  if (out.namedPhotos) {
+    const slots = {};
+    for (const [slot, value] of Object.entries(out.namedPhotos)) {
+      const arr = Array.isArray(value) ? value : (value ? [value] : []);
+      slots[slot] = await Promise.all(arr.map(async item => {
+        if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
+        return item;
+      }));
+    }
+    out.namedPhotos = slots;
+  }
+  return out;
+}
+
+function _deserializeEntityMedia(entity) {
+  const out = { ...entity };
+  if (out.images) {
+    out.images = out.images
+      .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
+      .filter(item => item?.blob instanceof Blob || typeof item === 'string');
+  }
+  if (out.namedPhotos) {
+    const slots = {};
+    for (const [slot, value] of Object.entries(out.namedPhotos)) {
+      const arr = Array.isArray(value) ? value : (value ? [value] : []);
+      slots[slot] = arr
+        .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
+        .filter(item => item?.blob instanceof Blob || typeof item === 'string');
+    }
+    out.namedPhotos = slots;
+  }
+  return out;
+}
+
 async function exportData() {
   try {
     const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
@@ -443,7 +494,8 @@ async function exportData() {
       data:       {}
     };
     for (const name of stores) {
-      payload.data[name] = await getAll(name);
+      const items = await getAll(name);
+      payload.data[name] = await Promise.all(items.map(_serializeEntityMedia));
     }
     payload.data.settings = await getAll('settings');
 
@@ -512,7 +564,11 @@ async function processImportFile(file) {
       const items = payload.data[name];
       if (!Array.isArray(items)) continue;
       for (const item of items) {
-        await upsert(name, item);
+        try {
+          await upsert(name, _deserializeEntityMedia(item));
+        } catch (e) {
+          console.warn(`JSON import: skipped ${name} item ${item?.id}:`, e);
+        }
       }
     }
 
