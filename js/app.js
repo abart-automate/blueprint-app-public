@@ -393,6 +393,7 @@ function buildChecklistHtml(autoItems, customItems) {
   const custTotal = customItems.length;
   const grandDone  = autoDone + custDone;
   const grandTotal = autoTotal + custTotal;
+  const pct        = grandTotal > 0 ? Math.round(grandDone / grandTotal * 100) : 0;
   const allDone    = grandTotal > 0 && grandDone === grandTotal;
 
   const autoRows = autoItems.map(item => {
@@ -433,9 +434,11 @@ function buildChecklistHtml(autoItems, customItems) {
   return `
     <div class="section-label">Discovery Checklist</div>
     <div class="checklist-summary${allDone ? ' checklist-summary-complete' : ''}">
-      <span class="checklist-summary-icon">${allDone ? ICON_CHECK : ICON_CIRCLE}</span>
-      <span class="checklist-summary-label">All Items</span>
-      <span class="checklist-summary-count">${grandDone}/${grandTotal}</span>
+      <div class="checklist-summary-top">
+        <span class="checklist-summary-label">All Items</span>
+        <span class="checklist-summary-meta">${grandDone}/${grandTotal} &bull; ${pct}%</span>
+      </div>
+      <div class="checklist-summary-track"><div class="checklist-summary-fill" style="width:${pct}%"></div></div>
     </div>
     ${autoItems.length ? `<div class="checklist-group">${autoRows}</div>` : ''}
     <div class="checklist-group checklist-custom">
