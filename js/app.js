@@ -387,6 +387,14 @@ async function renderHome() {
 const _expandedAutoKeys = new Set();
 
 function buildChecklistHtml(autoItems, customItems) {
+  const autoDone  = autoItems.reduce((s, i) => s + i.done, 0);
+  const autoTotal = autoItems.reduce((s, i) => s + i.total, 0);
+  const custDone  = customItems.filter(i => i.completed).length;
+  const custTotal = customItems.length;
+  const grandDone  = autoDone + custDone;
+  const grandTotal = autoTotal + custTotal;
+  const allDone    = grandTotal > 0 && grandDone === grandTotal;
+
   const autoRows = autoItems.map(item => {
     const complete  = item.done === item.total;
     const hasSubs   = !!item.subItems?.length;
@@ -424,6 +432,11 @@ function buildChecklistHtml(autoItems, customItems) {
 
   return `
     <div class="section-label">Discovery Checklist</div>
+    <div class="checklist-summary${allDone ? ' checklist-summary-complete' : ''}">
+      <span class="checklist-summary-icon">${allDone ? ICON_CHECK : ICON_CIRCLE}</span>
+      <span class="checklist-summary-label">All Items</span>
+      <span class="checklist-summary-count">${grandDone}/${grandTotal}</span>
+    </div>
     ${autoItems.length ? `<div class="checklist-group">${autoRows}</div>` : ''}
     <div class="checklist-group checklist-custom">
       ${customRows}
