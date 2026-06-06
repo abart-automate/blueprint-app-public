@@ -301,7 +301,7 @@ async function renderEntityForm() {
           const current = state.formSwitchPorts.length;
           if (count > current) {
             for (let i = current + 1; i <= count; i++)
-              state.formSwitchPorts.push({ portName: `Port ${i}`, networkId: '', assetId: '' });
+              state.formSwitchPorts.push({ portName: `Port ${i}`, networkId: '', assetId: '', slotNumber: null });
           } else if (count < current) {
             state.formSwitchPorts.splice(count);
           }

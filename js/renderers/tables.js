@@ -197,33 +197,34 @@ function renderSwitchPortsTable() {
     ).join('');
 
   const selfId = state.formId;
-  const makeDeviceOpts = (networkId, selectedId) =>
-    (state.cache.assets || [])
-      .filter(a => {
-        if (a.id === selfId) return false;
-        if (a.assetClass === 'PLC') {
-          return (a.slots || []).some(s =>
-            (s.cardType === 'Controller' || s.cardType === 'Communication') &&
-            state.refs.networks?.[s.networkId]?.networkType === 'Ethernet' &&
-            (!networkId || s.networkId === networkId)
-          );
+  const makeDeviceOpts = (networkId, selectedId) => {
+    const opts = [];
+    for (const a of (state.cache.assets || [])) {
+      if (a.id === selfId) continue;
+      if (a.assetClass === 'PLC') {
+        const matchingSlots = (a.slots || []).filter(s =>
+          (s.cardType === 'Controller' || s.cardType === 'Communication') &&
+          state.refs.networks?.[s.networkId]?.networkType === 'Ethernet' &&
+          (!networkId || s.networkId === networkId)
+        );
+        for (const s of matchingSlots) {
+          const val = `${a.id}|${s.slotNumber}`;
+          const label = `${a.name} — Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
+          opts.push(`<option value="${val}"${val === selectedId ? ' selected' : ''}>${esc(label)}</option>`);
         }
+      } else {
         const assetNet = state.refs.networks?.[a.networkId];
-        if (!assetNet || assetNet.networkType !== 'Ethernet') return false;
-        return !networkId || a.networkId === networkId;
-      })
-      .map(a => {
-        let label = a.name;
-        if (a.assetClass === 'PLC' && networkId) {
-          const matchSlot = (a.slots || []).find(s =>
-            (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === networkId
-          );
-          if (matchSlot) label += ` — Slot ${matchSlot.slotNumber}${matchSlot.name ? ` (${matchSlot.name})` : ''}`;
-        }
-        return `<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(label)}</option>`;
-      }).join('');
+        if (!assetNet || assetNet.networkType !== 'Ethernet') continue;
+        if (networkId && a.networkId !== networkId) continue;
+        opts.push(`<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`);
+      }
+    }
+    return opts.join('');
+  };
 
-  let html = rows.map((r, i) => `
+  let html = rows.map((r, i) => {
+    const selId = (r.assetId && r.slotNumber != null) ? `${r.assetId}|${r.slotNumber}` : r.assetId;
+    return `
     <div class="sp-port-row">
       <div class="sp-port-row-top">
         <input class="f-input sp-port" type="text" placeholder="Port ${i + 1}" data-idx="${i}" value="${esc(r.portName || '')}">
@@ -235,9 +236,10 @@ function renderSwitchPortsTable() {
       </select>
       <select class="f-select sp-device" data-idx="${i}">
         <option value="">— No Connection —</option>
-        ${makeDeviceOpts(r.networkId, r.assetId)}
+        ${makeDeviceOpts(r.networkId, selId)}
       </select>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   html += `<button type="button" class="wiring-add-btn sp-add">+ Add Port</button>`;
   container.innerHTML = html;
 
@@ -251,25 +253,41 @@ function renderSwitchPortsTable() {
     sel.addEventListener('change', () => {
       const idx = +sel.dataset.idx;
       const newNetId = sel.value;
-      const currentAssetId = state.formSwitchPorts[idx].assetId;
-      if (currentAssetId) {
-        const asset = state.refs.assets?.[currentAssetId];
-        if (asset?.networkId && asset.networkId !== newNetId) {
-          state.formSwitchPorts[idx].assetId = '';
+      const p = state.formSwitchPorts[idx];
+      if (p.assetId) {
+        const asset = state.refs.assets?.[p.assetId];
+        if (asset?.assetClass === 'PLC') {
+          const slot = asset.slots?.find(s => s.slotNumber === p.slotNumber);
+          if (slot?.networkId && slot.networkId !== newNetId) {
+            p.assetId    = '';
+            p.slotNumber = null;
+          }
+        } else if (asset?.networkId && asset.networkId !== newNetId) {
+          p.assetId = '';
         }
       }
-      state.formSwitchPorts[idx].networkId = newNetId;
+      p.networkId = newNetId;
       const row = container.querySelectorAll('.sp-port-row')[idx];
       const deviceSel = row?.querySelector('.sp-device');
       if (deviceSel) {
-        deviceSel.innerHTML = `<option value="">— No Connection —</option>${makeDeviceOpts(newNetId, state.formSwitchPorts[idx].assetId)}`;
+        const selId = (p.assetId && p.slotNumber != null) ? `${p.assetId}|${p.slotNumber}` : p.assetId;
+        deviceSel.innerHTML = `<option value="">— No Connection —</option>${makeDeviceOpts(newNetId, selId)}`;
       }
     });
   });
 
   container.querySelectorAll('.sp-device').forEach(sel => {
     sel.addEventListener('change', () => {
-      state.formSwitchPorts[+sel.dataset.idx].assetId = sel.value;
+      const idx = +sel.dataset.idx;
+      const val = sel.value;
+      const sep = val.indexOf('|');
+      if (sep !== -1) {
+        state.formSwitchPorts[idx].assetId    = val.slice(0, sep);
+        state.formSwitchPorts[idx].slotNumber = +val.slice(sep + 1);
+      } else {
+        state.formSwitchPorts[idx].assetId    = val;
+        state.formSwitchPorts[idx].slotNumber = null;
+      }
     });
   });
 
@@ -283,7 +301,7 @@ function renderSwitchPortsTable() {
 
   container.querySelector('.sp-add')?.addEventListener('click', () => {
     const num = state.formSwitchPorts.length + 1;
-    state.formSwitchPorts.push({ portName: `Port ${num}`, networkId: '', assetId: '' });
+    state.formSwitchPorts.push({ portName: `Port ${num}`, networkId: '', assetId: '', slotNumber: null });
     renderSwitchPortsTable();
     const inputs = container.querySelectorAll('.sp-port');
     inputs[inputs.length - 1]?.select();

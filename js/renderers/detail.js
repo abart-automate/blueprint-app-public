@@ -313,9 +313,11 @@ async function renderEntityDetail(savedScroll) {
             let slotLabel = '';
             let ipAddr    = '';
             if (asset?.assetClass === 'PLC') {
-              const matchSlot = (asset.slots || []).find(s =>
-                (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === r.networkId
-              );
+              const matchSlot = r.slotNumber != null
+                ? (asset.slots || []).find(s => s.slotNumber === r.slotNumber)
+                : (asset.slots || []).find(s =>
+                    (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === r.networkId
+                  );
               if (matchSlot) {
                 slotLabel = `Slot ${matchSlot.slotNumber}${matchSlot.name ? ` — ${matchSlot.name}` : ''}`;
                 ipAddr = matchSlot.ipAddress || matchSlot.nodeAddress || '';
