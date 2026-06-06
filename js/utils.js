@@ -63,6 +63,8 @@ function getIpPrefix(ipRange) {
 
 /* ---- COMPLETENESS ---- */
 
+const COMPLETION_THRESHOLD = 75;
+
 function calcCompleteness(type, item) {
   const cfg = ENTITY[type];
   let total = 0, filled = 0;
@@ -114,7 +116,7 @@ function calcPanelDevicesCompleteness(panelId) {
 function buildDetailCompletenessHtml(type, item) {
   if (type === 'areas') {
     const pct = calcAreaCompleteness(item);
-    const color = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+    const color = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
     return `
       <div class="det-card det-completeness-card">
         <div class="det-completeness-row">
@@ -126,9 +128,9 @@ function buildDetailCompletenessHtml(type, item) {
   }
   if (type === 'panels') {
     const panelPct = calcCompleteness('panels', item);
-    const panelColor = panelPct >= 75 ? 'var(--success)' : 'var(--danger)';
+    const panelColor = panelPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
     const devPct = calcPanelDevicesCompleteness(item.id);
-    const devColor = devPct !== null ? (devPct >= 75 ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
+    const devColor = devPct !== null ? (devPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
     const devRow = devPct !== null
       ? `<div class="det-completeness-row" style="margin-top:12px">
            <span class="det-completeness-label">Devices</span>
@@ -150,7 +152,7 @@ function buildDetailCompletenessHtml(type, item) {
       </div>`;
   }
   const pct = calcCompleteness(type, item);
-  const color = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+  const color = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
   return `
     <div class="det-card det-completeness-card">
       <div class="det-completeness-row">
@@ -159,6 +161,26 @@ function buildDetailCompletenessHtml(type, item) {
       </div>
       <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>
     </div>`;
+}
+
+function calcChecklistAutoItems() {
+  const items = [];
+  for (const [type, cfg] of Object.entries(ENTITY)) {
+    if (type === 'assets') continue;
+    const all = state.cache[type] || [];
+    if (!all.length) continue;
+    const done = all.filter(i => calcCompleteness(type, i) >= COMPLETION_THRESHOLD).length;
+    items.push({ key: type, label: cfg.plural, done, total: all.length });
+  }
+  const assetClassOptions = ENTITY.assets.fields.find(f => f.key === 'assetClass').options;
+  const allAssets = state.cache.assets || [];
+  for (const cls of assetClassOptions) {
+    const clsItems = allAssets.filter(a => a.assetClass === cls);
+    if (!clsItems.length) continue;
+    const done = clsItems.filter(a => calcCompleteness('assets', a) >= COMPLETION_THRESHOLD).length;
+    items.push({ key: `asset-${cls}`, label: cls, done, total: clsItems.length });
+  }
+  return items;
 }
 
 /* ---- ENTITY ICONS ---- */

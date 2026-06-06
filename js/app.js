@@ -289,8 +289,11 @@ async function renderPage() {
 /* ---- HOME ---- */
 async function renderHome() {
   await refreshAll();
-  const plantName = (await getSetting('plantName')) || 'My Plant';
-  const plantDesc = (await getSetting('plantDesc')) || 'Tap the edit button to set plant info';
+  const [plantName, plantDesc, rawChecklistItems] = await Promise.all([
+    getSetting('plantName').then(v => v || 'My Plant'),
+    getSetting('plantDesc').then(v => v || 'Tap the edit button to set plant info'),
+    getSetting('checklistItems').then(v => v || []),
+  ]);
 
   const counts = {};
   for (const key of Object.keys(ENTITY)) counts[key] = state.cache[key]?.length ?? 0;
@@ -335,6 +338,9 @@ async function renderHome() {
       <button class="btn btn-primary home-install-btn" id="home-install-btn">Install</button>
     </div>
     ` : ''}
+    <div class="home-checklist" id="home-checklist">
+      ${buildChecklistHtml(calcChecklistAutoItems(), rawChecklistItems)}
+    </div>
     <div class="home-data-actions">
       <div class="section-label">Data Management</div>
       <div class="home-data-btns">
@@ -357,6 +363,7 @@ async function renderHome() {
     </div>
   `;
 
+  bindChecklistEvents();
   el.main.querySelector('#home-edit-plant').addEventListener('click', () => openPlantForm());
   el.main.querySelectorAll('.stat-card').forEach(card => {
     card.addEventListener('click', () => navigate(card.dataset.nav));
@@ -375,6 +382,80 @@ async function renderHome() {
       }
     });
   }
+}
+
+function buildChecklistHtml(autoItems, customItems) {
+  const autoRows = autoItems.map(item => {
+    const complete = item.done === item.total;
+    return `<div class="checklist-item checklist-item-auto${complete ? ' checklist-done' : ''}">
+      <span class="checklist-check-icon${complete ? ' checklist-icon-complete' : ''}">${complete ? ICON_CHECK : ICON_CIRCLE}</span>
+      <span class="checklist-label">${esc(item.label)}</span>
+      <span class="checklist-count">${item.done}/${item.total}</span>
+    </div>`;
+  }).join('');
+
+  const customRows = customItems.map(item => `
+    <div class="checklist-item">
+      <button class="checklist-toggle-btn" data-cid="${esc(item.id)}" aria-label="Toggle task">
+        <span class="${item.completed ? 'checklist-icon-complete' : ''}">${item.completed ? ICON_CHECK : ICON_CIRCLE}</span>
+      </button>
+      <span class="checklist-label${item.completed ? ' checklist-done-text' : ''}">${esc(item.label)}</span>
+      <button class="checklist-delete-btn" data-cid="${esc(item.id)}" aria-label="Delete task">${ICON_RM}</button>
+    </div>`).join('');
+
+  return `
+    <div class="section-label">Discovery Checklist</div>
+    ${autoItems.length ? `<div class="checklist-group">${autoRows}</div>` : ''}
+    <div class="checklist-group checklist-custom">
+      ${customRows}
+      <div class="checklist-add-row">
+        <input id="checklist-new-input" class="f-input checklist-new-input" type="text" placeholder="Add task…" maxlength="120">
+        <button class="btn btn-outline checklist-add-btn" id="checklist-add-btn">${ICON_PLUS}</button>
+      </div>
+    </div>`;
+}
+
+function bindChecklistEvents() {
+  const container = $('home-checklist');
+  if (!container) return;
+
+  const rerender = async () => {
+    const items = (await getSetting('checklistItems')) || [];
+    container.innerHTML = buildChecklistHtml(calcChecklistAutoItems(), items);
+    bindChecklistEvents();
+  };
+
+  container.querySelectorAll('.checklist-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const items = (await getSetting('checklistItems')) || [];
+      const idx = items.findIndex(i => i.id === btn.dataset.cid);
+      if (idx === -1) return;
+      items[idx].completed = !items[idx].completed;
+      await setSetting('checklistItems', items);
+      await rerender();
+    });
+  });
+
+  container.querySelectorAll('.checklist-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const items = ((await getSetting('checklistItems')) || []).filter(i => i.id !== btn.dataset.cid);
+      await setSetting('checklistItems', items);
+      await rerender();
+    });
+  });
+
+  const doAdd = async () => {
+    const input = $('checklist-new-input');
+    const label = input?.value.trim();
+    if (!label) return;
+    const items = (await getSetting('checklistItems')) || [];
+    items.push({ id: crypto.randomUUID(), label, completed: false });
+    await setSetting('checklistItems', items);
+    await rerender();
+  };
+
+  $('checklist-add-btn')?.addEventListener('click', doAdd);
+  $('checklist-new-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
 }
 
 function openPlantForm() {
@@ -456,7 +537,7 @@ async function renderAreasList() {
 
 function areaCardHTML(area, counts) {
   const pct = calcAreaCompleteness(area);
-  const barColor = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+  const barColor = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
   const countDefs = [
     { type: 'panels',   color: 'var(--c-panel)',   title: 'Panels',   n: counts.panels },
     { type: 'power',    color: 'var(--c-power)',   title: 'Power',    n: counts.power },
@@ -621,12 +702,12 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
 
   const trashIcon = ICON_TRASH;
   const pct = calcCompleteness(type, item);
-  const barColor = pct >= 75 ? 'var(--success)' : 'var(--danger)';
+  const barColor = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
 
   let progressHtml;
   if (type === 'panels') {
     const devPct = calcPanelDevicesCompleteness(item.id);
-    const devColor = devPct !== null ? (devPct >= 75 ? 'var(--success)' : 'var(--danger)') : 'var(--border)';
+    const devColor = devPct !== null ? (devPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)') : 'var(--border)';
     progressHtml = `
       <div class="card-progress-multi">
         <div class="cpr-row">
