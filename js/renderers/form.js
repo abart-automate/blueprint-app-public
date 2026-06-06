@@ -15,6 +15,25 @@ async function renderForm() {
   return renderEntityForm();
 }
 
+/* ---- SHARED: NETWORK ADDRESS FIELDS ---- */
+
+async function renderNetworkAddressFields(existing, type) {
+  const networkId = $('f-networkId')?.value;
+  const network   = state.refs.networks?.[networkId];
+  const fields    = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
+  const container = $('network-address-container');
+  if (!container) return;
+  if (!fields.length) { container.innerHTML = ''; return; }
+  let ph = `<div class="form-section-hdr">Network Address</div>`;
+  for (const f of fields) ph += await buildFormField(f, existing, type);
+  container.innerHTML = ph;
+  const ipInput = $('f-ipAddress');
+  if (ipInput && !ipInput.value) {
+    const prefix = getIpPrefix(network?.ipRange);
+    if (prefix) ipInput.value = prefix;
+  }
+}
+
 /* ---- PLC SLOT FORM ---- */
 
 async function renderSlotForm() {
@@ -47,18 +66,6 @@ async function renderSlotForm() {
     </div>
   `;
 
-  const renderSlotNetworkAddressFields = async () => {
-    const networkId = $('f-networkId')?.value;
-    const network   = state.refs.networks?.[networkId];
-    const fields    = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
-    const container = $('network-address-container');
-    if (!container) return;
-    if (!fields.length) { container.innerHTML = ''; return; }
-    let ph = `<div class="form-section-hdr">Network Address</div>`;
-    for (const f of fields) ph += await buildFormField(f, existing, 'assets');
-    container.innerHTML = ph;
-  };
-
   const renderSlotCardTypeFields = async () => {
     const cardType  = $('f-cardType')?.value;
     const fields    = PLC_CARD_TYPE_FIELDS[cardType] || [];
@@ -69,8 +76,8 @@ async function renderSlotForm() {
       for (const f of fields) ph += await buildFormField(f, existing, 'assets');
       container.innerHTML = ph;
       if (cardType === 'Controller' || cardType === 'Communication') {
-        $('f-networkId')?.addEventListener('change', renderSlotNetworkAddressFields);
-        await renderSlotNetworkAddressFields();
+        $('f-networkId')?.addEventListener('change', () => renderNetworkAddressFields(existing, 'assets'));
+        await renderNetworkAddressFields(existing, 'assets');
       }
     }
     const ioWrap = $('io-points-wrap');
@@ -244,22 +251,7 @@ async function renderEntityForm() {
   }
 
   if (type === 'assets') {
-    const renderNetworkAddressFields = async () => {
-      const networkId = $('f-networkId')?.value;
-      const network   = state.refs.networks?.[networkId];
-      const fields    = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
-      const container = $('network-address-container');
-      if (!container) return;
-      if (!fields.length) { container.innerHTML = ''; return; }
-      let ph = `<div class="form-section-hdr">Network Address</div>`;
-      for (const f of fields) ph += await buildFormField(f, existing, type);
-      container.innerHTML = ph;
-      const ipInput = $('f-ipAddress');
-      if (ipInput && !ipInput.value) {
-        const prefix = getIpPrefix(network?.ipRange);
-        if (prefix) ipInput.value = prefix;
-      }
-    };
+    const _renderNetAddr = () => renderNetworkAddressFields(existing, type);
 
     const updateSwitchTables = () => {
       const assetClass = $('f-assetClass')?.value;
@@ -291,8 +283,8 @@ async function renderEntityForm() {
       }
       container.innerHTML = ph;
       if ($('f-networkId')) {
-        $('f-networkId').addEventListener('change', renderNetworkAddressFields);
-        await renderNetworkAddressFields();
+        $('f-networkId').addEventListener('change', _renderNetAddr);
+        await _renderNetAddr();
       }
       const portCountEl = $('f-portCount');
       if (portCountEl) {
@@ -332,8 +324,8 @@ async function renderEntityForm() {
         }
         container.innerHTML = ph;
         if (cardType === 'Controller') {
-          $('f-networkId')?.addEventListener('change', renderNetworkAddressFields);
-          await renderNetworkAddressFields();
+          $('f-networkId')?.addEventListener('change', _renderNetAddr);
+          await _renderNetAddr();
         }
       }
       const ioWrap = $('io-points-wrap');
@@ -378,8 +370,8 @@ async function renderEntityForm() {
           let ph = '';
           for (const f of classFieldDefs) ph += await buildFormField(f, existing, type);
           classCont.innerHTML = ph;
-          $('f-networkId')?.addEventListener('change', renderNetworkAddressFields);
-          await renderNetworkAddressFields();
+          $('f-networkId')?.addEventListener('change', _renderNetAddr);
+          await _renderNetAddr();
         }
       }
 
