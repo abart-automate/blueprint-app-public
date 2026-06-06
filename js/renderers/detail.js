@@ -461,7 +461,7 @@ async function renderEntityDetail(savedScroll) {
       const presetField  = btn.dataset.presetField;
       const presetVal    = btn.dataset.presetVal;
       const extraPresets = btn.dataset.extraPresets ? JSON.parse(btn.dataset.extraPresets) : {};
-      if (childType === 'assets' || ((childType === 'power' || childType === 'safety') && presetField === 'panelId') || (childType === 'panels' && presetField === 'areaId')) {
+      if (childType === 'assets' || childType === 'power' || childType === 'safety' || childType === 'panels') {
         openAssignOrCreate(childType, presetField, presetVal);
       } else {
         openSheet(childType, null, { field: presetField, value: presetVal, extra: extraPresets });
