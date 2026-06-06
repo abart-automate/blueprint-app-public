@@ -85,7 +85,7 @@ function initUpdateBanner() {
   banner.id = 'update-banner';
   banner.className = 'update-banner';
   banner.innerHTML =
-    `<span>Update to v${APP_VERSION} available.</span>` +
+    '<span>A new version of Blueprint is available.</span>' +
     '<div class="update-banner-btns">' +
     '<button id="update-later-btn">Later</button>' +
     '<button id="update-now-btn">Update Now</button>' +
