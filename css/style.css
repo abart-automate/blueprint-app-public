@@ -1110,14 +1110,15 @@ body {
 .home-edit-btn:active { background: rgba(255,255,255,0.35); }
 .home-stats-toggle {
   display: flex; align-items: center; justify-content: center;
-  width: 100%; margin-top: 10px;
-  border: none; background: rgba(255,255,255,0.15); color: white;
-  border-radius: var(--radius-sm); padding: 4px; cursor: pointer;
-  line-height: 0;
+  width: 100%; margin-top: 12px;
+  border: none; background: rgba(255,255,255,0.2); color: white;
+  border-radius: var(--radius-sm); padding: 6px; cursor: pointer;
+  line-height: 0; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
 }
-.home-stats-toggle:active { background: rgba(255,255,255,0.25); }
-.home-stats-toggle svg { transform: rotate(90deg); transition: transform 0.2s; }
-.home-stats-toggle.expanded svg { transform: rotate(270deg); }
+.home-stats-toggle:active { background: rgba(255,255,255,0.35); }
+.home-stats-toggle svg { transition: transform 0.2s; }
+.home-stats-toggle.expanded svg { transform: rotate(180deg); }
 
 .stats-grid {
   display: grid;
@@ -1125,6 +1126,7 @@ body {
   gap: 8px;
   margin-bottom: 16px;
 }
+.stats-grid[hidden] { display: none; }
 .stat-card {
   background: var(--surface);
   border-radius: var(--radius);
