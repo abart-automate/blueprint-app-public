@@ -137,7 +137,6 @@ async function exportExcel() {
     const totalSheets = 22;
 
     const addSheet = (name, worksheet) => {
-      applyTable(worksheet, sanitizeSheetName(name));
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
       processedCount++;
       updateProgress(processedCount, totalSheets, `Adding ${name} sheet...`);
@@ -169,8 +168,22 @@ async function exportExcel() {
     addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
     addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
 
+    const sheetMeta = workbook.SheetNames.map((name, i) => {
+      const ws = workbook.Sheets[name];
+      const ref = ws['!ref'];
+      if (!ref) return null;
+      const range = XLSX.utils.decode_range(ref);
+      const headers = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+        headers.push(cell?.v != null ? String(cell.v) : `Column${c + 1}`);
+      }
+      return { index: i + 1, ref, headers };
+    }).filter(Boolean);
+
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const finalArray = await postProcessXlsx(workbookArray, sheetMeta);
+    const blob = new Blob([finalArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     downloadBlob(blob, `blueprint-export-${new Date().toISOString().split('T')[0]}.xlsx`);
 
     hideExportProgress();
@@ -363,17 +376,77 @@ function buildPlcAnalogWiringSheet(plcAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function applyTable(ws, name) {
-  const ref = ws['!ref'];
-  if (!ref) return;
-  const safeName = ('T_' + name).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 255);
-  ws['!tables'] = [{
-    ref,
-    name: safeName,
-    headerRow: true,
-    totalsRow: false,
-    style: { name: 'TableStyleMedium9', showRowStripes: true },
-  }];
+async function postProcessXlsx(array, sheetMeta) {
+  function xmlEsc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function dedupeHeaders(headers) {
+    const seen = {};
+    return headers.map(h => {
+      if (!seen[h]) { seen[h] = 1; return h; }
+      seen[h]++;
+      return `${h}_${seen[h]}`;
+    });
+  }
+
+  const zip = await JSZip.loadAsync(array);
+  let contentTypes = await zip.file('[Content_Types].xml').async('string');
+
+  for (const { index, ref, headers } of sheetMeta) {
+    const dedupedHeaders = dedupeHeaders(headers);
+    const colCount = dedupedHeaders.length;
+    const tableId = index;
+    const tableName = `T_${tableId}`;
+
+    const cols = dedupedHeaders.map((h, j) =>
+      `<tableColumn id="${j + 1}" name="${xmlEsc(h)}" showFilterButton="0"/>`
+    ).join('');
+
+    const tableXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"` +
+      ` id="${tableId}" name="${tableName}" displayName="${tableName}"` +
+      ` ref="${ref}" headerRowCount="1">` +
+      `<tableColumns count="${colCount}">${cols}</tableColumns>` +
+      `<tableStyleInfo name="TableStyleMedium9" showFirstColumn="0"` +
+      ` showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>` +
+      `</table>`;
+
+    zip.file(`xl/tables/table${tableId}.xml`, tableXml);
+
+    const relXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId_t1"` +
+      ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"` +
+      ` Target="../tables/table${tableId}.xml"/>` +
+      `</Relationships>`;
+
+    zip.file(`xl/worksheets/_rels/sheet${index}.xml.rels`, relXml);
+
+    const sheetXml = await zip.file(`xl/worksheets/sheet${index}.xml`).async('string');
+    zip.file(
+      `xl/worksheets/sheet${index}.xml`,
+      sheetXml.replace(
+        '</worksheet>',
+        `<tableParts count="1"><tablePart r:id="rId_t1"/></tableParts></worksheet>`
+      )
+    );
+
+    contentTypes = contentTypes.replace(
+      '</Types>',
+      `<Override PartName="/xl/tables/table${tableId}.xml"` +
+      ` ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/></Types>`
+    );
+  }
+
+  zip.file('[Content_Types].xml', contentTypes);
+  return zip.generateAsync({ type: 'arraybuffer' });
 }
 
 function getDefaultHeaders(store, excludeKeys = []) {
@@ -388,8 +461,6 @@ function buildSubDataSheet(headers, rows) {
     wch: Math.max(h.length + 4, 14),
     ...(h === 'ID' || h.endsWith(' ID') ? { hidden: true } : {}),
   }));
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
   return ws;
 }
 
@@ -419,13 +490,11 @@ function buildWorksheet(items, store, refs, options = {}) {
   const rows = (items || []).map(item => columnSpec.map(c => c.getValue(item)));
 
   const worksheet = XLSX.utils.aoa_to_sheet([headerLabels, ...rows]);
-  const range = XLSX.utils.decode_range(worksheet['!ref']);
 
   worksheet['!cols'] = columnSpec.map(c => ({
     wch: Math.max(Math.min(c.header.length + 6, 30), 10),
     ...(c.hidden ? { hidden: true } : {}),
   }));
-  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
 
   return worksheet;
 }
