@@ -251,8 +251,16 @@ async function renderEntityDetail(savedScroll) {
           }
           let ipTag = '';
           if (slot.cardType === 'Controller' || slot.cardType === 'Communication') {
-            const addr = slot.ipAddress || slot.nodeAddress;
-            if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
+            const network   = state.refs.networks?.[slot.networkId];
+            const netFields = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
+            const addrField = netFields.find(f => f.section === 'Network Address' && slot[f.key]);
+            if (addrField) {
+              const shortLabel = addrField.label.split(' ')[0];
+              ipTag = `<span class="sn-det-field">${shortLabel}<strong>${esc(slot[addrField.key])}</strong></span>`;
+            } else {
+              const addr = slot.ipAddress || slot.nodeAddress;
+              if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
+            }
           }
           return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
             <div class="rack-slot-hdr">

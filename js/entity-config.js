@@ -249,6 +249,12 @@ const ENTITY = {
       'Serial': [
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' }
       ],
+      'DH+': [
+        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' },
+      ],
+      'Remote-IO': [
+        { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' },
+      ],
     },
     cardTypeFields: PLC_CARD_TYPE_FIELDS,
     classFields: {
