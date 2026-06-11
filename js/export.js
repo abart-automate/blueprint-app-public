@@ -398,13 +398,16 @@ async function postProcessXlsx(array, sheetMeta) {
   let contentTypes = await zip.file('[Content_Types].xml').async('string');
 
   for (const { index, ref, headers } of sheetMeta) {
+    const range = XLSX.utils.decode_range(ref);
+    if (range.e.r === 0) continue; // header row only — Excel rejects tables on single-row ranges
+
     const dedupedHeaders = dedupeHeaders(headers);
     const colCount = dedupedHeaders.length;
     const tableId = index;
     const tableName = `T_${tableId}`;
 
     const cols = dedupedHeaders.map((h, j) =>
-      `<tableColumn id="${j + 1}" name="${xmlEsc(h)}" showFilterButton="0"/>`
+      `<tableColumn id="${j + 1}" name="${xmlEsc(h)}"/>`
     ).join('');
 
     const tableXml =
@@ -412,6 +415,7 @@ async function postProcessXlsx(array, sheetMeta) {
       `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"` +
       ` id="${tableId}" name="${tableName}" displayName="${tableName}"` +
       ` ref="${ref}" headerRowCount="1">` +
+      `<autoFilter ref="${ref}"/>` +
       `<tableColumns count="${colCount}">${cols}</tableColumns>` +
       `<tableStyleInfo name="TableStyleMedium9" showFirstColumn="0"` +
       ` showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>` +
@@ -429,7 +433,13 @@ async function postProcessXlsx(array, sheetMeta) {
 
     zip.file(`xl/worksheets/_rels/sheet${index}.xml.rels`, relXml);
 
-    const sheetXml = await zip.file(`xl/worksheets/sheet${index}.xml`).async('string');
+    let sheetXml = await zip.file(`xl/worksheets/sheet${index}.xml`).async('string');
+    if (!sheetXml.includes('xmlns:r=')) {
+      sheetXml = sheetXml.replace(
+        '<worksheet ',
+        '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+      );
+    }
     zip.file(
       `xl/worksheets/sheet${index}.xml`,
       sheetXml.replace(
