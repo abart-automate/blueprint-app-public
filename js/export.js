@@ -137,12 +137,14 @@ async function exportExcel() {
     const totalSheets = 22;
 
     const addSheet = (name, worksheet) => {
+      applyTable(worksheet, sanitizeSheetName(name));
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
       processedCount++;
       updateProgress(processedCount, totalSheets, `Adding ${name} sheet...`);
     };
 
     // Entity sheets
+    addSheet('Checklist', buildChecklistSheet(checklistAuto, checklistCustom));
     addSheet('Areas',    buildWorksheet(areas,    'areas',    refs));
     addSheet('Panels',   buildWorksheet(panels,   'panels',   refs));
     addSheet('Power',    buildWorksheet(power,    'power',    refs, { excludeKeys: ['inputWiring', 'outputWiring'] }));
@@ -166,7 +168,6 @@ async function exportExcel() {
     addSheet('Network Device Wiring', buildNetworkDeviceWiringSheet(assetsByClass['Network Device'], refs));
     addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
     addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
-    addSheet('Checklist', buildChecklistSheet(checklistAuto, checklistCustom));
 
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -362,46 +363,60 @@ function buildPlcAnalogWiringSheet(plcAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
+function applyTable(ws, name) {
+  const ref = ws['!ref'];
+  if (!ref) return;
+  const safeName = ('T_' + name).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 255);
+  ws['!tables'] = [{
+    ref,
+    name: safeName,
+    headerRow: true,
+    totalsRow: false,
+    style: { name: 'TableStyleMedium9', showRowStripes: true },
+  }];
+}
+
+function getDefaultHeaders(store, excludeKeys = []) {
+  const excludeSet = new Set([...excludeKeys, 'images', 'namedPhotos']);
+  const fields = ENTITY[store]?.fields || [];
+  return [...new Set(['id', ...fields.map(f => f.key)])].filter(k => !excludeSet.has(k));
+}
+
 function buildSubDataSheet(headers, rows) {
-  const data = rows.length ? [headers, ...rows] : [headers, ['No records']];
-  const ws = XLSX.utils.aoa_to_sheet(data);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws['!cols'] = headers.map(h => ({
     wch: Math.max(h.length + 4, 14),
     ...(h === 'ID' || h.endsWith(' ID') ? { hidden: true } : {}),
   }));
-  if (rows.length) {
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
-  }
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
   return ws;
 }
 
 // options.excludeKeys: string[] — keys to omit from this sheet
 function buildWorksheet(items, store, refs, options = {}) {
-  if (!items || !items.length) {
-    return XLSX.utils.aoa_to_sheet([['No records']]);
-  }
-
   const HIDDEN_KEYS = new Set(['id', 'createdAt', 'updatedAt']);
   const { excludeKeys = [] } = options;
-  const orderedKeys = getExportHeaders(items, store, excludeKeys);
+  const orderedKeys = (items?.length)
+    ? getExportHeaders(items, store, excludeKeys)
+    : getDefaultHeaders(store, excludeKeys);
 
   // Build column specs; ref fields get two columns: resolved name + raw ID (always hidden)
   const columnSpec = [];
   for (const key of orderedKeys) {
-    const label = getFieldLabel(store, key, items[0]);
+    const label = getFieldLabel(store, key, items?.[0] ?? null);
     const hideMain = HIDDEN_KEYS.has(key);
     if (REF_FIELD_MAP[key] || key === 'assignedToId') {
-      columnSpec.push({ header: label,      getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
+      columnSpec.push({ header: label,    getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
       const idHeader = key === 'assignedToId' ? 'Assigned To ID' : label + ' ID';
-      columnSpec.push({ header: idHeader,   getValue: item => item[key] || '', hidden: true });
+      columnSpec.push({ header: idHeader, getValue: item => item[key] || '', hidden: true });
     } else {
-      columnSpec.push({ header: label,      getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
+      columnSpec.push({ header: label,    getValue: item => resolveExportValue(store, key, item[key], item, refs), hidden: hideMain });
     }
   }
 
   const headerLabels = columnSpec.map(c => c.header);
-  const rows = items.map(item => columnSpec.map(c => c.getValue(item)));
+  const rows = (items || []).map(item => columnSpec.map(c => c.getValue(item)));
 
   const worksheet = XLSX.utils.aoa_to_sheet([headerLabels, ...rows]);
   const range = XLSX.utils.decode_range(worksheet['!ref']);
