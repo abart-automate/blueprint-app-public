@@ -166,7 +166,7 @@ function buildDetailCompletenessHtml(type, item) {
 function calcChecklistAutoItems() {
   const items = [];
   for (const [type, cfg] of Object.entries(ENTITY)) {
-    if (type === 'assets') continue;
+    if (type === 'assets' || type === 'areas') continue;
     const all = state.cache[type] || [];
     if (!all.length) continue;
     const done = all.filter(i => calcCompleteness(type, i) >= COMPLETION_THRESHOLD).length;
