@@ -33,6 +33,12 @@ function resolveRefName(storeName, id) {
   return resolveRef(storeName, id)?.name ?? '';
 }
 
+/* ---- SORTING ---- */
+
+// Case-insensitive alphabetical comparator for items with a name field.
+// Used by list views and child sections to ensure consistent A→Z display.
+const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+
 /* ---- FIELD / ENTITY HELPERS ---- */
 
 function getEffectiveFields(type, item) {

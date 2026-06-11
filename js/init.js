@@ -9,7 +9,7 @@ async function init() {
     await initDB();
     wireEvents();
     const hash = window.location.hash.replace('#', '') || 'home';
-    const startPage = (ENTITY[hash] || hash === 'home' || hash === 'plc') ? hash : 'home';
+    const startPage = (ENTITY[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
     navigate(startPage);
     initInstallPrompt();
     initOfflineIndicator();

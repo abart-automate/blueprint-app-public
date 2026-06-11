@@ -18,11 +18,9 @@ function wireEvents() {
     }
   });
 
-  // Add button
+  // Add button — hidden on home and checklist pages (those have no add-entity action)
   el.addBtn.addEventListener('click', () => {
-    if (state.page === 'plc') {
-      openSheet('assets', null, { field: 'assetClass', value: 'PLC' });
-    } else if (state.page !== 'home') {
+    if (state.page !== 'home' && state.page !== 'checklist') {
       openSheet(state.page);
     }
   });
@@ -37,7 +35,7 @@ function wireEvents() {
   // Hash change
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '') || 'home';
-    if (ENTITY[hash] || hash === 'home' || hash === 'plc') {
+    if (ENTITY[hash] || hash === 'home' || hash === 'checklist') {
       if (hash !== state.page) navigate(hash);
     }
   });

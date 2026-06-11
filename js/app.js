@@ -255,10 +255,10 @@ function setHeaderForPage(page) {
     el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
-  } else if (page === 'plc') {
-    el.pageTitle.textContent   = 'PLCs';
+  } else if (page === 'checklist') {
+    el.pageTitle.textContent   = 'Checklist';
     el.backBtn.style.visibility = 'hidden';
-    el.addBtn.style.visibility  = 'visible';
+    el.addBtn.style.visibility  = 'hidden';
   } else {
     el.pageTitle.textContent   = ENTITY[page].plural;
     el.backBtn.style.visibility = 'hidden';
@@ -273,26 +273,17 @@ function setHeaderForPage(page) {
 async function renderPage() {
   el.main.innerHTML = '<div class="spinner"></div>';
   if (state.page === 'home')  { await renderHome(); return; }
-  if (state.page === 'areas') { await renderAreasList(); return; }
-  if (state.page === 'plc') {
-    await renderList('assets', {
-      preFilter: a => a.assetClass === 'PLC',
-      label:     'PLC Rack',
-      plural:    'PLC Racks',
-      chipField: 'panelId',
-    });
-    return;
-  }
+  if (state.page === 'areas')     { await renderAreasList(); return; }
+  if (state.page === 'checklist') { await renderChecklist(); return; }
   await renderList(state.page);
 }
 
 /* ---- HOME ---- */
 async function renderHome() {
   await refreshAll();
-  const [plantName, plantDesc, rawChecklistItems] = await Promise.all([
+  const [plantName, plantDesc] = await Promise.all([
     getSetting('plantName').then(v => v || 'My Plant'),
     getSetting('plantDesc').then(v => v || 'Tap the edit button to set plant info'),
-    getSetting('checklistItems').then(v => v || []),
   ]);
 
   const counts = {};
@@ -339,9 +330,6 @@ async function renderHome() {
       <button class="btn btn-primary home-install-btn" id="home-install-btn">Install</button>
     </div>
     ` : ''}
-    <div class="home-checklist" id="home-checklist">
-      ${buildChecklistHtml(calcChecklistAutoItems(), rawChecklistItems)}
-    </div>
     <div class="home-data-actions">
       <div class="section-label">Data Management</div>
       <div class="home-data-btns">
@@ -364,7 +352,6 @@ async function renderHome() {
     </div>
   `;
 
-  bindChecklistEvents();
   el.main.querySelector('#home-edit-plant').addEventListener('click', () => openPlantForm());
   el.main.querySelector('#home-stats-toggle').addEventListener('click', () => {
     _statsExpanded = !_statsExpanded;
@@ -391,6 +378,17 @@ async function renderHome() {
       }
     });
   }
+}
+
+/* ---- CHECKLIST PAGE ---- */
+async function renderChecklist() {
+  await refreshAll();
+  const items = (await getSetting('checklistItems')) || [];
+  // Reuse home-checklist container ID — only one page renders at a time
+  el.main.innerHTML = `<div class="home-checklist" id="home-checklist">
+    ${buildChecklistHtml(calcChecklistAutoItems(), items)}
+  </div>`;
+  bindChecklistEvents();
 }
 
 let _statsExpanded = false;
@@ -539,7 +537,7 @@ function openPlantForm() {
 /* ---- AREAS LIST ---- */
 async function renderAreasList() {
   await refreshAll();
-  const areas = state.cache.areas || [];
+  const areas = [...(state.cache.areas || [])].sort(sortByName);
 
   el.main.innerHTML = `
     <div class="search-wrap">
@@ -630,6 +628,7 @@ async function renderList(type, opts = {}) {
   await loadCache(['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
   let items = state.cache[type] || [];
   if (opts.preFilter) items = items.filter(opts.preFilter);
+  items = [...items].sort(sortByName);
   const cfg        = ENTITY[type];
   const cfgLabel   = opts.label  || cfg.label;
   const cfgPlural  = opts.plural || cfg.plural;

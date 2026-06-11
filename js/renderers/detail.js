@@ -576,10 +576,10 @@ async function buildChildSections(type, id, item) {
       type === 'networks' && child.store === 'assets'
         ? all.filter(a => a[child.field] !== id && a.switchNetworks?.some(sn => sn.networkId === id))
         : []
-    );
+    ).sort(sortByName);
 
     const slotLinked = (['networks', 'power', 'safety'].includes(type) && child.store === 'assets')
-      ? getSlotLinkedRacks(type, id).filter(({ rack }) => !filtered.some(f => f.id === rack.id))
+      ? getSlotLinkedRacks(type, id).filter(({ rack }) => !filtered.some(f => f.id === rack.id)).sort((a, b) => sortByName(a.rack, b.rack))
       : [];
 
     const cardOpts = type === 'networks' && child.store === 'assets' ? { contextNetworkId: id } : {};
