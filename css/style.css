@@ -1289,6 +1289,43 @@ body {
 .checklist-summary-complete .checklist-summary-meta { color: var(--success); }
 .checklist-summary-complete .checklist-summary-fill { background: var(--success); }
 
+/* Checklist item: detail toggle button (notes + media) */
+.checklist-detail-btn {
+  flex-shrink: 0;
+  border: none; background: none;
+  color: var(--muted); cursor: pointer;
+  padding: 4px; line-height: 0;
+  border-radius: var(--radius-sm);
+}
+.checklist-detail-btn:active { background: var(--bg); color: var(--primary); }
+/* Active = panel is open; has-detail = item already has notes or photos */
+.checklist-detail-btn.active,
+.checklist-detail-btn.has-detail { color: var(--primary); }
+
+/* Expandable detail panel for notes and media */
+.checklist-item-details {
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  background: var(--bg-alt);
+}
+.checklist-item-details:last-child { border-bottom: none; }
+
+/* Notes textarea inherits .f-textarea sizing; override only layout here */
+.checklist-notes-input {
+  width: 100%;
+  min-height: 60px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+/* Media gallery row inside the detail panel */
+.checklist-media-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* =====================================================
    IMAGE LIGHTBOX
    ===================================================== */

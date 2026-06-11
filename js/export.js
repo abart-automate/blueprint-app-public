@@ -63,16 +63,29 @@ async function exportToZip() {
       }
     }
 
-    // Checklist snapshot at ZIP root
+    // Checklist snapshot at ZIP root.
+    // Image blobs cannot be JSON-serialised, so strip them from the snapshot;
+    // media files are written to Checklist/<item>/ subfolders below.
     const checklistCustom = (await getSetting('checklistItems')) || [];
+    const customItemsForJson = checklistCustom.map(({ images: _i, ...rest }) => rest);
     zip.file('data.json', JSON.stringify({
       version: APP_VERSION,
       exportedAt: new Date().toISOString(),
       checklist: {
         autoItems: calcChecklistAutoItems(),
-        customItems: checklistCustom,
+        customItems: customItemsForJson,
       },
     }, null, 2));
+
+    // One subfolder per custom item: data.json (text fields) + photos/ (via _exportMedia)
+    const checklistFolder = zip.folder('Checklist');
+    for (const item of checklistCustom) {
+      const folderName = sanitizeFilename(item.label || '') || item.id;
+      const itemFolder = checklistFolder.folder(folderName);
+      const { images: _imgs, ...itemData } = item;
+      itemFolder.file('data.json', JSON.stringify(itemData, null, 2));
+      _exportMedia(item, itemFolder.folder('photos'));
+    }
 
     // Generate and download ZIP
     updateProgress(totalItems, totalItems, 'Generating ZIP file...');
@@ -196,17 +209,17 @@ async function exportExcel() {
 }
 
 function buildChecklistSheet(autoItems, customItems) {
-  const rows = [['Label', 'Type', 'Status', 'Done', 'Total', 'Progress']];
+  const rows = [['Label', 'Type', 'Status', 'Done', 'Total', 'Progress', 'Notes']];
   for (const item of autoItems) {
     const status = item.done === item.total ? 'Complete' : 'In Progress';
-    rows.push([item.label, 'Auto', status, item.done, item.total, `${item.done}/${item.total}`]);
+    rows.push([item.label, 'Auto', status, item.done, item.total, `${item.done}/${item.total}`, '']);
     for (const sub of item.subItems || []) {
       const ss = sub.done === sub.total ? 'Complete' : 'In Progress';
-      rows.push([`  ${sub.label}`, 'Auto-Sub', ss, sub.done, sub.total, `${sub.done}/${sub.total}`]);
+      rows.push([`  ${sub.label}`, 'Auto-Sub', ss, sub.done, sub.total, `${sub.done}/${sub.total}`, '']);
     }
   }
   for (const item of customItems) {
-    rows.push([item.label, 'Custom', item.completed ? 'Complete' : 'Incomplete', '', '', '']);
+    rows.push([item.label, 'Custom', item.completed ? 'Complete' : 'Incomplete', '', '', '', item.notes || '']);
   }
   return XLSX.utils.aoa_to_sheet(rows);
 }

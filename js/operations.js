@@ -497,7 +497,13 @@ async function exportData() {
       const items = await getAll(name);
       payload.data[name] = await Promise.all(items.map(_serializeEntityMedia));
     }
-    payload.data.settings = await getAll('settings');
+    // Checklist items may carry image blobs; serialize them the same way entity images are.
+    const settings = await getAll('settings');
+    payload.data.settings = await Promise.all(settings.map(async s =>
+      s.id === 'checklistItems'
+        ? { ...s, value: await Promise.all((s.value || []).map(_serializeEntityMedia)) }
+        : s
+    ));
 
     const plantName = (await getSetting('plantName')) || 'plant';
     const dateStr   = new Date().toISOString().slice(0, 10);
@@ -565,7 +571,11 @@ async function processImportFile(file) {
       if (!Array.isArray(items)) continue;
       for (const item of items) {
         try {
-          await upsert(name, _deserializeEntityMedia(item));
+          // Checklist items embed blobs in their value array; deserialize them specifically.
+          const toStore = (name === 'settings' && item.id === 'checklistItems')
+            ? { ...item, value: (item.value || []).map(_deserializeEntityMedia) }
+            : _deserializeEntityMedia(item);
+          await upsert(name, toStore);
         } catch (e) {
           console.warn(`JSON import: skipped ${name} item ${item?.id}:`, e);
         }

@@ -388,7 +388,7 @@ async function renderChecklist() {
   el.main.innerHTML = `<div class="home-checklist" id="home-checklist">
     ${buildChecklistHtml(calcChecklistAutoItems(), items)}
   </div>`;
-  bindChecklistEvents();
+  await bindChecklistEvents(items);
 }
 
 let _statsExpanded = false;
@@ -430,14 +430,23 @@ function buildChecklistHtml(autoItems, customItems) {
     return `${row}<div class="checklist-subgroup" data-parent="${esc(item.key)}"${expanded ? '' : ' hidden'}>${subRows}</div>`;
   }).join('');
 
-  const customRows = customItems.map(item => `
+  const customRows = customItems.map(item => {
+    // Show the note icon in accent color when the item already has notes or attached media
+    const hasDetail = !!(item.notes || item.images?.length);
+    return `
     <div class="checklist-item${item.completed ? ' checklist-done' : ''}">
       <button class="checklist-toggle-btn" data-cid="${esc(item.id)}" aria-label="Toggle task">
         <span class="${item.completed ? 'checklist-icon-complete' : ''}">${item.completed ? ICON_CHECK : ICON_CIRCLE}</span>
       </button>
       <span class="checklist-label">${esc(item.label)}</span>
+      <button class="checklist-detail-btn${hasDetail ? ' has-detail' : ''}" data-cid="${esc(item.id)}" aria-label="Notes and photos">${ICON_NOTE}</button>
       <button class="checklist-delete-btn" data-cid="${esc(item.id)}" aria-label="Delete task">${ICON_RM}</button>
-    </div>`).join('');
+    </div>
+    <div class="checklist-item-details" id="checklist-detail-${esc(item.id)}" hidden>
+      <textarea class="checklist-notes-input f-textarea" data-cid="${esc(item.id)}" placeholder="Add notes…" rows="3">${esc(item.notes || '')}</textarea>
+      <div class="checklist-media-wrap" id="checklist-media-${esc(item.id)}"></div>
+    </div>`;
+  }).join('');
 
   return `
     <div class="section-label">Discovery Checklist</div>
@@ -458,16 +467,18 @@ function buildChecklistHtml(autoItems, customItems) {
     </div>`;
 }
 
-function bindChecklistEvents() {
+async function bindChecklistEvents(customItems) {
   const container = $('home-checklist');
   if (!container) return;
 
+  // Re-renders the full checklist and re-binds all events (called after toggle/delete/add).
   const rerender = async () => {
     const items = (await getSetting('checklistItems')) || [];
     container.innerHTML = buildChecklistHtml(calcChecklistAutoItems(), items);
-    bindChecklistEvents();
+    await bindChecklistEvents(items);
   };
 
+  // Expand/collapse auto-item subtypes
   container.querySelectorAll('.checklist-expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.key;
@@ -480,6 +491,7 @@ function bindChecklistEvents() {
     });
   });
 
+  // Toggle completed state
   container.querySelectorAll('.checklist-toggle-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const items = (await getSetting('checklistItems')) || [];
@@ -491,6 +503,7 @@ function bindChecklistEvents() {
     });
   });
 
+  // Delete item
   container.querySelectorAll('.checklist-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const items = ((await getSetting('checklistItems')) || []).filter(i => i.id !== btn.dataset.cid);
@@ -499,6 +512,69 @@ function bindChecklistEvents() {
     });
   });
 
+  // Toggle detail panel visibility (notes + photos)
+  container.querySelectorAll('.checklist-detail-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panel = container.querySelector(`#checklist-detail-${btn.dataset.cid}`);
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      btn.classList.toggle('active', !panel.hidden);
+    });
+  });
+
+  // Auto-save notes on change; update has-detail indicator without a full rerender
+  container.querySelectorAll('.checklist-notes-input').forEach(textarea => {
+    textarea.addEventListener('change', async () => {
+      const items = (await getSetting('checklistItems')) || [];
+      const idx = items.findIndex(i => i.id === textarea.dataset.cid);
+      if (idx === -1) return;
+      const val = textarea.value.trim();
+      items[idx].notes = val || undefined;
+      await setSetting('checklistItems', items);
+      const detailBtn = container.querySelector(`.checklist-detail-btn[data-cid="${textarea.dataset.cid}"]`);
+      if (detailBtn) detailBtn.classList.toggle('has-detail', !!(val || items[idx].images?.length));
+    });
+  });
+
+  // Wire media galleries for each custom item.
+  // customItems is passed from the caller to avoid an extra DB read; falls back to a fresh read.
+  const items = customItems ?? ((await getSetting('checklistItems')) || []);
+  items.forEach(item => {
+    const wrap = container.querySelector(`#checklist-media-${item.id}`);
+    if (!wrap) return;
+
+    // Reads latest item state from DB so blob references stay current after add/remove.
+    const refreshGallery = async () => {
+      const latest = (await getSetting('checklistItems')) || [];
+      const cur = latest.find(i => i.id === item.id) || item;
+      renderMediaGallery(wrap, cur.images || [], {
+        onAdd: async newMedia => {
+          const updated = (await getSetting('checklistItems')) || [];
+          const idx = updated.findIndex(i => i.id === item.id);
+          if (idx === -1) return;
+          updated[idx].images = [...(updated[idx].images || []), ...newMedia];
+          await setSetting('checklistItems', updated);
+          const btn = container.querySelector(`.checklist-detail-btn[data-cid="${item.id}"]`);
+          if (btn) btn.classList.add('has-detail');
+          await refreshGallery();
+        },
+        onRemove: async rmIdx => {
+          const updated = (await getSetting('checklistItems')) || [];
+          const idx = updated.findIndex(i => i.id === item.id);
+          if (idx === -1) return;
+          updated[idx].images = (updated[idx].images || []).filter((_, i) => i !== rmIdx);
+          await setSetting('checklistItems', updated);
+          const btn = container.querySelector(`.checklist-detail-btn[data-cid="${item.id}"]`);
+          const notesEl = container.querySelector(`.checklist-notes-input[data-cid="${item.id}"]`);
+          if (btn) btn.classList.toggle('has-detail', !!(updated[idx]?.images?.length || notesEl?.value));
+          await refreshGallery();
+        },
+      });
+    };
+    refreshGallery();
+  });
+
+  // Add new item
   const doAdd = async () => {
     const input = $('checklist-new-input');
     const label = input?.value.trim();

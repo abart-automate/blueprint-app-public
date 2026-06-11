@@ -188,7 +188,13 @@ async function importChecklistSheet(wb) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
   const customItems = rows
     .filter(r => r[1] === 'Custom')
-    .map(r => ({ id: crypto.randomUUID(), label: String(r[0] ?? '').trim(), completed: r[2] === 'Complete' }))
+    .map(r => {
+      const item = { id: crypto.randomUUID(), label: String(r[0] ?? '').trim(), completed: r[2] === 'Complete' };
+      // Column 6 (index 6) is Notes — absent in older exports, so guard with nullish coalesce
+      const notes = String(r[6] ?? '').trim();
+      if (notes) item.notes = notes;
+      return item;
+    })
     .filter(i => i.label);
   if (customItems.length) await setSetting('checklistItems', customItems);
 }
