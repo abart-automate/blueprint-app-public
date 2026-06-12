@@ -75,14 +75,14 @@ async function renderSlotForm() {
       let ph = '';
       for (const f of fields) ph += await buildFormField(f, existing, 'assets');
       container.innerHTML = ph;
-      if (cardType === 'Controller' || cardType === 'Communication') {
+      if (CARD_TYPE_NET_TYPES.has(cardType)) {
         $('f-networkId')?.addEventListener('change', () => renderNetworkAddressFields(existing, 'assets'));
         await renderNetworkAddressFields(existing, 'assets');
       }
     }
     const ioWrap = $('io-points-wrap');
     if (ioWrap) {
-      const isIo = cardType === 'Analog' || cardType === 'Digital';
+      const isIo = CARD_TYPE_IO_TYPES.has(cardType);
       ioWrap.style.display = isIo ? '' : 'none';
       if (isIo) {
         renderIoPointsTable();
@@ -92,7 +92,7 @@ async function renderSlotForm() {
     }
     const pbWrap = $('power-bus-wrap');
     if (pbWrap) {
-      const isIo = cardType === 'Analog' || cardType === 'Digital';
+      const isIo = CARD_TYPE_IO_TYPES.has(cardType);
       pbWrap.style.display = isIo ? '' : 'none';
       if (isIo) renderPowerBusTable();
     }
@@ -104,6 +104,9 @@ async function renderSlotForm() {
 
 /* ---- ENTITY FORM ---- */
 
+// Two-pass render: (1) base fields rendered synchronously into formBody HTML,
+// then (2) dynamic sections (class fields, subclass fields, switch tables, PLC card
+// type fields) are wired and rendered via event-driven async callbacks after mount.
 async function renderEntityForm() {
   const { formType: type, formId: id } = state;
   const cfg      = ENTITY[type];
@@ -256,7 +259,7 @@ async function renderEntityForm() {
     const updateSwitchTables = () => {
       const assetClass = $('f-assetClass')?.value;
       const subclass   = $('f-assetSubclass')?.value;
-      const showTables = assetClass === 'Network Switch' && (subclass === 'Managed' || subclass === 'Router');
+      const showTables = isManagedSwitch(assetClass, subclass);
       const snWrap = $('switch-networks-wrap');
       const spWrap = $('switch-ports-wrap');
       if (snWrap) snWrap.style.display = showTables ? '' : 'none';
@@ -330,7 +333,7 @@ async function renderEntityForm() {
       }
       const ioWrap = $('io-points-wrap');
       if (ioWrap) {
-        const isIo = cardType === 'Analog' || cardType === 'Digital';
+        const isIo = CARD_TYPE_IO_TYPES.has(cardType);
         ioWrap.style.display = isIo ? '' : 'none';
         if (isIo) {
           renderIoPointsTable();

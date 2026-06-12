@@ -5,26 +5,35 @@
    ============================================================ */
 
 const state = {
-  page:       'home',
-  detailType: null,
-  detailId:   null,
-  formType:   null,
-  formId:     null,
-  formPreset: null,
-  formImages: [],
-  formNamedPhotos: {},
-  formItemTables: {},
-  formSwitchNetworks: [],
-  formSwitchPorts: [],
-  formIoPoints: [],
-  formPowerBus: [],
+  // --- Navigation ---
+  page: 'home',
+
+  // --- Detail panel ---
+  detailType:       null,
+  detailId:         null,
   detailStack:      [],
   detailSlotNumber: null,
   detailChanges:    {},
+
+  // --- Active form ---
+  formType:            null,
+  formId:              null,
+  formPreset:          null,
+  formImages:          [],
+  formNamedPhotos:     {},
+  formItemTables:      {},
+  formSwitchNetworks:  [],
+  formSwitchPorts:     [],
+  formIoPoints:        [],
+  formPowerBus:        [],
   formDuplicateSource: null,
-  pickerMeta:    null,
-  cache:      {},
-  refs:       {},
+
+  // --- Data cache (populated by refreshAll / loadCache) ---
+  cache: {},
+  refs:  {},
+
+  // --- Picker ---
+  pickerMeta: null,
 };
 
 /* ---- DOM REFERENCES ---- */

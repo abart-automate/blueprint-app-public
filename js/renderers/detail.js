@@ -5,6 +5,7 @@
    cardHTML, duplicateItem, deleteItem, upsert)
    ============================================================ */
 
+// preserveScroll: re-renders in place after a slot edit; saves/restores scroll to avoid jump.
 async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
@@ -31,7 +32,7 @@ async function renderSlotDetail(savedScroll) {
 
     // IO usage for Analog/Digital
     let ioUsage = '';
-    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
       const total = parseInt(slot?.ioPointCount) || (slot?.ioPoints?.length ?? 0);
       const inUse = (slot?.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
       ioUsage = `${inUse} / ${total}`;
@@ -54,14 +55,14 @@ async function renderSlotDetail(savedScroll) {
     }
 
     // Network address fields for Controller and Communication cards
-    if ((slot?.cardType === 'Controller' || slot?.cardType === 'Communication') && network) {
+    if (CARD_TYPE_NET_TYPES.has(slot?.cardType) && network) {
       const netFields = ENTITY.assets.networkTypeFields?.[network.networkType] || [];
       for (const f of netFields) fieldsHtml += field(f.label, slot?.[f.key]);
     }
 
     // IO points table for Analog/Digital
     let ioCard = '';
-    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
       const isAnalog = slot.cardType === 'Analog';
       const pts = slot?.ioPoints || [];
       const rowsHtml = pts.length
@@ -84,7 +85,7 @@ async function renderSlotDetail(savedScroll) {
     }
 
     let powerBusCards = '';
-    if (slot?.cardType === 'Analog' || slot?.cardType === 'Digital') {
+    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
       for (const entry of (slot?.powerBus || [])) {
         const store  = entry.type === 'Safety Circuit' ? 'safety' : 'power';
         const device = state.refs[store]?.[entry.refId];
@@ -133,6 +134,55 @@ async function renderSlotDetail(savedScroll) {
   el.detail.scrollTop = savedScroll;
 }
 
+// Returns HTML string of <span class="sn-det-field"> pills for fields that have a value in data.
+function buildFieldPills(fields, data) {
+  return fields
+    .filter(f => data[f.key])
+    .map(f => `<span class="sn-det-field">${esc(f.label)}<strong>${esc(data[f.key])}</strong></span>`)
+    .join('');
+}
+
+function buildSlotRow(rackId, slotNumber, slot) {
+  if (!slot) {
+    return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
+      <div class="rack-slot-hdr"><span class="sn-det-name">Slot ${slotNumber}</span></div>
+      <div class="sn-det-fields" style="color:var(--muted)">Empty — tap to add card</div>
+    </div>`;
+  }
+  const typeTag = slot.cardType   ? `<span class="sn-det-field">${esc(slot.cardType)}</span>` : '';
+  const pnTag   = slot.partNumber ? `<span class="sn-det-field">PN<strong>${esc(slot.partNumber)}</strong></span>` : '';
+  const revTag  = slot.revision   ? `<span class="sn-det-field">Rev<strong>${esc(slot.revision)}</strong></span>` : '';
+  let ioTag = '';
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    const total = parseInt(slot.ioPointCount) || (slot.ioPoints?.length ?? 0);
+    const inUse = (slot.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
+    ioTag = `<span class="sn-det-field">IO<strong>${inUse}/${total}</strong></span>`;
+  }
+  let ipTag = '';
+  if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
+    const netFields = getNetworkAddrFields(slot.networkId);
+    const addrField = netFields.find(f => f.section === 'Network Address' && slot[f.key]);
+    if (addrField) {
+      const shortLabel = addrField.label.split(' ')[0];
+      ipTag = `<span class="sn-det-field">${shortLabel}<strong>${esc(slot[addrField.key])}</strong></span>`;
+    } else {
+      const addr = slot.ipAddress || slot.nodeAddress;
+      if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
+    }
+  }
+  return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
+    <div class="rack-slot-hdr">
+      <span class="sn-det-name">Slot ${slotNumber}</span>
+      <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Clear slot">${ICON_RM}</button>
+    </div>
+    <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}${ipTag}</div>
+  </div>`;
+}
+
+// Builds entity detail HTML. sectionMap groups fields by their `section` key so physical
+// sizing, clearance, and nameplate sections collapse independently; fields without a
+// section key fall into the main card. PHYSICAL_SECTIONS controls which sections are
+// treated as collapsible sub-groups rather than top-level cards.
 async function renderEntityDetail(savedScroll) {
   const { detailType: type, detailId: id } = state;
   const cfg  = ENTITY[type];
@@ -231,50 +281,13 @@ async function renderEntityDetail(savedScroll) {
     const cardCount  = (item.slots || []).length;
     const chevron   = ICON_CHEVRON;
     const title     = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
-    const clearIcon = ICON_RM;
 
     let slotRows = '';
     if (slotCount === 0) {
       slotRows = `<div style="font-size:14px;color:var(--muted)">No slots configured — edit the rack to set Slot Count.</div>`;
     } else {
-      slotRows = Array.from({ length: slotCount }, (_, k) => {
-        const slot = slotsMap.get(k);
-        if (slot) {
-          const typeTag  = slot.cardType  ? `<span class="sn-det-field">${esc(slot.cardType)}</span>`  : '';
-          const pnTag    = slot.partNumber ? `<span class="sn-det-field">PN<strong>${esc(slot.partNumber)}</strong></span>` : '';
-          const revTag   = slot.revision   ? `<span class="sn-det-field">Rev<strong>${esc(slot.revision)}</strong></span>`  : '';
-          let ioTag = '';
-          if (slot.cardType === 'Analog' || slot.cardType === 'Digital') {
-            const total = parseInt(slot.ioPointCount) || (slot.ioPoints?.length ?? 0);
-            const inUse = (slot.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
-            ioTag = `<span class="sn-det-field">IO<strong>${inUse}/${total}</strong></span>`;
-          }
-          let ipTag = '';
-          if (slot.cardType === 'Controller' || slot.cardType === 'Communication') {
-            const network   = state.refs.networks?.[slot.networkId];
-            const netFields = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
-            const addrField = netFields.find(f => f.section === 'Network Address' && slot[f.key]);
-            if (addrField) {
-              const shortLabel = addrField.label.split(' ')[0];
-              ipTag = `<span class="sn-det-field">${shortLabel}<strong>${esc(slot[addrField.key])}</strong></span>`;
-            } else {
-              const addr = slot.ipAddress || slot.nodeAddress;
-              if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
-            }
-          }
-          return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
-            <div class="rack-slot-hdr">
-              <span class="sn-det-name">Slot ${k}</span>
-              <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${item.id}" data-slot-num="${k}" aria-label="Clear slot">${clearIcon}</button>
-            </div>
-            <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}${ipTag}</div>
-          </div>`;
-        }
-        return `<div class="sn-det-row rack-slot-row" data-rack-id="${item.id}" data-slot-num="${k}" style="cursor:pointer">
-          <div class="rack-slot-hdr"><span class="sn-det-name">Slot ${k}</span></div>
-          <div class="sn-det-fields" style="color:var(--muted)">Empty — tap to add card</div>
-        </div>`;
-      }).join('');
+      // Build slot rows from slotsMap (sparse, keyed by slotNumber). Empty slots render as placeholder rows.
+      slotRows = Array.from({ length: slotCount }, (_, k) => buildSlotRow(item.id, k, slotsMap.get(k))).join('');
     }
 
     rackSlotsCard = `
@@ -295,17 +308,13 @@ async function renderEntityDetail(savedScroll) {
   let switchNetworksCard = '';
   let switchPortsCard    = '';
   if (type === 'assets') {
-    const showTables = item.assetClass === 'Network Switch' &&
-                       (item.assetSubclass === 'Managed' || item.assetSubclass === 'Router');
+    const showTables = isManagedSwitch(item.assetClass, item.assetSubclass);
     if (showTables) {
       const snHtml = item.switchNetworks?.length
         ? item.switchNetworks.map(r => {
             const net        = state.refs.networks?.[r.networkId];
-            const addrFields = ENTITY.assets.networkTypeFields?.[net?.networkType] || [];
-            const fieldPills = addrFields
-              .filter(f => r[f.key])
-              .map(f => `<span class="sn-det-field">${esc(f.label)}<strong>${esc(r[f.key])}</strong></span>`)
-              .join('');
+            const addrFields = getNetworkAddrFields(r.networkId);
+            const fieldPills = buildFieldPills(addrFields, r);
             return `<div class="sn-det-row">
               <div class="sn-det-name">${esc(net?.name || '—')}</div>
               ${fieldPills ? `<div class="sn-det-fields">${fieldPills}</div>` : ''}
@@ -324,7 +333,7 @@ async function renderEntityDetail(savedScroll) {
               const matchSlot = r.slotNumber != null
                 ? (asset.slots || []).find(s => s.slotNumber === r.slotNumber)
                 : (asset.slots || []).find(s =>
-                    (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === r.networkId
+                    CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId === r.networkId
                   );
               if (matchSlot) {
                 slotLabel = `Slot ${matchSlot.slotNumber}${matchSlot.name ? ` — ${matchSlot.name}` : ''}`;
@@ -401,12 +410,12 @@ async function renderEntityDetail(savedScroll) {
     for (const slot of cfg.requiredPhotoSlots) {
       const slotId = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
       const container = document.getElementById(slotId);
-      if (container) renderMediaSlot(container, slot, _normalizeMediaItems(item.namedPhotos?.[slot]), { readonly: true });
+      if (container) renderMediaSlot(container, slot, normalizeMediaItems(item.namedPhotos?.[slot]), { readonly: true });
     }
   }
   if (!cfg.noImages) {
     const gallery = document.getElementById('det-gallery');
-    if (gallery) renderMediaGallery(gallery, _normalizeMediaItems(item.images), { readonly: true });
+    if (gallery) renderMediaGallery(gallery, normalizeMediaItems(item.images), { readonly: true });
   }
 
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
@@ -512,7 +521,7 @@ function getSlotLinkedRacks(parentType, parentId) {
     .map(rack => {
       const slots = rack.slots.filter(slot => {
         if (parentType === 'networks')
-          return (slot.cardType === 'Controller' || slot.cardType === 'Communication') && slot.networkId === parentId;
+          return CARD_TYPE_NET_TYPES.has(slot.cardType) && slot.networkId === parentId;
         if (parentType === 'power')
           return slot.powerBus?.some(pb => pb.type === 'Power' && pb.refId === parentId);
         if (parentType === 'safety')

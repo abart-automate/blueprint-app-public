@@ -56,12 +56,12 @@ function _makeUploadInput(multiple, onFiles) {
   return label;
 }
 
-// Renders a scrollable grid of media thumbs into containerEl.
-// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
-function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly } = {}) {
+// Shared core: renders media thumbs into containerEl.
+// emptyHtml: markup shown when readonly and no items. uploadLabel: upload button text.
+function _renderMediaItems(containerEl, mediaItems, { onAdd, onRemove, readonly, emptyHtml, uploadLabel } = {}) {
   containerEl.innerHTML = '';
   if (!mediaItems.length && readonly) {
-    containerEl.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:4px 0">No media added.</div>`;
+    containerEl.innerHTML = emptyHtml;
     return;
   }
   mediaItems.forEach((item, i) => {
@@ -72,29 +72,28 @@ function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly
   });
   if (!readonly) {
     const upload = _makeUploadInput(true, onAdd);
-    upload.querySelector('span').textContent = 'Tap to add media';
+    if (uploadLabel) upload.querySelector('span').textContent = uploadLabel;
     containerEl.appendChild(upload);
   }
 }
 
+// Renders a scrollable grid of media thumbs into containerEl.
+// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
+function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly } = {}) {
+  _renderMediaItems(containerEl, mediaItems, {
+    onAdd, onRemove, readonly,
+    emptyHtml: `<div style="color:var(--muted);font-size:14px;padding:4px 0">No media added.</div>`,
+    uploadLabel: 'Tap to add media',
+  });
+}
+
 // Renders media items for one named slot into containerEl.
-// slotName is passed for potential aria/title use by callers.
 // readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
 function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, readonly } = {}) {
-  containerEl.innerHTML = '';
-  if (!mediaItems.length && readonly) {
-    containerEl.innerHTML = `<div class="named-photo-det-empty">Not captured</div>`;
-    return;
-  }
-  mediaItems.forEach((item, i) => {
-    containerEl.appendChild(renderMediaThumb(item, {
-      onRemove: readonly ? null : () => onRemove(i),
-      onClick:  () => openMediaLightbox(item),
-    }));
+  _renderMediaItems(containerEl, mediaItems, {
+    onAdd, onRemove, readonly,
+    emptyHtml: `<div class="named-photo-det-empty">Not captured</div>`,
   });
-  if (!readonly) {
-    containerEl.appendChild(_makeUploadInput(true, onAdd));
-  }
 }
 
 /* ---- SWITCH NETWORKS TABLE ---- */
@@ -111,9 +110,8 @@ function renderSwitchNetworksTable() {
   const rmIcon = ICON_RM;
 
   const buildAddrFields = (r, i) => {
-    const net     = state.refs.networks?.[r.networkId];
-    const netType = net?.networkType;
-    const fields  = ENTITY.assets.networkTypeFields?.[netType] || [];
+    const net    = state.refs.networks?.[r.networkId];
+    const fields = getNetworkAddrFields(r.networkId);
     return fields.map(f => {
       let val = r[f.key] || '';
       if (!val && f.key === 'ipAddress') val = getIpPrefix(net?.ipRange);
@@ -203,7 +201,7 @@ function renderSwitchPortsTable() {
       if (a.id === selfId) continue;
       if (a.assetClass === 'PLC') {
         const matchingSlots = (a.slots || []).filter(s =>
-          (s.cardType === 'Controller' || s.cardType === 'Communication') &&
+          CARD_TYPE_NET_TYPES.has(s.cardType) &&
           state.refs.networks?.[s.networkId]?.networkType === 'Ethernet' &&
           (!networkId || s.networkId === networkId)
         );

@@ -15,6 +15,10 @@ const KNOWN_SHEET_NAMES = new Set([
   'Checklist',
 ]);
 
+// Two-phase import strategy:
+// 1. Load current data and build nameToId resolution maps (area/panel/network names → ids).
+// 2. Merge sheets in dependency order: areas → panels → networks → assets → sub-data.
+//    Records are matched by name; missing records are created, existing ones are updated.
 async function processXlsxImport(file) {
   try {
     if (typeof XLSX === 'undefined') {

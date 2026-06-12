@@ -1,3 +1,10 @@
+/* ============================================================
+   MAIN PAGE CONTROLLER
+   Renders home, checklist, and list pages; manages detail panel
+   and form sheet lifecycle.
+   Depends on: entity-config, state, utils, renderers/*, operations.
+   ============================================================ */
+
 /* Entity configuration, shared field arrays, icon constants, and ASSIGN_STORE_MAP
    are defined in js/entity-config.js (loaded before this file). */
 
@@ -13,6 +20,12 @@
    BACK BUTTON / DETAIL PANEL
    ============================================================ */
 
+/**
+ * Opens the detail panel for an entity. If a panel is already open, pushes it
+ * onto detailStack so the back button can return to it.
+ * @param {string} type  - Entity store name (e.g. 'assets', 'panels')
+ * @param {string} id    - Entity id
+ */
 function openDetail(type, id) {
   const wasOpen = !!(state.detailType && state.detailId);
   if (wasOpen) {
@@ -34,6 +47,7 @@ function openDetail(type, id) {
   el.pageTitle.textContent    = ENTITY[type].label;
 }
 
+/** Closes the detail panel, or pops back to the previous stacked panel. */
 function closeDetail() {
   if (state.detailStack.length > 0) {
     const prev = state.detailStack.pop();
@@ -66,11 +80,18 @@ function closeDetail() {
    SHEET FORM
    ============================================================ */
 
+/**
+ * Opens the bottom-sheet form for creating or editing an entity.
+ * @param {string}  type   - Entity store name or '__plant__'
+ * @param {string}  [id]   - Entity id to edit; null for new
+ * @param {object}  [preset] - Pre-fill values: { field, value } or { copyFrom: item }
+ */
 function openSheet(type, id = null, preset = null) {
   state.formType   = type;
   state.formId     = id;
   state.formPreset = preset;
   const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
+  // Normalize legacy single-item or base64 string media to Array<{blob,mimeType}>.
   state.formImages = (existing?.images || []).map(
     x => (typeof x === 'string' ? base64ToMediaItem(x) : x)
   );
@@ -270,15 +291,20 @@ function setHeaderForPage(page) {
    PAGE RENDERING
    ============================================================ */
 
+const PAGE_RENDERERS = {
+  home:      () => renderHome(),
+  areas:     () => renderAreasList(),
+  checklist: () => renderChecklist(),
+};
+
+/** Re-renders the current page based on state.page. */
 async function renderPage() {
   el.main.innerHTML = '<div class="spinner"></div>';
-  if (state.page === 'home')  { await renderHome(); return; }
-  if (state.page === 'areas')     { await renderAreasList(); return; }
-  if (state.page === 'checklist') { await renderChecklist(); return; }
-  await renderList(state.page);
+  await (PAGE_RENDERERS[state.page] || (() => renderList(state.page)))();
 }
 
 /* ---- HOME ---- */
+/** Renders the plant home page with summary stats, area cards, and checklist overview. */
 async function renderHome() {
   await refreshAll();
   const [plantName, plantDesc] = await Promise.all([
@@ -668,7 +694,7 @@ async function renderAreasList() {
 
 function areaCardHTML(area, counts) {
   const pct = calcAreaCompleteness(area);
-  const barColor = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+  const barColor = completenessColor(pct);
   const countDefs = [
     { type: 'panels',   color: 'var(--c-panel)',   title: 'Panels',   n: counts.panels },
     { type: 'power',    color: 'var(--c-power)',   title: 'Power',    n: counts.power },
@@ -759,58 +785,50 @@ async function renderList(type, opts = {}) {
   render();
 }
 
-function cardHTML(type, item, { contextNetworkId } = {}) {
-  const cfg  = ENTITY[type];
-  const classLine = type === 'assets' && item.assetClass
-    ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
-    : '';
-  const locationLine = (() => {
-    const panel = item.panelId ? state.refs.panels?.[item.panelId]?.name : '';
-    const area  = item.areaId  ? state.refs.areas?.[item.areaId]?.name  : '';
-    if (panel && area) return `${area} / ${panel}`;
-    if (panel) return panel;
-    if (area) return area;
-    return type === 'assets' ? '' : (cfg.getSubtitle ? cfg.getSubtitle(item, state.refs) : '');
-  })();
-  const networkLine = (() => {
-    if (type !== 'assets') return '';
-    if (item.assetClass === 'PLC') {
-      const parts = (item.slots || [])
-        .filter(s => (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId &&
-          (!contextNetworkId || s.networkId === contextNetworkId))
-        .map(s => {
-          const net = state.refs.networks?.[s.networkId];
-          if (!net) return '';
-          const addr = s.ipAddress || s.nodeAddress || '';
-          return addr ? `${net.name} — ${addr}` : net.name;
-        })
-        .filter(Boolean);
-      return parts.join(', ');
-    }
-    if (item.switchNetworks?.length) {
-      const relevant = contextNetworkId
-        ? item.switchNetworks.filter(sn => sn.networkId === contextNetworkId)
-        : item.switchNetworks;
-      const parts = relevant.map(sn => {
-        const net = state.refs.networks?.[sn.networkId];
-        if (!net) return '';
-        const addr = sn.ipAddress || sn.nodeAddress || '';
-        return addr ? `${net.name} — ${addr}` : net.name;
-      }).filter(Boolean);
-      if (parts.length) return parts.join(', ');
-    }
-    if (!item.networkId) return '';
-    const net = state.refs.networks?.[item.networkId];
-    if (!net) return '';
-    const addr = item.ipAddress || item.nodeAddress || '';
-    return addr ? `${net.name} — ${addr}` : net.name;
-  })();
-  const firstMedia = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
-  const thumbSrc = getCardThumbSrc(firstMedia);
-  const thumb = thumbSrc
-    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
-    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+function _cardLocationLine(type, item, cfg) {
+  const panel = item.panelId ? state.refs.panels?.[item.panelId]?.name : '';
+  const area  = item.areaId  ? state.refs.areas?.[item.areaId]?.name  : '';
+  if (panel && area) return `${area} / ${panel}`;
+  if (panel) return panel;
+  if (area) return area;
+  return type === 'assets' ? '' : (cfg.getSubtitle ? cfg.getSubtitle(item, state.refs) : '');
+}
 
+function _cardNetworkLine(type, item, contextNetworkId) {
+  if (type !== 'assets') return '';
+  if (item.assetClass === 'PLC') {
+    const parts = (item.slots || [])
+      .filter(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId &&
+        (!contextNetworkId || s.networkId === contextNetworkId))
+      .map(s => {
+        const net = state.refs.networks?.[s.networkId];
+        if (!net) return '';
+        const addr = s.ipAddress || s.nodeAddress || '';
+        return addr ? `${net.name} — ${addr}` : net.name;
+      })
+      .filter(Boolean);
+    return parts.join(', ');
+  }
+  if (item.switchNetworks?.length) {
+    const relevant = contextNetworkId
+      ? item.switchNetworks.filter(sn => sn.networkId === contextNetworkId)
+      : item.switchNetworks;
+    const parts = relevant.map(sn => {
+      const net = state.refs.networks?.[sn.networkId];
+      if (!net) return '';
+      const addr = sn.ipAddress || sn.nodeAddress || '';
+      return addr ? `${net.name} — ${addr}` : net.name;
+    }).filter(Boolean);
+    if (parts.length) return parts.join(', ');
+  }
+  if (!item.networkId) return '';
+  const net = state.refs.networks?.[item.networkId];
+  if (!net) return '';
+  const addr = item.ipAddress || item.nodeAddress || '';
+  return addr ? `${net.name} — ${addr}` : net.name;
+}
+
+function _cardCountsHtml(item, cfg) {
   const allChildren = [
     ...(cfg.getChildren || []),
     ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
@@ -824,22 +842,37 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
         : all.filter(i => i[child.field] === item.id).length;
     return { store: child.store, label: child.label, n };
   });
-  const countsHtml = counts.length ? `
+  return counts.length ? `
     <div class="card-counts">
       ${counts.map(c => `
         <div class="card-count-item" style="color:${ENTITY[c.store].color}" title="${esc(c.label)}">
           ${entityIcon(c.store, 14)}<span>${c.n}</span>
         </div>`).join('')}
     </div>` : '';
+}
+
+function cardHTML(type, item, { contextNetworkId } = {}) {
+  const cfg  = ENTITY[type];
+  const classLine = type === 'assets' && item.assetClass
+    ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
+    : '';
+  const locationLine = _cardLocationLine(type, item, cfg);
+  const networkLine  = _cardNetworkLine(type, item, contextNetworkId);
+  const firstMedia = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
+  const thumbSrc = getCardThumbSrc(firstMedia);
+  const thumb = thumbSrc
+    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
+    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+  const countsHtml = _cardCountsHtml(item, cfg);
 
   const trashIcon = ICON_TRASH;
   const pct = calcCompleteness(type, item);
-  const barColor = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+  const barColor = completenessColor(pct);
 
   let progressHtml;
   if (type === 'panels') {
     const devPct = calcPanelDevicesCompleteness(item.id);
-    const devColor = devPct !== null ? (devPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)') : 'var(--border)';
+    const devColor = devPct !== null ? completenessColor(devPct) : 'var(--border)';
     progressHtml = `
       <div class="card-progress-multi">
         <div class="cpr-row">
@@ -881,6 +914,8 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
 }
 
 /* ---- PARENT FILTER CHIPS ---- */
+// Returns { html, bind } where html is the chip row markup and bind(container)
+// wires click events. Split so the caller can inject html first, then call bind.
 function buildParentFilterChips(type, items, chipFieldKey) {
   const bindChips = (container) => {
     const chips = container.querySelector('#filter-chips');

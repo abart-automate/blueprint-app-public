@@ -35,9 +35,13 @@ const PLC_CARD_TYPE_FIELDS = {
                   { key: 'voltageLevel', label: 'Voltage',  type: 'enum',
                     options: ['24VDC','120VAC','240VAC'] }],
   Communication: [{ key: 'networkId', label: 'Network',  type: 'ref', refStore: 'networks' }],
-                  /*{ key: 'protocol',  label: 'Protocol', type: 'text' }],*/
   Specialty:     [],
 };
+
+// Card type classification sets — used across form, detail, and operations to
+// decide which sub-panels (IO points/power bus vs. network address) to show.
+const CARD_TYPE_IO_TYPES  = new Set(['Analog', 'Digital']);
+const CARD_TYPE_NET_TYPES = new Set(['Controller', 'Communication']);
 
 /* ---- ICON SVG CONSTANTS ---- */
 const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
@@ -209,7 +213,7 @@ const ENTITY = {
     },
     getChildren: [
       { label: 'Assets', store: 'assets', field: 'networkId',
-        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => (s.cardType === 'Controller' || s.cardType === 'Communication') && s.networkId === id))).length },
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId === id))).length },
     ],
   },
 
@@ -329,9 +333,3 @@ const ASSIGN_STORE_MAP = {
   'Safety Circuit': 'safety',
   Network: 'networks',
 };
-
-/* ---- FIELD NORMALIZER ---- */
-// Fills in default values so callers never need defensive checks for common flags.
-function normalizeField(f) {
-  return { required: false, readOnly: false, ...f };
-}

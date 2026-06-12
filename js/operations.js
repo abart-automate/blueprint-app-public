@@ -5,6 +5,7 @@
    openDetail, renderPage, renderDetail)
    ============================================================ */
 
+/** Dispatcher: routes to the appropriate save handler based on state.formType. */
 async function saveForm() {
   const type = state.formType;
   if (type === '__picker__')   return savePickerForm();
@@ -45,14 +46,16 @@ async function saveSlotForm() {
       const el2 = $(`f-${f.key}`);
       if (el2) slotData[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
-    if (cardType === 'Controller' || cardType === 'Communication') {
+    if (CARD_TYPE_NET_TYPES.has(cardType)) {
       const linkedNet = state.refs.networks?.[slotData.networkId];
       for (const f of ENTITY.assets.networkTypeFields?.[linkedNet?.networkType] || []) {
         const el2 = $(`f-${f.key}`);
         if (el2) slotData[f.key] = el2.value.trim();
       }
     }
-    if (cardType === 'Analog' || cardType === 'Digital') {
+    // ioPoints and powerBus only apply to I/O card types (Analog/Digital);
+    // Controller/Communication cards use networkId + network address fields instead.
+    if (CARD_TYPE_IO_TYPES.has(cardType)) {
       slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
       slotData.powerBus = state.formPowerBus
         .filter(e => e.refId)
@@ -79,81 +82,63 @@ async function savePlantForm() {
   renderPage();
 }
 
+// Returns an error string if any IP address in item conflicts with another asset,
+// or null if the IP is unique. Checks both the primary ipAddress field and
+// switchNetworks entries — a device can carry IPs in both places.
+function validateUniqueIp(item, allAssets) {
+  const assignments = [];
+  if (item.ipAddress && item.networkId)
+    assignments.push({ networkId: item.networkId, ipAddress: item.ipAddress });
+  for (const sn of item.switchNetworks || []) {
+    if (sn.ipAddress && sn.networkId)
+      assignments.push({ networkId: sn.networkId, ipAddress: sn.ipAddress });
+  }
+  for (const { networkId, ipAddress } of assignments) {
+    const conflicts = new Set();
+    for (const a of allAssets) {
+      if (a.id === item.id) continue;
+      if (a.ipAddress === ipAddress && a.networkId === networkId) conflicts.add(a.name);
+      for (const sn of a.switchNetworks || []) {
+        if (sn.ipAddress === ipAddress && sn.networkId === networkId) conflicts.add(a.name);
+      }
+    }
+    if (conflicts.size) return `IP ${ipAddress} already used by: ${[...conflicts].join(', ')}`;
+  }
+  return null;
+}
+
+// Saves the currently-open entity form. Uses getEffectiveFields() for a single-pass
+// field read covering base, protocol, class, subclass, and network-type fields.
+// Switch/Router port and network tables are read from form state, not DOM inputs.
 async function saveEntityForm() {
   const type = state.formType;
   const cfg = ENTITY[type];
   const item = state.formId ? (await getById(type, state.formId)) || {} : {};
 
-  for (const f of cfg.fields) {
+  // Single pass over all effective fields (base + protocol/class/subclass/network-type).
+  for (const f of getEffectiveFields(type, item)) {
     if (f.type === 'assign-type') {
       item.assignedToType = $('f-assign-type')?.value || '';
     } else if (f.type === 'assign-id') {
       item.assignedToId = $('f-assign-id')?.value || '';
     } else {
       const el2 = $(`f-${f.key}`);
-      if (el2) item[f.key] = el2.value.trim();
-    }
-  }
-
-  // Read protocol-specific fields for networks
-  if (type === 'networks') {
-    const networkType = item.networkType;
-    for (const f of ENTITY.networks.protocolFields?.[networkType] || []) {
-      const el2 = $(`f-${f.key}`);
       if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
   }
 
-  // Read subclass and network-type-driven fields for assets
+  // Switch/Router tables are state-driven, not form fields.
   if (type === 'assets') {
-    // Class-level fields (flat classes)
-    for (const f of ENTITY.assets.classFields?.[item.assetClass] || []) {
-      const el2 = $(`f-${f.key}`);
-      if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
-    }
-    // Subclass fields
-    for (const f of ENTITY.assets.subclassFields?.[item.assetSubclass] || []) {
-      const el2 = $(`f-${f.key}`);
-      if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
-    }
-    // Network address fields (driven by linked network's type)
-    const linkedNetwork = state.refs.networks?.[item.networkId];
-    for (const f of ENTITY.assets.networkTypeFields?.[linkedNetwork?.networkType] || []) {
-      const el2 = $(`f-${f.key}`);
-      if (el2) item[f.key] = el2.value.trim();
-    }
-    // Switch/Router tables
-    const showTables = item.assetClass === 'Network Switch' &&
-                       (item.assetSubclass === 'Managed' || item.assetSubclass === 'Router');
+    const showTables = isManagedSwitch(item.assetClass, item.assetSubclass);
     if (showTables) {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);
     }
   }
 
-  // Validate IP uniqueness across the network
   if (type === 'assets') {
-    const ipAssignments = [];
-    if (item.ipAddress && item.networkId)
-      ipAssignments.push({ networkId: item.networkId, ipAddress: item.ipAddress });
-    for (const sn of item.switchNetworks || []) {
-      if (sn.ipAddress && sn.networkId)
-        ipAssignments.push({ networkId: sn.networkId, ipAddress: sn.ipAddress });
-    }
-    for (const { networkId, ipAddress } of ipAssignments) {
-      const conflicts = new Set();
-      for (const a of state.cache.assets || []) {
-        if (a.id === item.id) continue;
-        if (a.ipAddress === ipAddress && a.networkId === networkId) conflicts.add(a.name);
-        for (const sn of a.switchNetworks || []) {
-          if (sn.ipAddress === ipAddress && sn.networkId === networkId) conflicts.add(a.name);
-        }
-      }
-      if (conflicts.size) {
-        showToast(`IP ${ipAddress} already used by: ${[...conflicts].join(', ')}`, 'error');
-        return;
-      }
-    }
+    const ipError = validateUniqueIp(item, state.cache.assets || []);
+    if (ipError) { showToast(ipError, 'error'); return; }
   }
 
   // Enforce store-wide name uniqueness
@@ -218,6 +203,12 @@ async function saveEntityForm() {
    DELETE
    ============================================================ */
 
+/**
+ * Confirms and deletes an entity, cascading to child records defined in ENTITY[type].getChildren.
+ * @param {string} type - Entity store name
+ * @param {string} id   - Entity id
+ * @param {string} name - Display name for the confirm dialog
+ */
 async function deleteItem(type, id, name) {
   const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`);
   if (!ok) return;
@@ -484,6 +475,7 @@ function _deserializeEntityMedia(entity) {
   return out;
 }
 
+/** Exports all plant data to ZIP (with media) or XLSX. Prompts user to choose format. */
 async function exportData() {
   try {
     const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];

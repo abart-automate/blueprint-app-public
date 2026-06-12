@@ -61,6 +61,16 @@ function itemTables(type, item) {
   ];
 }
 
+function isManagedSwitch(assetClass, subclass) {
+  return assetClass === 'Network Switch' && (subclass === 'Managed' || subclass === 'Router');
+}
+
+// Returns the networkTypeFields config for the network with the given id.
+function getNetworkAddrFields(networkId) {
+  const net = state.refs.networks?.[networkId];
+  return ENTITY.assets.networkTypeFields?.[net?.networkType] || [];
+}
+
 function getIpPrefix(ipRange) {
   if (!ipRange) return '';
   const parts = ipRange.split('/')[0].split('.');
@@ -71,11 +81,15 @@ function getIpPrefix(ipRange) {
 
 const COMPLETION_THRESHOLD = 75;
 
+function completenessColor(pct) {
+  return pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+}
+
 function calcCompleteness(type, item) {
   const cfg = ENTITY[type];
   let total = 0, filled = 0;
   for (const f of getEffectiveFields(type, item)) {
-    if (f.type === 'assign-type' || f.type === 'assign-id') continue;
+    if (f.type === 'assign-type' || f.type === 'assign-id') continue; // UI-only; exclude from score
     total++;
     const val = item[f.key];
     if (val !== undefined && val !== null && String(val).trim() !== '') filled++;
@@ -122,7 +136,7 @@ function calcPanelDevicesCompleteness(panelId) {
 function buildDetailCompletenessHtml(type, item) {
   if (type === 'areas') {
     const pct = calcAreaCompleteness(item);
-    const color = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+    const color = completenessColor(pct);
     return `
       <div class="det-card det-completeness-card">
         <div class="det-completeness-row">
@@ -134,9 +148,9 @@ function buildDetailCompletenessHtml(type, item) {
   }
   if (type === 'panels') {
     const panelPct = calcCompleteness('panels', item);
-    const panelColor = panelPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+    const panelColor = completenessColor(panelPct);
     const devPct = calcPanelDevicesCompleteness(item.id);
-    const devColor = devPct !== null ? (devPct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
+    const devColor = devPct !== null ? completenessColor(devPct) : 'var(--muted)';
     const devRow = devPct !== null
       ? `<div class="det-completeness-row" style="margin-top:12px">
            <span class="det-completeness-label">Devices</span>
@@ -158,7 +172,7 @@ function buildDetailCompletenessHtml(type, item) {
       </div>`;
   }
   const pct = calcCompleteness(type, item);
-  const color = pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
+  const color = completenessColor(pct);
   return `
     <div class="det-card det-completeness-card">
       <div class="det-completeness-row">
@@ -288,7 +302,7 @@ function getCardThumbSrc(mediaValue) {
 
 // Normalises a stored media value into Array<{blob,mimeType}>.
 // Handles: undefined, legacy base64 string, single blob item, or array of either.
-function _normalizeMediaItems(value) {
+function normalizeMediaItems(value) {
   if (!value) return [];
   const arr = Array.isArray(value) ? value : [value];
   return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
