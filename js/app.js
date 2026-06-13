@@ -21,6 +21,51 @@
    ============================================================ */
 
 /**
+ * Returns true if the detail panel has any unsaved edits that should
+ * trigger a "leave without saving?" prompt before navigating away.
+ * Checks both field-level changes and media/table dirty state.
+ */
+function hasUnsavedDetailChanges() {
+  return Object.keys(state.detailChanges).length > 0 || state.detailMediaDirty;
+}
+
+/**
+ * Resets all six detail edit state properties back to their empty defaults.
+ * Called after a successful save, a discard, or a force-close so the
+ * navigation guard cannot fire on stale state.
+ */
+function _clearDetailEditState() {
+  state.detailChanges       = {};
+  state.detailMediaDirty    = false;
+  state.detailImages        = [];
+  state.detailNamedPhotos   = {};
+  state.detailItemTables    = {};
+  state.detailSwitchNetworks = [];
+  state.detailSwitchPorts    = [];
+}
+
+/**
+ * Closes the detail panel immediately — no unsaved-changes prompt.
+ * Used internally after the user has already confirmed they want to discard,
+ * or when there is nothing to discard.
+ */
+function _closeDetailImmediate() {
+  el.detail.classList.remove('open');
+  el.detail.classList.add('animating');
+  setTimeout(() => {
+    el.detail.classList.remove('animating');
+    el.detail.style.display = 'none';
+    el.detail.innerHTML = '';
+  }, 300);
+  state.detailType       = null;
+  state.detailId         = null;
+  state.detailSlotNumber = null;
+  state.detailStack      = [];
+  _clearDetailEditState();
+  setHeaderForPage(state.page);
+}
+
+/**
  * Opens the detail panel for an entity. If a panel is already open, pushes it
  * onto detailStack so the back button can return to it.
  * @param {string} type  - Entity store name (e.g. 'assets', 'panels')
@@ -30,7 +75,9 @@ function openDetail(type, id) {
   const wasOpen = !!(state.detailType && state.detailId);
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId });
-    state.detailChanges = {};
+    // Reset edit state when drilling into a child so the parent's changes
+    // don't linger and trigger a false unsaved-changes prompt on the way back
+    _clearDetailEditState();
   }
   state.detailType = type;
   state.detailId   = id;
@@ -47,33 +94,32 @@ function openDetail(type, id) {
   el.pageTitle.textContent    = ENTITY[type].label;
 }
 
-/** Closes the detail panel, or pops back to the previous stacked panel. */
-function closeDetail() {
+/**
+ * Closes the detail panel, or pops back to the previous stacked panel.
+ * If there are unsaved changes, prompts the user first.
+ * Returns early (keeping the panel open) if the user chooses to cancel.
+ */
+async function closeDetail() {
+  // Guard: ask the user before discarding any in-progress edits
+  if (hasUnsavedDetailChanges()) {
+    const ok = await confirm('Unsaved Changes', 'Leave without saving? Your changes will be lost.');
+    if (!ok) return; // user chose to keep editing — abort close
+    _clearDetailEditState();
+  }
+
   if (state.detailStack.length > 0) {
     const prev = state.detailStack.pop();
     state.detailType       = prev.type;
     state.detailId         = prev.id;
     state.detailSlotNumber = prev.slotNumber ?? null;
-    state.detailChanges    = {};
     renderDetail();
     el.pageTitle.textContent = prev.type === '__plc_slot__'
       ? `Slot ${prev.slotNumber}`
       : ENTITY[prev.type].label;
     return;
   }
-  el.detail.classList.remove('open');
-  el.detail.classList.add('animating');
-  setTimeout(() => {
-    el.detail.classList.remove('animating');
-    el.detail.style.display = 'none';
-    el.detail.innerHTML = '';
-  }, 300);
-  state.detailType       = null;
-  state.detailId         = null;
-  state.detailSlotNumber = null;
-  state.detailChanges    = {};
-  state.detailStack      = [];
-  setHeaderForPage(state.page);
+
+  _closeDetailImmediate();
 }
 
 /* ============================================================
@@ -261,9 +307,22 @@ async function openAssignOrCreate(childType, parentField, parentId) {
    ROUTER
    ============================================================ */
 
-function navigate(page) {
-  if (state.detailType) { state.detailStack = []; closeDetail(); }
-  if (state.formType)   closeSheet();
+/**
+ * Navigates to a new page tab.  If the detail panel is open with unsaved changes,
+ * prompts the user before proceeding.  The guard fires BEFORE clearing detailStack
+ * so that cancelling the dialog keeps the stack intact and the panel visible.
+ */
+async function navigate(page) {
+  if (state.detailType) {
+    if (hasUnsavedDetailChanges()) {
+      const ok = await confirm('Unsaved Changes', 'Leave without saving? Your changes will be lost.');
+      if (!ok) return; // abort navigation — user wants to keep editing
+      _clearDetailEditState();
+    }
+    state.detailStack = [];
+    _closeDetailImmediate();
+  }
+  if (state.formType) closeSheet();
   state.page = page;
   window.location.hash = page;
   setHeaderForPage(page);
@@ -999,9 +1058,9 @@ function matchParentChip(type, item, parentId, chipFieldKey) {
    DETAIL VIEW
    ============================================================ */
 
-/* renderDetail, renderSlotDetail, renderEntityDetail, buildCollapsibleCard,
-   getSlotLinkedRacks, slotLinkedRackCardHTML, buildChildSections,
-   showDetailSaveBar, activateNameEdit, activateInlineEdit, saveDetailChanges
+/* renderDetail, renderSlotDetail, renderEntityDetail, buildEditableFieldHtml,
+   buildCollapsibleCard, getSlotLinkedRacks, slotLinkedRackCardHTML,
+   buildChildSections, saveDetailChanges
    are defined in js/renderers/detail.js (loaded before this file). */
 
 /* ============================================================

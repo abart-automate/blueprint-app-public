@@ -179,10 +179,69 @@ function buildSlotRow(rackId, slotNumber, slot) {
   </div>`;
 }
 
-// Builds entity detail HTML. sectionMap groups fields by their `section` key so physical
-// sizing, clearance, and nameplate sections collapse independently; fields without a
-// section key fall into the main card. PHYSICAL_SECTIONS controls which sections are
-// treated as collapsible sub-groups rather than top-level cards.
+/* ============================================================
+   DETAIL EDITABLE FIELD BUILDER
+   ============================================================ */
+
+/**
+ * Builds the editable control HTML for a single field.
+ * All standard field types (text, textarea, enum, ref) become live inputs;
+ * unknown types fall back to a read-only text display.
+ *
+ * @param {object} f     - Field config from entity-config (key, label, type, options, refStore)
+ * @param {object} item  - Current entity data (provides the initial value)
+ * @returns {string} HTML string for the control, wrapped in .det-fval
+ */
+function buildEditableFieldHtml(f, item) {
+  const rawVal = item[f.key] ?? '';
+
+  if (f.type === 'text') {
+    return `<input type="text" class="det-inline-input" data-edit-field="${f.key}" value="${esc(String(rawVal))}">`;
+  }
+
+  if (f.type === 'textarea') {
+    return `<textarea class="det-inline-textarea" data-edit-field="${f.key}">${esc(String(rawVal))}</textarea>`;
+  }
+
+  if (f.type === 'enum') {
+    const opts = (f.options || []).map(o =>
+      `<option value="${esc(o)}"${o === rawVal ? ' selected' : ''}>${esc(o)}</option>`
+    ).join('');
+    return `<select class="det-inline-select" data-edit-field="${f.key}">
+      <option value="">— Select —</option>
+      ${opts}
+    </select>`;
+  }
+
+  if (f.type === 'ref') {
+    const refItems = state.cache[f.refStore] || [];
+    const opts = refItems.map(i =>
+      `<option value="${i.id}"${i.id === rawVal ? ' selected' : ''}>${esc(i.name)}</option>`
+    ).join('');
+    return `<select class="det-inline-select" data-edit-field="${f.key}">
+      <option value="">— Unassigned —</option>
+      ${opts}
+    </select>`;
+  }
+
+  // Fallback: show value read-only (assign-type, assign-id, and any future types)
+  const displayVal = String(rawVal);
+  return `<div class="det-fval${!displayVal ? ' det-fval-empty' : ''}">${displayVal ? esc(displayVal) : '—'}</div>`;
+}
+
+/* ============================================================
+   ENTITY DETAIL RENDERER
+   ============================================================ */
+
+/**
+ * Renders the full entity detail panel.  All standard fields are rendered as live
+ * editable inputs from the start — no "Edit" button or click-to-activate required.
+ * A persistent Save/Cancel bar floats above the nav bar.
+ *
+ * Edit state is freshly initialised on every render call (pending field changes are
+ * reset; media and wiring state are re-loaded from the saved item).  Navigation away
+ * from the panel while changes are pending triggers an unsaved-changes prompt.
+ */
 async function renderEntityDetail(savedScroll) {
   const { detailType: type, detailId: id } = state;
   const cfg  = ENTITY[type];
@@ -190,22 +249,54 @@ async function renderEntityDetail(savedScroll) {
   if (!item) { state.detailStack = []; closeDetail(); return; }
   await refreshAll();
 
-  // Build field rows grouped by section (all fields shown, blank or not)
+  /* ------------------------------------------------------------------
+     Reset all detail edit state from the saved item.
+     This runs on every render (including re-renders after slot/child ops)
+     so that the displayed inputs always reflect the on-disk state.
+     ------------------------------------------------------------------ */
+  state.detailChanges   = {};
+  state.detailMediaDirty = false;
+
+  // Load editable media state from the saved item
+  state.detailImages = normalizeMediaItems(item.images);
+  state.detailNamedPhotos = {};
+  if (cfg.requiredPhotoSlots) {
+    for (const slot of cfg.requiredPhotoSlots) {
+      state.detailNamedPhotos[slot] = normalizeMediaItems(item.namedPhotos?.[slot]);
+    }
+  }
+
+  // Load editable wiring table state from the saved item
+  state.detailItemTables = {};
+  for (const t of itemTables(type, item)) {
+    state.detailItemTables[t.key] = (item[t.key] || []).map(r => ({ ...r }));
+  }
+
+  // Load switch table state for managed switch assets
+  const showSwitchTables = type === 'assets' && isManagedSwitch(item.assetClass, item.assetSubclass);
+  if (showSwitchTables) {
+    state.detailSwitchNetworks = (item.switchNetworks || []).map(r => ({ ...r }));
+    state.detailSwitchPorts    = (item.switchPorts    || []).map(r => ({ ...r }));
+  }
+
+  /* ------------------------------------------------------------------
+     Build field rows grouped by section.
+     Fields are rendered as live editable inputs instead of read-only divs.
+     ------------------------------------------------------------------ */
   const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId','name']);
   const sectionMap = new Map();
+
   for (const f of getEffectiveFields(type, item)) {
     if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
     if (f.key === 'assetSubclass' && !(ENTITY.assets.classSubclasses?.[item.assetClass]?.length)) continue;
-    const rawVal = item[f.key];
-    let displayVal;
-    if (f.type === 'ref') {
-      const refItem = state.refs[f.refStore]?.[rawVal];
-      displayVal = refItem ? refItem.name : '';
-    } else {
-      displayVal = rawVal != null ? String(rawVal) : '';
-    }
-    const isEmpty = !displayVal;
-    const fieldHtml = `<div class="det-field" data-key="${f.key}"><div class="det-flabel">${esc(f.label)}</div><div class="det-fval${isEmpty ? ' det-fval-empty' : ''}">${isEmpty ? '—' : esc(displayVal)}</div></div>`;
+
+    // Each field is a label + an editable control (input, select, or textarea)
+    const fieldHtml = `
+      <div class="det-field">
+        <div class="det-flabel">${esc(f.label)}</div>
+        ${buildEditableFieldHtml(f, item)}
+      </div>`;
+
     const sectionKey = f.section || null;
     if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, []);
     sectionMap.get(sectionKey).push(fieldHtml);
@@ -213,9 +304,9 @@ async function renderEntityDetail(savedScroll) {
 
   const generalFields = (sectionMap.get(null) || []).join('');
 
-  // Categorise named sections: detail sections vs. physical/clearance sections
+  // Categorise sections: physical/clearance collapse separately from named sections
   const PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Backpanel Sizing', 'Clearance']);
-  let detailSectionCards = '';
+  let detailSectionCards  = '';
   let physicalSectionCards = '';
   for (const [section, rows] of sectionMap) {
     if (!section) continue;
@@ -226,20 +317,24 @@ async function renderEntityDetail(savedScroll) {
     }
   }
 
-  // Item table cards (collapseable)
+  /* ------------------------------------------------------------------
+     Wiring item tables — editable inline via renderItemTable().
+     Placeholders are rendered here; the actual table UI is mounted after
+     innerHTML is set (DOM must exist before calling renderItemTable).
+     ------------------------------------------------------------------ */
   let wiringCards = '';
   for (const t of itemTables(type, item)) {
-    const h1 = t.placeholder1 || 'Terminal';
-    const h2 = t.placeholder2 || 'Label';
-    const wRows = item[t.key] || [];
-    const rowsHtml = wRows.length
-      ? wRows.map(r => `<tr><td class="wiring-det-terminal">${esc(r.terminal)}</td><td>${esc(r.label)}</td></tr>`).join('')
-      : `<tr><td colspan="2" class="wiring-empty">No entries</td></tr>`;
-    wiringCards += buildCollapsibleCard(t.label,
-      `<table class="wiring-det-table"><thead><tr><th>${esc(h1)}</th><th>${esc(h2)}</th></tr></thead><tbody>${rowsHtml}</tbody></table>`);
+    // Use det-wiring-table-{key} to avoid ID conflicts with form's wiring-table-{key}
+    wiringCards += buildCollapsibleCard(
+      t.label,
+      `<div id="det-wiring-table-${t.key}" class="wiring-table"></div>`,
+      { expanded: true }  // expand by default since they are now editable
+    );
   }
 
-  // Required media card (collapseable) — slots rendered into placeholders after innerHTML set
+  /* ------------------------------------------------------------------
+     Required media slots — placeholders mounted after innerHTML set
+     ------------------------------------------------------------------ */
   let requiredPhotosCard = '';
   if (cfg.requiredPhotoSlots) {
     const slotsHtml = cfg.requiredPhotoSlots.map(slot => {
@@ -248,19 +343,37 @@ async function renderEntityDetail(savedScroll) {
         <div class="named-photo-det-item">
           <div class="named-photo-det-label">${esc(slot)}</div>
           <div id="${slotId}" class="img-grid"></div>
-        </div>
-      `;
+        </div>`;
     }).join('');
-    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml);
+    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml, { expanded: true });
   }
 
-  // Other media card (collapseable) — gallery rendered into placeholder after innerHTML set
+  // Other media gallery placeholder
   let otherPhotosCard = '';
   if (!cfg.noImages) {
-    otherPhotosCard = buildCollapsibleCard('Other Media', `<div id="det-gallery" class="img-grid"></div>`);
+    otherPhotosCard = buildCollapsibleCard('Other Media', `<div id="det-gallery" class="img-grid"></div>`, { expanded: true });
   }
 
-  // Assignment badge for networks/assets
+  /* ------------------------------------------------------------------
+     Switch/Router tables — editable inline via the parameterised renderers.
+     Placeholders are rendered here; tables are mounted after innerHTML set.
+     ------------------------------------------------------------------ */
+  let switchNetworksCard = '';
+  let switchPortsCard    = '';
+  if (showSwitchTables) {
+    switchNetworksCard = buildCollapsibleCard(
+      'Network Connections',
+      `<div id="det-switch-networks-container"></div>`,
+      { expanded: true }
+    );
+    switchPortsCard = buildCollapsibleCard(
+      'Port Assignments',
+      `<div id="det-switch-ports-container"></div>`,
+      { expanded: true }
+    );
+  }
+
+  // Assignment badge (read-only display — not editable inline)
   let assignBadge = '';
   if (item.assignedToType) {
     if (item.assignedToType === 'Plant') {
@@ -273,28 +386,22 @@ async function renderEntityDetail(savedScroll) {
     }
   }
 
-  // PLC rack slots card — each slot is clickable to add/edit its card
+  // PLC rack slots card — slots remain click-to-open (not inline editable)
   let rackSlotsCard = '';
   if (type === 'assets' && item.assetClass === 'PLC') {
-    const slotCount  = parseInt(item.slotCount) || 0;
-    const slotsMap   = new Map((item.slots || []).map(s => [s.slotNumber, s]));
-    const cardCount  = (item.slots || []).length;
-    const chevron   = ICON_CHEVRON;
+    const slotCount = parseInt(item.slotCount) || 0;
+    const slotsMap  = new Map((item.slots || []).map(s => [s.slotNumber, s]));
+    const cardCount = (item.slots || []).length;
     const title     = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
-
-    let slotRows = '';
-    if (slotCount === 0) {
-      slotRows = `<div style="font-size:14px;color:var(--muted)">No slots configured — edit the rack to set Slot Count.</div>`;
-    } else {
-      // Build slot rows from slotsMap (sparse, keyed by slotNumber). Empty slots render as placeholder rows.
-      slotRows = Array.from({ length: slotCount }, (_, k) => buildSlotRow(item.id, k, slotsMap.get(k))).join('');
-    }
+    const slotRows  = slotCount === 0
+      ? `<div style="font-size:14px;color:var(--muted)">No slots configured — set Slot Count above.</div>`
+      : Array.from({ length: slotCount }, (_, k) => buildSlotRow(item.id, k, slotsMap.get(k))).join('');
 
     rackSlotsCard = `
       <div class="det-card det-collapsible">
         <button class="det-section-toggle" aria-expanded="true">
           <span class="section-label" style="margin:0">${title}</span>
-          ${chevron}
+          ${ICON_CHEVRON}
         </button>
         <div class="det-section-body">
           <div class="sn-det-list">${slotRows}</div>
@@ -302,66 +409,15 @@ async function renderEntityDetail(savedScroll) {
       </div>`;
   }
 
-  let ioPointsCard = '';
-
-  // Switch/Router network connections and port assignment cards
-  let switchNetworksCard = '';
-  let switchPortsCard    = '';
-  if (type === 'assets') {
-    const showTables = isManagedSwitch(item.assetClass, item.assetSubclass);
-    if (showTables) {
-      const snHtml = item.switchNetworks?.length
-        ? item.switchNetworks.map(r => {
-            const net        = state.refs.networks?.[r.networkId];
-            const addrFields = getNetworkAddrFields(r.networkId);
-            const fieldPills = buildFieldPills(addrFields, r);
-            return `<div class="sn-det-row">
-              <div class="sn-det-name">${esc(net?.name || '—')}</div>
-              ${fieldPills ? `<div class="sn-det-fields">${fieldPills}</div>` : ''}
-            </div>`;
-          }).join('')
-        : `<div class="wiring-empty">No networks assigned</div>`;
-      switchNetworksCard = buildCollapsibleCard('Network Connections', `<div class="sn-det-list">${snHtml}</div>`);
-
-      const spHtml = item.switchPorts?.length
-        ? item.switchPorts.map(r => {
-            const net   = state.refs.networks?.[r.networkId];
-            const asset = state.refs.assets?.[r.assetId];
-            let slotLabel = '';
-            let ipAddr    = '';
-            if (asset?.assetClass === 'PLC') {
-              const matchSlot = r.slotNumber != null
-                ? (asset.slots || []).find(s => s.slotNumber === r.slotNumber)
-                : (asset.slots || []).find(s =>
-                    CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId === r.networkId
-                  );
-              if (matchSlot) {
-                slotLabel = `Slot ${matchSlot.slotNumber}${matchSlot.name ? ` — ${matchSlot.name}` : ''}`;
-                ipAddr = matchSlot.ipAddress || matchSlot.nodeAddress || '';
-              }
-            } else {
-              ipAddr = asset?.ipAddress || asset?.nodeAddress || '';
-            }
-            const pills = [
-              net         ? `<span class="sn-det-field">Network<strong>${esc(net.name)}</strong></span>`    : '',
-              net?.vlanId ? `<span class="sn-det-field">VLAN<strong>${esc(net.vlanId)}</strong></span>`     : '',
-              `<span class="sn-det-field">Device<strong>${esc(asset?.name || 'No Connection')}</strong></span>`,
-              slotLabel   ? `<span class="sn-det-field">Slot<strong>${esc(slotLabel)}</strong></span>`      : '',
-              ipAddr      ? `<span class="sn-det-field">IP<strong>${esc(ipAddr)}</strong></span>`            : '',
-            ].filter(Boolean).join('');
-            return `<div class="sn-det-row">
-              <div class="sn-det-name">${esc(r.portName || '—')}</div>
-              <div class="sn-det-fields">${pills}</div>
-            </div>`;
-          }).join('')
-        : `<div class="wiring-empty">No ports assigned</div>`;
-      switchPortsCard = buildCollapsibleCard('Port Assignments', `<div class="sn-det-list">${spHtml}</div>`);
-    }
-  }
-
-  // Related children
   const childSections = await buildChildSections(type, id, item);
 
+  /* ------------------------------------------------------------------
+     Render HTML.
+     The name field is always an editable input (areas were previously
+     readonly; all types now use the same pattern).
+     The "Edit" button (opens bottom-sheet form) is removed — all editing
+     happens inline.  The "Duplicate" button is kept.
+     ------------------------------------------------------------------ */
   el.detail.innerHTML = `
     <div class="det-header">
       <button class="det-back-btn" id="det-back" aria-label="Back">
@@ -371,14 +427,15 @@ async function renderEntityDetail(savedScroll) {
     ${buildDetailCompletenessHtml(type, item)}
     <div class="det-card">
       ${type === 'areas'
-        ? `<input class="det-name-input" id="det-name-input" type="text" value="${esc(item.name)}" readonly>`
+        ? `<input class="det-name-input" id="det-name-input" type="text"
+               value="${esc(item.name)}" data-edit-field="name"
+               aria-label="Name">`
         : `<div class="det-name-row">
-             <div class="det-name">${esc(item.name)}</div>
+             <input class="det-name-input" id="det-name-input" type="text"
+                    value="${esc(item.name)}" data-edit-field="name"
+                    aria-label="Name">
              <button class="det-edit-btn" id="det-duplicate" aria-label="Duplicate">
                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-             </button>
-             <button class="det-edit-btn" id="det-edit" aria-label="Edit">
-               ${ICON_EDIT}
              </button>
            </div>`
       }
@@ -391,7 +448,6 @@ async function renderEntityDetail(savedScroll) {
     ${detailSectionCards}
     ${wiringCards}
     ${rackSlotsCard}
-    ${ioPointsCard}
     ${switchNetworksCard}
     ${switchPortsCard}
     ${physicalSectionCards}
@@ -404,34 +460,119 @@ async function renderEntityDetail(savedScroll) {
     </div>
   `;
 
-  state.detailChanges = {};
+  /* ------------------------------------------------------------------
+     Mount editable wiring tables into their placeholder containers.
+     renderItemTable is called with detail-specific opts so it reads/writes
+     state.detailItemTables and uses det-wiring-table-{key} container ids.
+     ------------------------------------------------------------------ */
+  for (const t of itemTables(type, item)) {
+    const containerId = `det-wiring-table-${t.key}`;
+    if (document.getElementById(containerId)) {
+      renderItemTable(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label', {
+        containerId,
+        tablesState: state.detailItemTables,
+      });
+    }
+  }
 
+  /* ------------------------------------------------------------------
+     Mount editable switch network / port tables for managed switches.
+     The rerenderSwitch closure keeps both tables in sync after mutations
+     without the detail re-rendering the entire panel.
+     ------------------------------------------------------------------ */
+  if (showSwitchTables) {
+    const rerenderSwitch = () => {
+      renderSwitchNetworksTable(
+        'det-switch-networks-container',
+        state.detailSwitchNetworks,
+        state.detailSwitchPorts,
+        rerenderSwitch,
+        () => { state.detailChanges._switchDirty = true; }, // sentinel so hasUnsavedDetailChanges fires
+        item.assetSubclass
+      );
+      renderSwitchPortsTable(
+        'det-switch-ports-container',
+        state.detailSwitchNetworks,
+        state.detailSwitchPorts,
+        rerenderSwitch,
+        () => { state.detailChanges._switchDirty = true; },
+        item.id // exclude the switch itself from device options
+      );
+    };
+    rerenderSwitch();
+  }
+
+  /* ------------------------------------------------------------------
+     Mount editable media galleries.
+     Callbacks mutate state.detailImages / state.detailNamedPhotos and
+     set detailMediaDirty so the navigation guard triggers correctly.
+     ------------------------------------------------------------------ */
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
-      const slotId = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+      const slotId    = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
       const container = document.getElementById(slotId);
-      if (container) renderMediaSlot(container, slot, normalizeMediaItems(item.namedPhotos?.[slot]), { readonly: true });
+      if (container) {
+        renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
+          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); state.detailMediaDirty = true; },
+          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   state.detailMediaDirty = true; },
+        });
+      }
     }
   }
   if (!cfg.noImages) {
     const gallery = document.getElementById('det-gallery');
-    if (gallery) renderMediaGallery(gallery, normalizeMediaItems(item.images), { readonly: true });
+    if (gallery) {
+      renderMediaGallery(gallery, state.detailImages, {
+        onAdd:    items => { state.detailImages.push(...items); state.detailMediaDirty = true; },
+        onRemove: i     => { state.detailImages.splice(i, 1);  state.detailMediaDirty = true; },
+      });
+    }
   }
 
+  /* ------------------------------------------------------------------
+     Wire all [data-edit-field] inputs (text, textarea, select, name input).
+     Any change records the value in state.detailChanges.
+     The panelId → areaId cascade is handled specially below.
+     ------------------------------------------------------------------ */
+  el.detail.querySelectorAll('[data-edit-field]').forEach(control => {
+    const key = control.dataset.editField;
+    const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
+    control.addEventListener(ev, () => {
+      state.detailChanges[key] = control.value;
+    });
+  });
+
+  // When the user changes the panel, auto-fill the area to match the panel's area.
+  // This mirrors the cascade logic previously in activateInlineEdit.
+  const panelSel = el.detail.querySelector('[data-edit-field="panelId"]');
+  if (panelSel) {
+    panelSel.addEventListener('change', () => {
+      const panel = state.refs.panels?.[panelSel.value];
+      if (panel?.areaId) {
+        state.detailChanges['areaId'] = panel.areaId;
+        const areaSel = el.detail.querySelector('[data-edit-field="areaId"]');
+        if (areaSel) areaSel.value = panel.areaId;
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------
+     Button wiring
+     ------------------------------------------------------------------ */
   el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
-
   el.detail.querySelector('#det-duplicate')?.addEventListener('click', () => duplicateItem(type, id));
-  el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSheet(type, id));
 
-  // Save bar buttons
+  // Discard: re-render from saved state (resets all edit state via renderEntityDetail)
   el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
-    state.detailChanges = {};
     renderDetail();
   });
+
+  // Save: commit all pending changes (fields + media + wiring + switch tables)
   el.detail.querySelector('#det-save-changes')?.addEventListener('click', () => {
     saveDetailChanges(type, id);
   });
 
+  // Child-entity card clicks / delete buttons
   el.detail.querySelectorAll('.child-card-list').forEach(list => {
     const childStore = list.dataset.childStore;
     list.querySelectorAll('.card').forEach(card => {
@@ -444,6 +585,8 @@ async function renderEntityDetail(savedScroll) {
       });
     });
   });
+
+  // PLC rack slot rows
   el.detail.querySelectorAll('.rack-slot-row').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('.rack-slot-clear')) return;
@@ -472,6 +615,7 @@ async function renderEntityDetail(savedScroll) {
     });
   });
 
+  // Add-child buttons (shown in child-section headers)
   el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
     btn.addEventListener('click', () => {
       const childType    = btn.dataset.addChild;
@@ -486,11 +630,11 @@ async function renderEntityDetail(savedScroll) {
     });
   });
 
-  // Collapseable section toggles
+  // Collapsible section toggles
   el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const body = btn.closest('.det-collapsible').querySelector('.det-section-body');
+      const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
       const expanded = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', String(!expanded));
       body.style.display = expanded ? 'none' : 'block';
@@ -621,125 +765,63 @@ async function buildChildSections(type, id, item) {
 }
 
 /* ============================================================
-   DETAIL INLINE EDITING
+   DETAIL SAVE — commits all pending edits to IndexedDB
    ============================================================ */
 
-function showDetailSaveBar() {
-  el.detail.querySelector('#det-save-bar')?.classList.add('visible');
-}
-
-function activateNameEdit(nameDiv, item) {
-  const input = document.createElement('input');
-  input.className = 'det-name-input';
-  input.value = state.detailChanges['name'] ?? item.name;
-  nameDiv.textContent = '';
-  nameDiv.appendChild(input);
-  input.focus();
-  input.addEventListener('input', () => {
-    state.detailChanges['name'] = input.value;
-    showDetailSaveBar();
-  });
-  input.addEventListener('blur', () => {
-    const val = state.detailChanges['name'] ?? item.name;
-    nameDiv.textContent = val || item.name;
-  });
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-}
-
-function activateInlineEdit(field, fConfig, item) {
-  const fvalEl = field.querySelector('.det-fval');
-  const rawVal = state.detailChanges[fConfig.key] !== undefined
-    ? state.detailChanges[fConfig.key]
-    : (item[fConfig.key] ?? '');
-
-  let control;
-  if (fConfig.type === 'text') {
-    control = document.createElement('input');
-    control.className = 'det-inline-input';
-    control.type = 'text';
-    control.value = String(rawVal);
-  } else if (fConfig.type === 'textarea') {
-    control = document.createElement('textarea');
-    control.className = 'det-inline-textarea';
-    control.value = String(rawVal);
-  } else if (fConfig.type === 'enum') {
-    control = document.createElement('select');
-    control.className = 'det-inline-select';
-    control.innerHTML = `<option value="">— Select —</option>` +
-      fConfig.options.map(o => `<option value="${esc(o)}"${o === rawVal ? ' selected' : ''}>${esc(o)}</option>`).join('');
-  } else if (fConfig.type === 'ref') {
-    const refItems = state.cache[fConfig.refStore] || [];
-    control = document.createElement('select');
-    control.className = 'det-inline-select';
-    control.innerHTML = `<option value="">— Unassigned —</option>` +
-      refItems.map(i => `<option value="${i.id}"${i.id === rawVal ? ' selected' : ''}>${esc(i.name)}</option>`).join('');
-  }
-
-  if (!control) return;
-
-  fvalEl.innerHTML = '';
-  fvalEl.classList.remove('det-fval-empty');
-  fvalEl.appendChild(control);
-  control.focus();
-
-  const markDirty = () => {
-    state.detailChanges[fConfig.key] = control.value;
-    showDetailSaveBar();
-  };
-  control.addEventListener('input', markDirty);
-  control.addEventListener('change', markDirty);
-
-  control.addEventListener('blur', () => {
-    const currentVal = state.detailChanges[fConfig.key] !== undefined
-      ? state.detailChanges[fConfig.key]
-      : (item[fConfig.key] ?? '');
-    let displayVal;
-    if (fConfig.type === 'ref') {
-      const refItem = state.refs[fConfig.refStore]?.[currentVal];
-      displayVal = refItem ? refItem.name : '';
-    } else {
-      displayVal = currentVal;
-    }
-    const isEmpty = !displayVal;
-    fvalEl.classList.toggle('det-fval-empty', isEmpty);
-    fvalEl.textContent = isEmpty ? '—' : String(displayVal);
-
-    // Auto-sync areaId when panelId is changed inline
-    if (fConfig.key === 'panelId') {
-      const efFields = getEffectiveFields(state.detailType, item);
-      if (efFields.some(f => f.key === 'areaId')) {
-        const panel = state.refs.panels?.[currentVal];
-        if (panel?.areaId) {
-          state.detailChanges['areaId'] = panel.areaId;
-          showDetailSaveBar();
-          const areaField = el.detail.querySelector('.det-field-editable[data-key="areaId"]');
-          if (areaField) {
-            const areaFval  = areaField.querySelector('.det-fval');
-            const areaName  = state.refs.areas?.[panel.areaId]?.name || '';
-            areaFval.classList.toggle('det-fval-empty', !areaName);
-            areaFval.textContent = areaName || '—';
-          }
-        }
-      }
-    }
-  });
-}
-
+/**
+ * Saves all pending changes from the detail panel:
+ *   - Field changes (state.detailChanges)
+ *   - Media (state.detailImages, state.detailNamedPhotos)
+ *   - Wiring tables (state.detailItemTables)
+ *   - Switch network/port tables (state.detailSwitchNetworks/Ports, managed switches only)
+ *
+ * After a successful save, all detail edit state is reset and the panel re-renders
+ * from the freshly saved item so inputs reflect the committed values.
+ */
 async function saveDetailChanges(type, id) {
-  if (!Object.keys(state.detailChanges).length) return;
   const cfg  = ENTITY[type];
   const item = await getById(type, id);
   if (!item) return;
+
+  // Merge field-level changes over the saved item
   const updatedItem = { ...item, ...state.detailChanges };
+
+  // Remove the internal sentinel used by switch-table dirty tracking
+  delete updatedItem._switchDirty;
+
+  // Persist current media state (always write, even if unchanged, so no data is lost)
+  updatedItem.images = state.detailImages;
+  updatedItem.namedPhotos = Object.fromEntries(
+    Object.entries(state.detailNamedPhotos)
+  );
+
+  // Persist each editable wiring table key back into the item
+  for (const [key, rows] of Object.entries(state.detailItemTables)) {
+    updatedItem[key] = rows;
+  }
+
+  // Persist switch tables for managed switch assets
+  if (type === 'assets' && isManagedSwitch(item.assetClass, item.assetSubclass)) {
+    updatedItem.switchNetworks = state.detailSwitchNetworks.filter(r => r.networkId);
+    updatedItem.switchPorts    = state.detailSwitchPorts.filter(
+      r => r.portName || r.networkId || r.assetId
+    );
+  }
+
+  // Required field validation (applied to merged item so new values are checked)
   for (const f of getEffectiveFields(type, updatedItem)) {
     if (f.required && !updatedItem[f.key]) {
       showToast(`${f.label} is required`, 'error');
       return;
     }
   }
+
   await upsert(type, updatedItem);
   await refreshAll();
-  state.detailChanges = {};
+
+  // Reset all detail edit state before re-render so the guard doesn't fire
+  _clearDetailEditState();
+
   showToast(`${cfg.label} saved`, 'success');
-  renderDetail();
+  renderDetail({ preserveScroll: true });
 }

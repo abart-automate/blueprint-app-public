@@ -98,10 +98,33 @@ function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, r
 
 /* ---- SWITCH NETWORKS TABLE ---- */
 
-function renderSwitchNetworksTable() {
-  const container = $('switch-networks-container');
+/**
+ * Renders the editable switch-network-connections table into a DOM container.
+ *
+ * Supports two calling conventions — backwards-compatible via default parameters:
+ *   renderSwitchNetworksTable()
+ *     → form mode: uses state.formSwitchNetworks/Ports, container id='switch-networks-container'
+ *   renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass)
+ *     → detail mode: uses provided arrays, custom container id, and closure for re-rendering both tables
+ *
+ * @param {string}   containerId   - DOM id of the container element
+ * @param {Array}    networks      - Mutable array of network row objects
+ * @param {Array}    ports         - Mutable array of port row objects (cross-referenced)
+ * @param {Function} rerender      - Callback that re-renders both switch tables; null in form mode
+ * @param {Function} onDirty       - Called whenever data changes; null in form mode
+ * @param {string}   assetSubclass - Asset subclass string used for Router-max-2 enforcement
+ */
+function renderSwitchNetworksTable(
+  containerId   = 'switch-networks-container',
+  networks      = state.formSwitchNetworks,
+  ports         = state.formSwitchPorts,
+  rerender      = null,
+  onDirty       = null,
+  assetSubclass = null
+) {
+  const container = $(containerId);
   if (!container) return;
-  const rows = state.formSwitchNetworks;
+  const rows = networks;
   const takenNetIds = new Set(rows.map(r => r.networkId).filter(Boolean));
   const makeNetOpts = (selectedId) =>
     (state.cache.networks || [])
@@ -125,7 +148,9 @@ function renderSwitchNetworksTable() {
     }).join('');
   };
 
-  const isRouter = $('f-assetSubclass')?.value === 'Router';
+  // Router subclass may only have 2 network connections — resolve subclass from param or form
+  const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
+  const isRouter    = resolvedSubclass === 'Router';
   const atRouterMax = isRouter && rows.length >= 2;
 
   let html = rows.map((r, i) => `
@@ -142,51 +167,92 @@ function renderSwitchNetworksTable() {
   if (!atRouterMax) html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
   container.innerHTML = html;
 
+  // Helper: trigger a full re-render of both tables (detail mode uses closure; form mode calls directly)
+  const doRerender = () => rerender ? rerender() : (renderSwitchNetworksTable(), renderSwitchPortsTable());
+
   container.querySelectorAll('.sn-network').forEach(sel => {
     sel.addEventListener('change', () => {
-      const idx = +sel.dataset.idx;
-      const keys = Object.keys(state.formSwitchNetworks[idx]).filter(k => k !== 'networkId');
-      keys.forEach(k => delete state.formSwitchNetworks[idx][k]);
-      state.formSwitchNetworks[idx].networkId = sel.value;
-      renderSwitchNetworksTable();
-      renderSwitchPortsTable();
+      const idx  = +sel.dataset.idx;
+      // Clear address fields when network changes — they are network-specific
+      const keys = Object.keys(networks[idx]).filter(k => k !== 'networkId');
+      keys.forEach(k => delete networks[idx][k]);
+      networks[idx].networkId = sel.value;
+      onDirty?.();
+      doRerender();
     });
   });
 
-  container.querySelectorAll('.sn-addr').forEach(el => {
-    const ev = el.tagName === 'SELECT' ? 'change' : 'input';
-    el.addEventListener(ev, () => {
-      state.formSwitchNetworks[+el.dataset.idx][el.dataset.key] = el.value;
+  container.querySelectorAll('.sn-addr').forEach(addrEl => {
+    const ev = addrEl.tagName === 'SELECT' ? 'change' : 'input';
+    addrEl.addEventListener(ev, () => {
+      networks[+addrEl.dataset.idx][addrEl.dataset.key] = addrEl.value;
+      onDirty?.();
     });
   });
 
   container.querySelectorAll('.sn-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const removedNetId = state.formSwitchNetworks[+btn.dataset.idx].networkId;
-      state.formSwitchNetworks.splice(+btn.dataset.idx, 1);
+      const removedNetId = networks[+btn.dataset.idx].networkId;
+      networks.splice(+btn.dataset.idx, 1);
+      // Clear ports that referenced the removed network
       if (removedNetId) {
-        state.formSwitchPorts.forEach(p => { if (p.networkId === removedNetId) p.networkId = ''; });
+        ports.forEach(p => { if (p.networkId === removedNetId) p.networkId = ''; });
       }
-      renderSwitchNetworksTable();
+      onDirty?.();
+      doRerender();
     });
   });
+
   container.querySelector('.sn-add')?.addEventListener('click', () => {
-    state.formSwitchNetworks.push({ networkId: '' });
-    renderSwitchNetworksTable();
+    networks.push({ networkId: '' });
+    onDirty?.();
+    doRerender();
   });
-  renderSwitchPortsTable();
+
+  // Re-render ports table to keep it in sync with network list changes
+  if (rerender) {
+    // In detail mode the rerender closure already handles ports; skip to avoid double render
+  } else {
+    renderSwitchPortsTable();
+  }
 }
 
 /* ---- SWITCH PORTS TABLE ---- */
 
-function renderSwitchPortsTable() {
-  const container = $('switch-ports-container');
+/**
+ * Renders the editable switch-port-assignment table into a DOM container.
+ *
+ * Supports two calling conventions — backwards-compatible via default parameters:
+ *   renderSwitchPortsTable()
+ *     → form mode: uses state.formSwitchNetworks/Ports, container id='switch-ports-container'
+ *   renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId)
+ *     → detail mode: uses provided arrays, custom container, closure for re-render
+ *
+ * @param {string}   containerId - DOM id of the container element
+ * @param {Array}    networks    - Network rows (read-only reference for option lists)
+ * @param {Array}    ports       - Mutable array of port row objects
+ * @param {Function} rerender    - Re-render callback (detail mode); null in form mode
+ * @param {Function} onDirty     - Called on any data change; null in form mode
+ * @param {string}   selfId      - Entity id to exclude from device options (the switch itself)
+ */
+function renderSwitchPortsTable(
+  containerId = 'switch-ports-container',
+  networks    = state.formSwitchNetworks,
+  ports       = state.formSwitchPorts,
+  rerender    = null,
+  onDirty     = null,
+  selfId      = null
+) {
+  const container = $(containerId);
   if (!container) return;
-  const rows = state.formSwitchPorts;
+  const rows   = ports;
   const rmIcon = ICON_RM;
 
-  const assignedNetIds = new Set(state.formSwitchNetworks.map(r => r.networkId).filter(Boolean));
+  // Resolve the entity to exclude from device options
+  const excludeId = selfId ?? state.formId;
+
+  const assignedNetIds = new Set(networks.map(r => r.networkId).filter(Boolean));
   const assignedNets   = (state.cache.networks || []).filter(n => assignedNetIds.has(n.id));
 
   const makeNetOpts = (selectedId) =>
@@ -194,11 +260,10 @@ function renderSwitchPortsTable() {
       `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`
     ).join('');
 
-  const selfId = state.formId;
   const makeDeviceOpts = (networkId, selectedId) => {
     const opts = [];
     for (const a of (state.cache.assets || [])) {
-      if (a.id === selfId) continue;
+      if (a.id === excludeId) continue;
       if (a.assetClass === 'PLC') {
         const matchingSlots = (a.slots || []).filter(s =>
           CARD_TYPE_NET_TYPES.has(s.cardType) &&
@@ -206,7 +271,7 @@ function renderSwitchPortsTable() {
           (!networkId || s.networkId === networkId)
         );
         for (const s of matchingSlots) {
-          const val = `${a.id}|${s.slotNumber}`;
+          const val   = `${a.id}|${s.slotNumber}`;
           const label = `${a.name} — Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
           opts.push(`<option value="${val}"${val === selectedId ? ' selected' : ''}>${esc(label)}</option>`);
         }
@@ -241,17 +306,22 @@ function renderSwitchPortsTable() {
   html += `<button type="button" class="wiring-add-btn sp-add">+ Add Port</button>`;
   container.innerHTML = html;
 
+  // Helper: re-render ports table (detail mode uses closure; form mode calls directly)
+  const doRerender = () => rerender ? rerender() : renderSwitchPortsTable();
+
   container.querySelectorAll('.sp-port').forEach(inp => {
     inp.addEventListener('change', () => {
-      state.formSwitchPorts[+inp.dataset.idx].portName = inp.value;
+      ports[+inp.dataset.idx].portName = inp.value;
+      onDirty?.();
     });
   });
 
   container.querySelectorAll('.sp-network').forEach(sel => {
     sel.addEventListener('change', () => {
-      const idx = +sel.dataset.idx;
+      const idx      = +sel.dataset.idx;
       const newNetId = sel.value;
-      const p = state.formSwitchPorts[idx];
+      const p        = ports[idx];
+      // Clear the device selection when network changes and it no longer matches
       if (p.assetId) {
         const asset = state.refs.assets?.[p.assetId];
         if (asset?.assetClass === 'PLC') {
@@ -265,7 +335,9 @@ function renderSwitchPortsTable() {
         }
       }
       p.networkId = newNetId;
-      const row = container.querySelectorAll('.sp-port-row')[idx];
+      onDirty?.();
+      // Update device dropdown in-place without full re-render for snappier UX
+      const row       = container.querySelectorAll('.sp-port-row')[idx];
       const deviceSel = row?.querySelector('.sp-device');
       if (deviceSel) {
         const selId = (p.assetId && p.slotNumber != null) ? `${p.assetId}|${p.slotNumber}` : p.assetId;
@@ -280,27 +352,30 @@ function renderSwitchPortsTable() {
       const val = sel.value;
       const sep = val.indexOf('|');
       if (sep !== -1) {
-        state.formSwitchPorts[idx].assetId    = val.slice(0, sep);
-        state.formSwitchPorts[idx].slotNumber = +val.slice(sep + 1);
+        ports[idx].assetId    = val.slice(0, sep);
+        ports[idx].slotNumber = +val.slice(sep + 1);
       } else {
-        state.formSwitchPorts[idx].assetId    = val;
-        state.formSwitchPorts[idx].slotNumber = null;
+        ports[idx].assetId    = val;
+        ports[idx].slotNumber = null;
       }
+      onDirty?.();
     });
   });
 
   container.querySelectorAll('.sp-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      state.formSwitchPorts.splice(+btn.dataset.idx, 1);
-      renderSwitchPortsTable();
+      ports.splice(+btn.dataset.idx, 1);
+      onDirty?.();
+      doRerender();
     });
   });
 
   container.querySelector('.sp-add')?.addEventListener('click', () => {
-    const num = state.formSwitchPorts.length + 1;
-    state.formSwitchPorts.push({ portName: `Port ${num}`, networkId: '', assetId: '', slotNumber: null });
-    renderSwitchPortsTable();
+    const num = ports.length + 1;
+    ports.push({ portName: `Port ${num}`, networkId: '', assetId: '', slotNumber: null });
+    onDirty?.();
+    doRerender();
     const inputs = container.querySelectorAll('.sp-port');
     inputs[inputs.length - 1]?.select();
   });
@@ -464,13 +539,33 @@ function renderClassItemTables(assetClass) {
     `;
   }
   container.innerHTML = html;
+  // Form mode — no opts needed; defaults pick state.formItemTables and wiring-table-{key}
   for (const t of tables) renderItemTable(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label');
 }
 
-function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label') {
-  const container = $(`wiring-table-${key}`);
+/**
+ * Renders an editable terminal/label wiring table.
+ *
+ * Supports two calling conventions — backwards-compatible via default opts:
+ *   renderItemTable(key, label, p1, p2)
+ *     → form mode: uses state.formItemTables, container id='wiring-table-{key}'
+ *   renderItemTable(key, label, p1, p2, { containerId, tablesState })
+ *     → detail mode: uses provided state object, custom container id
+ *
+ * @param {string} key          - Table key (e.g. 'inputWiring')
+ * @param {string} label        - Human-readable table label (used internally for re-renders)
+ * @param {string} placeholder1 - Column 1 placeholder text (default 'Terminal')
+ * @param {string} placeholder2 - Column 2 placeholder text (default 'Label')
+ * @param {object} opts
+ * @param {string} opts.containerId  - DOM element id; defaults to wiring-table-{key}
+ * @param {object} opts.tablesState  - Object with rows at [key]; defaults to state.formItemTables
+ */
+function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label', opts = {}) {
+  const { containerId = `wiring-table-${key}`, tablesState = state.formItemTables } = opts;
+  const container = $(containerId);
   if (!container) return;
-  const rows = state.formItemTables[key] || [];
+  if (!tablesState[key]) tablesState[key] = [];
+  const rows   = tablesState[key];
   const rmIcon = ICON_RM;
   const rowsHtml = rows.map((r, i) => `
     <div class="wiring-form-row">
@@ -486,19 +581,20 @@ function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = '
   container.querySelectorAll('.wiring-form-row input').forEach(input => {
     input.addEventListener('change', () => {
       const { wkey, idx, field } = input.dataset;
-      state.formItemTables[wkey][Number(idx)][field] = input.value;
+      tablesState[wkey][Number(idx)][field] = input.value;
     });
   });
   container.querySelectorAll('.wiring-rm-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      state.formItemTables[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
-      renderItemTable(btn.dataset.wkey, label, placeholder1, placeholder2);
+      tablesState[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
+      // Pass opts through so detail mode keeps its container id and data source
+      renderItemTable(btn.dataset.wkey, label, placeholder1, placeholder2, opts);
     });
   });
   container.querySelector('.wiring-add-btn').addEventListener('click', () => {
-    state.formItemTables[key].push({ terminal: '', label: '' });
-    renderItemTable(key, label, placeholder1, placeholder2);
+    tablesState[key].push({ terminal: '', label: '' });
+    renderItemTable(key, label, placeholder1, placeholder2, opts);
     const inputs = container.querySelectorAll('.wiring-terminal');
     inputs[inputs.length - 1]?.focus();
   });

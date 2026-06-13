@@ -5,16 +5,17 @@
    ============================================================ */
 
 function wireEvents() {
-  // Bottom nav
+  // Bottom nav — navigate is async; fire-and-forget is intentional here
   el.nav.addEventListener('click', e => {
     const btn = e.target.closest('.nav-btn');
     if (btn) navigate(btn.dataset.page);
   });
 
-  // Back button
-  el.backBtn.addEventListener('click', () => {
+  // Back button — closeDetail is async; must await so the confirm dialog
+  // blocks any further action until the user responds
+  el.backBtn.addEventListener('click', async () => {
     if (state.detailType) {
-      closeDetail();
+      await closeDetail();
     }
   });
 

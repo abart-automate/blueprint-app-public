@@ -396,7 +396,9 @@ body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   display: none;
-  padding: 12px 12px 80px;
+  /* Bottom padding must clear: nav bar (--nav-h) + save bar (~56px) + breathing room.
+     The save bar sticks at bottom: var(--nav-h) so content needs extra space below it. */
+  padding: 12px 12px 160px;
 }
 .detail-panel.open { display: block; transform: translateX(0); }
 .detail-panel.animating { display: block; }
@@ -433,7 +435,8 @@ body {
   gap: 8px;
   margin-bottom: 10px;
 }
-.det-name-row .det-name { margin-bottom: 0; flex: 1; min-width: 0; }
+.det-name-row .det-name,
+.det-name-row .det-name-input { margin-bottom: 0; flex: 1; min-width: 0; }
 
 .det-name {
   font-size: 22px;
@@ -572,21 +575,19 @@ body {
 }
 .det-save-bar {
   position: sticky;
-  bottom: 0;
+  /* Stick just above the nav bar. The detail panel extends behind the nav (inset: 0)
+     so bottom: 0 would hide the bar behind the nav; var(--nav-h) places it on top. */
+  bottom: var(--nav-h);
   background: var(--surface);
   border-top: 2px solid var(--primary);
   padding: 12px 0 4px;
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-  margin-top: 8px;
-}
-.det-save-bar.visible {
+  /* Always visible — no longer toggled via .visible class */
   opacity: 1;
   pointer-events: auto;
+  margin-top: 8px;
 }
 
 /* =====================================================

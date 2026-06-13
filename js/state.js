@@ -13,7 +13,15 @@ const state = {
   detailId:         null,
   detailStack:      [],
   detailSlotNumber: null,
-  detailChanges:    {},
+  detailChanges:    {},        // pending field-level edits (key → value)
+  // Editable media and table state for the detail panel, mirroring the form state pattern.
+  // Initialized from the current item when the detail opens; cleared on save/discard/close.
+  detailImages:          [],   // Array<{blob, mimeType}> for the "Other Media" gallery
+  detailNamedPhotos:     {},   // { [slotName]: Array<{blob, mimeType}> } for required photo slots
+  detailMediaDirty:      false, // true after any add/remove so navigation guard fires
+  detailItemTables:      {},   // { [tableKey]: Array<{terminal, label}> } for wiring tables
+  detailSwitchNetworks:  [],   // Array of switch network rows (managed switch assets only)
+  detailSwitchPorts:     [],   // Array of switch port rows (managed switch assets only)
 
   // --- Active form ---
   formType:            null,
