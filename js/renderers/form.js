@@ -387,14 +387,30 @@ async function renderEntityForm() {
     await renderClassSubclassField();
   }
 
+  // Panel ↔ Area linkage for assets (and any other entity with both panelId and areaId fields):
+  // - Panel selected: area is derived from the panel and locked (user cannot override it).
+  // - Panel cleared:  area field is re-enabled for manual selection.
+  // - Area changed (no panel): panel dropdown is filtered to panels in that area.
+  // syncAreaFromPanel also calls filterPanelsByArea so panel options always match the area.
   {
     const panelSel = $('f-panelId');
     const areaSel  = $('f-areaId');
     if (panelSel && areaSel) {
-      panelSel.addEventListener('change', () => {
+      const syncAreaFromPanel = () => {
         const panel = state.refs.panels?.[panelSel.value];
-        if (panel?.areaId) areaSel.value = panel.areaId;
+        if (panelSel.value && panel) {
+          areaSel.value    = panel.areaId || '';
+          areaSel.disabled = true;
+        } else {
+          areaSel.disabled = false;
+        }
+        filterPanelsByArea(areaSel.value, panelSel.value);
+      };
+      panelSel.addEventListener('change', syncAreaFromPanel);
+      areaSel.addEventListener('change', () => {
+        if (!panelSel.value) filterPanelsByArea(areaSel.value, '');
       });
+      syncAreaFromPanel(); // initialize on open (handles existing records with a panel already set)
     }
   }
 
@@ -505,7 +521,20 @@ async function populateAssignId(type, assignType, currentId) {
   }).join('');
 }
 
-/* ---- POWER FILTER (safety circuits) ---- */
+/* ---- PANEL / POWER FILTERS ---- */
+
+// Rebuilds the panel dropdown filtered to panels in the given area.
+// Called when the area changes (no panel set) or on panel clear.
+// currentPanelId keeps the previously-selected option selected after re-render.
+function filterPanelsByArea(areaId, currentPanelId) {
+  const sel = $('f-panelId');
+  if (!sel) return;
+  const all      = state.cache['panels'] || [];
+  const filtered = areaId ? all.filter(p => p.areaId === areaId) : all;
+  sel.innerHTML = `<option value="">— Unassigned —</option>` + filtered.map(p =>
+    `<option value="${p.id}" ${p.id === currentPanelId ? 'selected' : ''}>${esc(p.name)}</option>`
+  ).join('');
+}
 
 async function filterPowerByPanel(panelId, currentPowerId) {
   const sel = $('f-powerId');

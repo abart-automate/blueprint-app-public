@@ -115,6 +115,9 @@ async function saveEntityForm() {
   const cfg = ENTITY[type];
   const item = state.formId ? (await getById(type, state.formId)) || {} : {};
 
+  // Capture areaId before fields are overwritten; undefined means "not a panel edit" (no cascade).
+  const oldPanelAreaId = (type === 'panels' && state.formId) ? item.areaId : undefined;
+
   // Single pass over all effective fields (base + protocol/class/subclass/network-type).
   for (const f of getEffectiveFields(type, item)) {
     if (f.type === 'assign-type') {
@@ -175,6 +178,17 @@ async function saveEntityForm() {
   }
 
   const saved = await upsert(type, item);
+
+  // When a panel's area changes, propagate the new areaId to every asset assigned to that panel
+  // so assets always reflect the area of their containing panel.
+  if (type === 'panels' && oldPanelAreaId !== undefined && saved.areaId !== oldPanelAreaId) {
+    const allAssets = await getAll('assets');
+    await Promise.all(
+      allAssets
+        .filter(a => a.panelId === saved.id)
+        .map(a => upsert('assets', { ...a, areaId: saved.areaId || '' }))
+    );
+  }
 
   // Post-save: cascade duplicate children if this was a duplication
   if (state.formDuplicateSource) {

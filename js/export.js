@@ -412,7 +412,10 @@ async function postProcessXlsx(array, sheetMeta) {
 
   for (const { index, ref, headers } of sheetMeta) {
     const range = XLSX.utils.decode_range(ref);
-    if (range.e.r === 0) continue; // header row only — Excel rejects tables on single-row ranges
+    // Excel requires tables to span at least 2 rows; extend ref for header-only sheets
+    const tableRef = range.e.r === 0
+      ? XLSX.utils.encode_range({ s: range.s, e: { r: 1, c: range.e.c } })
+      : ref;
 
     const dedupedHeaders = dedupeHeaders(headers);
     const colCount = dedupedHeaders.length;
@@ -427,8 +430,8 @@ async function postProcessXlsx(array, sheetMeta) {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"` +
       ` id="${tableId}" name="${tableName}" displayName="${tableName}"` +
-      ` ref="${ref}" headerRowCount="1">` +
-      `<autoFilter ref="${ref}"/>` +
+      ` ref="${tableRef}" headerRowCount="1">` +
+      `<autoFilter ref="${tableRef}"/>` +
       `<tableColumns count="${colCount}">${cols}</tableColumns>` +
       `<tableStyleInfo name="TableStyleMedium9" showFirstColumn="0"` +
       ` showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>` +

@@ -225,6 +225,7 @@ const ENTITY = {
       { key: 'name',          label: 'Name',          type: 'text', required: true },
       { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true, enumFilterChip: true },
       { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
+      { key: 'areaId',       label: 'Area',         type: 'ref',  refStore: 'areas' },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
       { key: 'powerId',        label: 'Power', type: 'ref',      refStore: 'power'},
       { key: 'manufacturer',  label: 'Manufacturer',  type: 'text' },
