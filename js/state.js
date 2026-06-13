@@ -29,7 +29,7 @@ const state = {
   formDuplicateSource: null,
 
   // --- Data cache (populated by refreshAll / loadCache) ---
-  cache: {},
+  cache: { partsLibrary: [] },
   refs:  {},
 
   // --- Picker ---

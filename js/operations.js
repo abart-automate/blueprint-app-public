@@ -8,9 +8,10 @@
 /** Dispatcher: routes to the appropriate save handler based on state.formType. */
 async function saveForm() {
   const type = state.formType;
-  if (type === '__picker__')   return savePickerForm();
-  if (type === '__plc_slot__') return saveSlotForm();
-  if (type === '__plant__')    return savePlantForm();
+  if (type === '__picker__')    return savePickerForm();
+  if (type === '__plc_slot__')  return saveSlotForm();
+  if (type === '__plant__')     return savePlantForm();
+  if (type === '__parts_lib__') return savePartsLibForm();
   return saveEntityForm();
 }
 

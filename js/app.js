@@ -280,6 +280,10 @@ function setHeaderForPage(page) {
     el.pageTitle.textContent   = 'Checklist';
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
+  } else if (page === 'parts-library') {
+    el.pageTitle.textContent   = 'Parts Library';
+    el.backBtn.style.visibility = 'hidden';
+    el.addBtn.style.visibility  = 'hidden';
   } else {
     el.pageTitle.textContent   = ENTITY[page].plural;
     el.backBtn.style.visibility = 'hidden';
@@ -292,9 +296,10 @@ function setHeaderForPage(page) {
    ============================================================ */
 
 const PAGE_RENDERERS = {
-  home:      () => renderHome(),
-  areas:     () => renderAreasList(),
-  checklist: () => renderChecklist(),
+  home:           () => renderHome(),
+  areas:          () => renderAreasList(),
+  checklist:      () => renderChecklist(),
+  'parts-library': () => renderPartsLibraryPage(),
 };
 
 /** Re-renders the current page based on state.page. */
@@ -357,6 +362,15 @@ async function renderHome() {
     </div>
     ` : ''}
     <div class="home-data-actions">
+      <div class="section-label">Tools</div>
+      <div class="home-data-btns">
+        <button class="btn btn-outline" id="home-parts-lib-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Parts Library
+        </button>
+      </div>
+    </div>
+    <div class="home-data-actions">
       <div class="section-label">Data Management</div>
       <div class="home-data-btns">
         <button class="btn btn-outline" id="home-export-btn">
@@ -390,6 +404,7 @@ async function renderHome() {
   el.main.querySelectorAll('.stat-card').forEach(card => {
     card.addEventListener('click', () => navigate(card.dataset.nav));
   });
+  el.main.querySelector('#home-parts-lib-btn').addEventListener('click', () => navigate('parts-library'));
   el.main.querySelector('#home-export-btn').addEventListener('click', showExportOptions);
   el.main.querySelector('#home-import-btn').addEventListener('click', importData);
   el.main.querySelector('#home-clear-btn').addEventListener('click', clearAllData);

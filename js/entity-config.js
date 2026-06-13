@@ -4,6 +4,13 @@
    definitions, and shared field/icon constants.
    ============================================================ */
 
+/* ---- PARTS LIBRARY CONSTANTS ---- */
+const PART_IO_TYPES      = ['Input', 'Output', 'Combo', 'N/A'];
+const PART_SIGNAL_RANGES = ['4-20mA', '0-20mA', '0-10V', '1-5V', 'RTD', 'Thermocouple', 'Other'];
+const PART_PLATFORMS     = ['1769', '1768', '5069', '1756', '1734', 'Other'];
+const PART_ISOLATION     = ['Non-isolated', 'Isolated', 'Individually-isolated', 'N/A'];
+const PART_CARD_TYPES    = ['Controller', 'Analog', 'Digital', 'Communication', 'Specialty', 'Motion'];
+
 /* ---- SHARED FIELD ARRAYS ---- */
 const PHYS_SIZE_FIELDS = [
   { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
