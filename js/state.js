@@ -23,6 +23,7 @@ const state = {
   detailSwitchNetworks:  [],   // Array of switch network rows (managed switch assets only)
   detailSwitchPorts:     [],   // Array of switch port rows (managed switch assets only)
   detailSlotIoPoints:    [],   // Array of IO point rows for an in-edit PLC slot card
+  detailSlotPowerBus:    [],   // Array of power-bus entries for an in-edit PLC slot card
 
   // --- Active form ---
   formType:            null,

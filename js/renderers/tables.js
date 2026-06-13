@@ -440,10 +440,31 @@ function renderIoPointsTable() {
 
 /* ---- POWER BUS TABLE ---- */
 
-function renderPowerBusTable() {
-  const container = $('power-bus-container');
+/**
+ * Renders the power bus editor into a container element.
+ *
+ * @param {string}   containerId - DOM id of the target container (default: form's container)
+ * @param {Array}    powerBus    - Mutable array of power-bus entries to read/write
+ * @param {Function} rerender    - Called after any mutation to re-render both the table;
+ *                                 pass null to default to calling renderPowerBusTable()
+ * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
+ *
+ * Existing call sites in form.js pass no arguments and continue to work unchanged
+ * (defaults point to the form's container and state.formPowerBus).
+ */
+function renderPowerBusTable(
+  containerId = 'power-bus-container',
+  powerBus    = state.formPowerBus,
+  rerender    = null,
+  onDirty     = null
+) {
+  const container = $(containerId);
   if (!container) return;
   const rmIcon = ICON_RM;
+
+  // Re-render closure: if a custom rerender was provided use it, otherwise
+  // fall back to a bare no-arg call (backwards-compat with form usage).
+  const doRerender = rerender ?? (() => renderPowerBusTable(containerId, powerBus, rerender, onDirty));
 
   const makeDeviceOpts = (type, selectedId) => {
     const store = type === 'Safety Circuit' ? 'safety' : 'power';
@@ -459,7 +480,7 @@ function renderPowerBusTable() {
       <button class="wiring-rm-btn" type="button" data-entry="${ei}" data-widx="${wi}" aria-label="Remove wiring row">${rmIcon}</button>
     </div>`).join('');
 
-  container.innerHTML = state.formPowerBus.map((entry, i) => `
+  container.innerHTML = powerBus.map((entry, i) => `
     <div class="sn-network-row pb-entry" data-pb-idx="${i}">
       <div class="sn-network-row-top">
         <select class="f-select pb-type" data-idx="${i}">
@@ -481,42 +502,51 @@ function renderPowerBusTable() {
 
   container.querySelectorAll('.pb-type').forEach(sel => {
     sel.addEventListener('change', () => {
-      state.formPowerBus[+sel.dataset.idx].type  = sel.value;
-      state.formPowerBus[+sel.dataset.idx].refId = '';
-      renderPowerBusTable();
+      powerBus[+sel.dataset.idx].type  = sel.value;
+      powerBus[+sel.dataset.idx].refId = '';
+      onDirty?.();
+      doRerender();
     });
   });
   container.querySelectorAll('.pb-device').forEach(sel => {
-    sel.addEventListener('change', () => { state.formPowerBus[+sel.dataset.idx].refId = sel.value; });
+    sel.addEventListener('change', () => {
+      powerBus[+sel.dataset.idx].refId = sel.value;
+      onDirty?.();
+    });
   });
   container.querySelectorAll('.pb-wiring-row input').forEach(input => {
     input.addEventListener('change', () => {
-      state.formPowerBus[+input.dataset.entry].wiring[+input.dataset.widx][input.dataset.field] = input.value;
+      powerBus[+input.dataset.entry].wiring[+input.dataset.widx][input.dataset.field] = input.value;
+      onDirty?.();
     });
   });
   container.querySelectorAll('.wiring-rm-btn[data-widx]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      state.formPowerBus[+btn.dataset.entry].wiring.splice(+btn.dataset.widx, 1);
-      renderPowerBusTable();
+      powerBus[+btn.dataset.entry].wiring.splice(+btn.dataset.widx, 1);
+      onDirty?.();
+      doRerender();
     });
   });
   container.querySelectorAll('.pb-wrow-add').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.formPowerBus[+btn.dataset.entry].wiring.push({ terminal: '', label: '' });
-      renderPowerBusTable();
+      powerBus[+btn.dataset.entry].wiring.push({ terminal: '', label: '' });
+      onDirty?.();
+      doRerender();
     });
   });
   container.querySelectorAll('.pb-entry-rm').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      state.formPowerBus.splice(+btn.dataset.idx, 1);
-      renderPowerBusTable();
+      powerBus.splice(+btn.dataset.idx, 1);
+      onDirty?.();
+      doRerender();
     });
   });
   container.querySelector('.pb-add')?.addEventListener('click', () => {
-    state.formPowerBus.push({ type: 'Power', refId: '', wiring: [] });
-    renderPowerBusTable();
+    powerBus.push({ type: 'Power', refId: '', wiring: [] });
+    onDirty?.();
+    doRerender();
   });
 }
 

@@ -43,6 +43,7 @@ function _clearDetailEditState() {
   state.detailSwitchNetworks = [];
   state.detailSwitchPorts    = [];
   state.detailSlotIoPoints   = [];
+  state.detailSlotPowerBus   = [];
 }
 
 /**

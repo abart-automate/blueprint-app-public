@@ -32,7 +32,12 @@ async function renderSlotDetail(savedScroll) {
      ------------------------------------------------------------------ */
   state.detailChanges      = {};
   state.detailMediaDirty   = false;
-  state.detailSlotIoPoints = (slot.ioPoints || []).map(r => ({ ...r }));
+  state.detailSlotIoPoints = (slot.ioPoints  || []).map(r => ({ ...r }));
+  state.detailSlotPowerBus = (slot.powerBus  || []).map(e => ({
+    type:   e.type   || 'Power',
+    refId:  e.refId  || '',
+    wiring: (e.wiring || []).map(w => ({ ...w })),
+  }));
 
   /* ------------------------------------------------------------------
      Build editable field rows.
@@ -101,22 +106,12 @@ async function renderSlotDetail(savedScroll) {
   }
 
   /* ------------------------------------------------------------------
-     Power bus — kept read-only (complex nested structure).
+     Power bus — editable via the parameterised renderPowerBusTable.
+     Renders a placeholder here; table is mounted after innerHTML is set.
      ------------------------------------------------------------------ */
-  let powerBusCards = '';
-  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
-    for (const entry of (slot.powerBus || [])) {
-      const store   = entry.type === 'Safety Circuit' ? 'safety' : 'power';
-      const device  = state.refs[store]?.[entry.refId];
-      const wRows   = entry.wiring || [];
-      const wiringHtml = wRows.length
-        ? `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead>
-             <tbody>${wRows.map(w => `<tr><td class="wiring-det-terminal">${esc(w.terminal)}</td><td>${esc(w.label)}</td></tr>`).join('')}</tbody>
-           </table>`
-        : `<div class="wiring-empty">No wiring entries</div>`;
-      powerBusCards += buildCollapsibleCard(`Power Bus — ${device?.name || entry.type}`, wiringHtml);
-    }
-  }
+  const powerBusCard = CARD_TYPE_IO_TYPES.has(slot.cardType)
+    ? buildCollapsibleCard('Power Bus', `<div id="det-power-bus-container"></div>`, { expanded: true })
+    : '';
 
   /* ------------------------------------------------------------------
      Render HTML.
@@ -142,13 +137,28 @@ async function renderSlotDetail(savedScroll) {
         <div class="det-fields">${fieldsHtml}</div>
       </div>
       ${ioCard}
-      ${powerBusCards}
+      ${powerBusCard}
     </div>
     <div class="det-save-bar" id="det-save-bar">
       <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
       <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
     </div>
   `;
+
+  /* ------------------------------------------------------------------
+     Mount editable power bus table into its placeholder container.
+     Uses the parameterised renderPowerBusTable so it reads/writes
+     state.detailSlotPowerBus instead of state.formPowerBus.
+     ------------------------------------------------------------------ */
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    const rerenderPB = () => renderPowerBusTable(
+      'det-power-bus-container',
+      state.detailSlotPowerBus,
+      rerenderPB,
+      () => { state.detailChanges._pbDirty = true; }
+    );
+    rerenderPB();
+  }
 
   /* ------------------------------------------------------------------
      Wire all [data-edit-field] inputs → state.detailChanges
@@ -937,13 +947,16 @@ async function saveSlotDetailChanges(rackId, slotNumber) {
 
   // Remove internal sentinels that must not be persisted
   delete updatedSlot._ioDirty;
+  delete updatedSlot._pbDirty;
 
   // Sync IO point array length to match ioPointCount (may have changed via field edit)
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
     const count = parseInt(updatedSlot.ioPointCount ?? slot.ioPointCount) || 0;
     const pts   = state.detailSlotIoPoints.slice(0, count);
     while (pts.length < count) pts.push({ label: 'Spare', signalType: '', wiringType: '' });
-    updatedSlot.ioPoints = pts;
+    updatedSlot.ioPoints  = pts;
+    // Persist power bus (filter out empty entries with no device selected)
+    updatedSlot.powerBus  = state.detailSlotPowerBus.filter(e => e.refId);
   }
 
   const updatedSlots = [...rack.slots];
