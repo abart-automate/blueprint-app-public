@@ -392,16 +392,23 @@ body {
   background: var(--bg);
   transform: translateX(100%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Flex column keeps the save bar anchored at the bottom while the
+     inner scroll container fills the remaining height. */
+  flex-direction: column;
+  overflow: hidden;
+  display: none;
+}
+.detail-panel.open     { display: flex; transform: translateX(0); }
+.detail-panel.animating { display: flex; }
+
+/* Scrollable content area — fills all space above the save bar */
+.det-panel-scroll {
+  flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  display: none;
-  /* Bottom padding must clear: nav bar (--nav-h) + save bar (~56px) + breathing room.
-     The save bar sticks at bottom: var(--nav-h) so content needs extra space below it. */
-  padding: 12px 12px 160px;
+  padding: 12px 12px 8px;
 }
-.detail-panel.open { display: block; transform: translateX(0); }
-.detail-panel.animating { display: block; }
 
 /* =====================================================
    DETAIL CONTENT
@@ -574,21 +581,17 @@ body {
   display: block;
 }
 .det-save-bar {
-  /* Fixed relative to .detail-panel — the panel's transform creates a new containing
-     block, so 'fixed' here means fixed to the panel bounds (= the viewport) rather
-     than to the document.  The bar therefore always sits just above the nav bar
-     regardless of how much content the panel contains. */
-  position: fixed;
-  bottom: var(--nav-h);
-  left: 0;
-  right: 0;
+  /* Static flex child — always rendered at the bottom of the flex column.
+     margin-bottom pushes the bar's lower edge above the nav bar (which
+     sits at z-index 201 and visually overlays the panel from the bottom). */
+  flex-shrink: 0;
   background: var(--surface);
   border-top: 2px solid var(--primary);
   padding: 12px 16px;
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  z-index: 10;
+  margin-bottom: var(--nav-h);
 }
 
 /* =====================================================

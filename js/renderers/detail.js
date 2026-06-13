@@ -9,7 +9,9 @@
 async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
-  const savedScroll = preserveScroll ? el.detail.scrollTop : 0;
+  // Scroll lives on the inner .det-panel-scroll container, not el.detail itself.
+  const scrollEl   = el.detail.querySelector('.det-panel-scroll');
+  const savedScroll = preserveScroll ? (scrollEl?.scrollTop ?? 0) : 0;
   if (type === '__plc_slot__') return renderSlotDetail(savedScroll);
   return renderEntityDetail(savedScroll);
 }
@@ -123,23 +125,25 @@ async function renderSlotDetail(savedScroll) {
      always sits above the nav bar regardless of content height.
      ------------------------------------------------------------------ */
   el.detail.innerHTML = `
-    <div class="det-header">
-      <button class="det-back-btn" id="det-back" aria-label="Back">${ICON_BACK}</button>
-    </div>
-    <div class="det-card">
-      <div class="det-name-row">
-        <input class="det-name-input" id="det-name-input" type="text"
-               value="${esc(slot.name || '')}" data-edit-field="name" aria-label="Card Name">
+    <div class="det-panel-scroll">
+      <div class="det-header">
+        <button class="det-back-btn" id="det-back" aria-label="Back">${ICON_BACK}</button>
       </div>
-      <div class="det-badges">
-        <span class="badge badge-asset">Slot ${slotNumber}</span>
-        ${slot.cardType ? `<span class="badge badge-asset">${esc(slot.cardType)}</span>` : ''}
-        <span class="badge badge-panel">${esc(rack.name)}</span>
+      <div class="det-card">
+        <div class="det-name-row">
+          <input class="det-name-input" id="det-name-input" type="text"
+                 value="${esc(slot.name || '')}" data-edit-field="name" aria-label="Card Name">
+        </div>
+        <div class="det-badges">
+          <span class="badge badge-asset">Slot ${slotNumber}</span>
+          ${slot.cardType ? `<span class="badge badge-asset">${esc(slot.cardType)}</span>` : ''}
+          <span class="badge badge-panel">${esc(rack.name)}</span>
+        </div>
+        <div class="det-fields">${fieldsHtml}</div>
       </div>
-      <div class="det-fields">${fieldsHtml}</div>
+      ${ioCard}
+      ${powerBusCards}
     </div>
-    ${ioCard}
-    ${powerBusCards}
     <div class="det-save-bar" id="det-save-bar">
       <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
       <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
@@ -199,7 +203,9 @@ async function renderSlotDetail(savedScroll) {
     });
   });
 
-  el.detail.scrollTop = savedScroll;
+  // Scroll is on the inner .det-panel-scroll, not el.detail itself.
+  const scrollEl = el.detail.querySelector('.det-panel-scroll');
+  if (scrollEl) scrollEl.scrollTop = savedScroll;
 }
 
 // Returns HTML string of <span class="sn-det-field"> pills for fields that have a value in data.
@@ -486,42 +492,46 @@ async function renderEntityDetail(savedScroll) {
      The "Edit" button (opens bottom-sheet form) is removed — all editing
      happens inline.  The "Duplicate" button is kept.
      ------------------------------------------------------------------ */
+  // All scrollable content goes inside .det-panel-scroll; the save bar sits
+  // outside as a sibling so the flex column pins it above the nav bar.
   el.detail.innerHTML = `
-    <div class="det-header">
-      <button class="det-back-btn" id="det-back" aria-label="Back">
-        ${ICON_BACK}
-      </button>
-    </div>
-    ${buildDetailCompletenessHtml(type, item)}
-    <div class="det-card">
-      ${type === 'areas'
-        ? `<input class="det-name-input" id="det-name-input" type="text"
-               value="${esc(item.name)}" data-edit-field="name"
-               aria-label="Name">`
-        : `<div class="det-name-row">
-             <input class="det-name-input" id="det-name-input" type="text"
-                    value="${esc(item.name)}" data-edit-field="name"
-                    aria-label="Name">
-             <button class="det-edit-btn" id="det-duplicate" aria-label="Duplicate">
-               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-             </button>
-           </div>`
-      }
-      <div class="det-badges">
-        <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
-        ${assignBadge}
+    <div class="det-panel-scroll">
+      <div class="det-header">
+        <button class="det-back-btn" id="det-back" aria-label="Back">
+          ${ICON_BACK}
+        </button>
       </div>
-      ${generalFields || ''}
+      ${buildDetailCompletenessHtml(type, item)}
+      <div class="det-card">
+        ${type === 'areas'
+          ? `<input class="det-name-input" id="det-name-input" type="text"
+                 value="${esc(item.name)}" data-edit-field="name"
+                 aria-label="Name">`
+          : `<div class="det-name-row">
+               <input class="det-name-input" id="det-name-input" type="text"
+                      value="${esc(item.name)}" data-edit-field="name"
+                      aria-label="Name">
+               <button class="det-edit-btn" id="det-duplicate" aria-label="Duplicate">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+               </button>
+             </div>`
+        }
+        <div class="det-badges">
+          <span class="badge ${cfg.badgeClass}">${esc(cfg.label)}</span>
+          ${assignBadge}
+        </div>
+        ${generalFields || ''}
+      </div>
+      ${detailSectionCards}
+      ${wiringCards}
+      ${rackSlotsCard}
+      ${switchNetworksCard}
+      ${switchPortsCard}
+      ${physicalSectionCards}
+      ${requiredPhotosCard}
+      ${otherPhotosCard}
+      ${childSections}
     </div>
-    ${detailSectionCards}
-    ${wiringCards}
-    ${rackSlotsCard}
-    ${switchNetworksCard}
-    ${switchPortsCard}
-    ${physicalSectionCards}
-    ${requiredPhotosCard}
-    ${otherPhotosCard}
-    ${childSections}
     <div class="det-save-bar" id="det-save-bar">
       <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
       <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
@@ -710,7 +720,9 @@ async function renderEntityDetail(savedScroll) {
     });
   });
 
-  el.detail.scrollTop = savedScroll;
+  // Scroll is on the inner .det-panel-scroll, not el.detail itself.
+  const scrollEl = el.detail.querySelector('.det-panel-scroll');
+  if (scrollEl) scrollEl.scrollTop = savedScroll;
 }
 
 function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {

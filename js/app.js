@@ -85,7 +85,7 @@ function openDetail(type, id) {
   renderDetail();
   if (!wasOpen) {
     el.detail.classList.remove('animating');
-    el.detail.style.display = 'block';
+    el.detail.style.display = 'flex';
     requestAnimationFrame(() => {
       requestAnimationFrame(() => el.detail.classList.add('open'));
     });
@@ -233,7 +233,7 @@ function openSlotDetail(rackId, slotNumber) {
   renderDetail();
   if (!wasOpen) {
     el.detail.classList.remove('animating');
-    el.detail.style.display = 'block';
+    el.detail.style.display = 'flex';
     requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
   }
   el.backBtn.style.visibility = 'visible';
