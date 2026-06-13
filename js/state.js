@@ -22,6 +22,7 @@ const state = {
   detailItemTables:      {},   // { [tableKey]: Array<{terminal, label}> } for wiring tables
   detailSwitchNetworks:  [],   // Array of switch network rows (managed switch assets only)
   detailSwitchPorts:     [],   // Array of switch port rows (managed switch assets only)
+  detailSlotIoPoints:    [],   // Array of IO point rows for an in-edit PLC slot card
 
   // --- Active form ---
   formType:            null,
@@ -60,11 +61,12 @@ const el = {
   formBody:  $('form-body'),
   formSave:  $('form-save'),
   formCancel:$('form-cancel'),
-  confirmBD: $('confirm-backdrop'),
-  confirmT:  $('confirm-title'),
-  confirmM:  $('confirm-msg'),
-  confirmNo: $('confirm-no'),
-  confirmYes:$('confirm-yes'),
+  confirmBD:   $('confirm-backdrop'),
+  confirmT:    $('confirm-title'),
+  confirmM:    $('confirm-msg'),
+  confirmNo:   $('confirm-no'),
+  confirmSave: $('confirm-save'),   // 3rd button used only by confirmUnsaved()
+  confirmYes:  $('confirm-yes'),
   toast:     $('toast'),
   nav:       $('bottom-nav'),
 };
@@ -95,6 +97,40 @@ function confirm(title, msg) {
     };
     el.confirmYes.addEventListener('click', yes);
     el.confirmNo.addEventListener('click', no);
+  });
+}
+
+/**
+ * Shows a 3-button "unsaved changes" dialog.
+ * Resolves with: 'save' — user wants to save then proceed
+ *                'discard' — user wants to discard and proceed
+ *                null — user cancelled (stay on page)
+ */
+function confirmUnsaved(title, msg) {
+  return new Promise(resolve => {
+    el.confirmT.textContent     = title;
+    el.confirmM.textContent     = msg;
+    el.confirmNo.textContent    = 'Cancel';
+    el.confirmSave.textContent  = 'Save Changes';
+    el.confirmYes.textContent   = 'Discard';
+    el.confirmSave.style.display = '';
+    el.confirmBD.querySelector('.confirm-actions').classList.add('confirm-stacked');
+    el.confirmBD.classList.add('open');
+
+    const onSave    = () => { cleanup(); resolve('save');    };
+    const onDiscard = () => { cleanup(); resolve('discard'); };
+    const onCancel  = () => { cleanup(); resolve(null);      };
+    const cleanup = () => {
+      el.confirmBD.classList.remove('open');
+      el.confirmSave.style.display = 'none';
+      el.confirmBD.querySelector('.confirm-actions').classList.remove('confirm-stacked');
+      el.confirmSave.removeEventListener('click', onSave);
+      el.confirmYes.removeEventListener('click', onDiscard);
+      el.confirmNo.removeEventListener('click', onCancel);
+    };
+    el.confirmSave.addEventListener('click', onSave);
+    el.confirmYes.addEventListener('click', onDiscard);
+    el.confirmNo.addEventListener('click', onCancel);
   });
 }
 

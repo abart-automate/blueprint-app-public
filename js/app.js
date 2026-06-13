@@ -35,13 +35,14 @@ function hasUnsavedDetailChanges() {
  * navigation guard cannot fire on stale state.
  */
 function _clearDetailEditState() {
-  state.detailChanges       = {};
-  state.detailMediaDirty    = false;
-  state.detailImages        = [];
-  state.detailNamedPhotos   = {};
-  state.detailItemTables    = {};
+  state.detailChanges        = {};
+  state.detailMediaDirty     = false;
+  state.detailImages         = [];
+  state.detailNamedPhotos    = {};
+  state.detailItemTables     = {};
   state.detailSwitchNetworks = [];
   state.detailSwitchPorts    = [];
+  state.detailSlotIoPoints   = [];
 }
 
 /**
@@ -100,11 +101,19 @@ function openDetail(type, id) {
  * Returns early (keeping the panel open) if the user chooses to cancel.
  */
 async function closeDetail() {
-  // Guard: ask the user before discarding any in-progress edits
+  // Guard: if there are unsaved edits, give the user 3 choices before proceeding.
   if (hasUnsavedDetailChanges()) {
-    const ok = await confirm('Unsaved Changes', 'Leave without saving? Your changes will be lost.');
-    if (!ok) return; // user chose to keep editing — abort close
-    _clearDetailEditState();
+    const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
+    if (action === null) return; // Cancel — stay on the current detail
+
+    if (action === 'save') {
+      const ok = await saveDetailChanges(state.detailType, state.detailId);
+      if (!ok) return; // Validation failed — stay so the user can fix the error
+      // saveDetailChanges already cleared edit state; fall through to close.
+    } else {
+      // 'discard' — drop all pending edits before closing
+      _clearDetailEditState();
+    }
   }
 
   if (state.detailStack.length > 0) {
@@ -216,7 +225,7 @@ function openSlotDetail(rackId, slotNumber) {
   const wasOpen = !!state.detailType;
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId, slotNumber: state.detailSlotNumber });
-    state.detailChanges = {};
+    _clearDetailEditState(); // reset all edit state when drilling into a slot
   }
   state.detailType       = '__plc_slot__';
   state.detailId         = rackId;
@@ -314,10 +323,19 @@ async function openAssignOrCreate(childType, parentField, parentId) {
  */
 async function navigate(page) {
   if (state.detailType) {
+    // Guard fires BEFORE clearing detailStack so cancelling keeps the stack intact.
     if (hasUnsavedDetailChanges()) {
-      const ok = await confirm('Unsaved Changes', 'Leave without saving? Your changes will be lost.');
-      if (!ok) return; // abort navigation — user wants to keep editing
-      _clearDetailEditState();
+      const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
+      if (action === null) return; // Cancel — abort navigation
+
+      if (action === 'save') {
+        const ok = await saveDetailChanges(state.detailType, state.detailId);
+        if (!ok) return; // Validation failed — abort navigation
+        // saveDetailChanges cleared edit state; fall through to close + navigate.
+      } else {
+        // 'discard'
+        _clearDetailEditState();
+      }
     }
     state.detailStack = [];
     _closeDetailImmediate();

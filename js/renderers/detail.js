@@ -17,120 +17,188 @@ async function renderDetail({ preserveScroll = false } = {}) {
 async function renderSlotDetail(savedScroll) {
   const { detailId: id } = state;
   await refreshAll();
-    const rack = state.refs.assets?.[id];
-    if (!rack) { closeDetail(); return; }
-    const slotNumber = state.detailSlotNumber;
-    const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
-    const network = slot?.networkId ? state.refs.networks?.[slot.networkId] : null;
+  const rack = state.refs.assets?.[id];
+  if (!rack) { closeDetail(); return; }
+  const slotNumber = state.detailSlotNumber;
+  const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
+  if (!slot) { closeDetail(); return; } // empty slot — shouldn't normally reach here
 
-    const editIcon = ICON_EDIT;
-    const backIcon  = ICON_BACK;
+  const network = slot.networkId ? state.refs.networks?.[slot.networkId] : null;
 
-    const field = (label, val) => val
-      ? `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval">${esc(val)}</div></div>`
-      : `<div class="det-field"><div class="det-flabel">${esc(label)}</div><div class="det-fval det-fval-empty">—</div></div>`;
+  /* ------------------------------------------------------------------
+     Reset all detail edit state from the saved slot data.
+     ------------------------------------------------------------------ */
+  state.detailChanges      = {};
+  state.detailMediaDirty   = false;
+  state.detailSlotIoPoints = (slot.ioPoints || []).map(r => ({ ...r }));
 
-    // IO usage for Analog/Digital
-    let ioUsage = '';
-    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
-      const total = parseInt(slot?.ioPointCount) || (slot?.ioPoints?.length ?? 0);
-      const inUse = (slot?.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
-      ioUsage = `${inUse} / ${total}`;
+  /* ------------------------------------------------------------------
+     Build editable field rows.
+     Base fields (part number, firmware) + card-type-specific + network address.
+     Reuses buildEditableFieldHtml so text/enum/ref types all work.
+     ------------------------------------------------------------------ */
+  const mkField = (f, src) => `
+    <div class="det-field">
+      <div class="det-flabel">${esc(f.label)}</div>
+      ${buildEditableFieldHtml(f, src)}
+    </div>`;
+
+  const BASE_SLOT_FIELDS = [
+    { key: 'partNumber',      label: 'Part Number',      type: 'text' },
+    { key: 'firmwareVersion', label: 'Firmware Version', type: 'text' },
+  ];
+
+  let fieldsHtml = BASE_SLOT_FIELDS.map(f => mkField(f, slot)).join('');
+
+  // Card-type-specific fields (IO Point Count, Voltage, Network ref, etc.)
+  for (const f of (PLC_CARD_TYPE_FIELDS[slot.cardType] || [])) {
+    fieldsHtml += mkField(f, slot);
+  }
+
+  // Network address fields for Controller / Communication cards
+  if (CARD_TYPE_NET_TYPES.has(slot.cardType) && network) {
+    for (const f of (ENTITY.assets.networkTypeFields?.[network.networkType] || [])) {
+      fieldsHtml += mkField(f, slot);
     }
+  }
 
-    // Base fields every card has
-    let fieldsHtml = field('Part Number', slot?.partNumber)
-      + field('Firmware Version', slot?.firmwareVersion)
-      + (ioUsage ? field('IO In Use', ioUsage) : '');
+  /* ------------------------------------------------------------------
+     IO Points table — inline editable rows for Analog/Digital cards.
+     Changes are written into state.detailSlotIoPoints; a sentinel key
+     in state.detailChanges keeps hasUnsavedDetailChanges() accurate.
+     ------------------------------------------------------------------ */
+  let ioCard = '';
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    const isAnalog = slot.cardType === 'Analog';
+    const pts = state.detailSlotIoPoints;
+    const rowsHtml = pts.length
+      ? `<table class="wiring-det-table io-points-det-table">
+           <thead><tr>
+             <th>#</th>
+             ${isAnalog ? '<th>Signal</th><th>Wiring</th>' : ''}
+             <th>Label</th>
+           </tr></thead>
+           <tbody>${pts.map((r, i) => `
+             <tr>
+               <td>${i}</td>
+               ${isAnalog ? `
+                 <td><select class="det-inline-select" data-io-idx="${i}" data-io-field="signalType">
+                   <option value=""></option>
+                   ${IO_SIGNAL_OPTS.map(o => `<option value="${esc(o)}"${r.signalType === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+                 </select></td>
+                 <td><select class="det-inline-select" data-io-idx="${i}" data-io-field="wiringType">
+                   <option value=""></option>
+                   ${IO_WIRING_OPTS.map(o => `<option value="${esc(o)}"${r.wiringType === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+                 </select></td>` : ''}
+               <td><input type="text" class="det-inline-input" data-io-idx="${i}" data-io-field="label" value="${esc(r.label || '')}"></td>
+             </tr>`).join('')}
+           </tbody>
+         </table>`
+      : `<div class="wiring-empty">No IO points — update IO Point Count and save to add rows.</div>`;
+    ioCard = buildCollapsibleCard('IO Points', rowsHtml, { expanded: true });
+  }
 
-    // Card-type-specific fields
-    const ctFields = PLC_CARD_TYPE_FIELDS[slot?.cardType] || [];
-    for (const f of ctFields) {
-      if (f.type === 'ref') {
-        const refItem = f.refStore === 'networks' ? network : state.refs[f.refStore]?.[slot?.[f.key]];
-        fieldsHtml += field(f.label, refItem?.name);
-      } else {
-        fieldsHtml += field(f.label, slot?.[f.key]);
-      }
-    }
-
-    // Network address fields for Controller and Communication cards
-    if (CARD_TYPE_NET_TYPES.has(slot?.cardType) && network) {
-      const netFields = ENTITY.assets.networkTypeFields?.[network.networkType] || [];
-      for (const f of netFields) fieldsHtml += field(f.label, slot?.[f.key]);
-    }
-
-    // IO points table for Analog/Digital
-    let ioCard = '';
-    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
-      const isAnalog = slot.cardType === 'Analog';
-      const pts = slot?.ioPoints || [];
-      const rowsHtml = pts.length
-        ? `<table class="wiring-det-table io-points-det-table">
-             <thead><tr>
-               <th>#</th>
-               ${isAnalog ? '<th>Signal Type</th><th>Wiring Type</th>' : ''}
-               <th>Label</th>
-             </tr></thead>
-             <tbody>${pts.map((r, i) => `
-               <tr>
-                 <td>${i}</td>
-                 ${isAnalog ? `<td>${esc(r.signalType || '')}</td><td>${esc(r.wiringType || '')}</td>` : ''}
-                 <td>${esc(r.label || '')}</td>
-               </tr>`).join('')}
-             </tbody>
+  /* ------------------------------------------------------------------
+     Power bus — kept read-only (complex nested structure).
+     ------------------------------------------------------------------ */
+  let powerBusCards = '';
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    for (const entry of (slot.powerBus || [])) {
+      const store   = entry.type === 'Safety Circuit' ? 'safety' : 'power';
+      const device  = state.refs[store]?.[entry.refId];
+      const wRows   = entry.wiring || [];
+      const wiringHtml = wRows.length
+        ? `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead>
+             <tbody>${wRows.map(w => `<tr><td class="wiring-det-terminal">${esc(w.terminal)}</td><td>${esc(w.label)}</td></tr>`).join('')}</tbody>
            </table>`
-        : `<div class="wiring-empty">No IO points configured</div>`;
-      ioCard = buildCollapsibleCard('IO Points', rowsHtml, { expanded: true });
+        : `<div class="wiring-empty">No wiring entries</div>`;
+      powerBusCards += buildCollapsibleCard(`Power Bus — ${device?.name || entry.type}`, wiringHtml);
     }
+  }
 
-    let powerBusCards = '';
-    if (CARD_TYPE_IO_TYPES.has(slot?.cardType)) {
-      for (const entry of (slot?.powerBus || [])) {
-        const store  = entry.type === 'Safety Circuit' ? 'safety' : 'power';
-        const device = state.refs[store]?.[entry.refId];
-        const wRows  = entry.wiring || [];
-        const wiringHtml = wRows.length
-          ? `<table class="wiring-det-table"><thead><tr><th>Terminal</th><th>Label</th></tr></thead><tbody>${wRows.map(w => `<tr><td class="wiring-det-terminal">${esc(w.terminal)}</td><td>${esc(w.label)}</td></tr>`).join('')}</tbody></table>`
-          : `<div class="wiring-empty">No wiring entries</div>`;
-        powerBusCards += buildCollapsibleCard(`Power Bus — ${device?.name || entry.type}`, wiringHtml);
-      }
-    }
-
-    el.detail.innerHTML = `
-      <div class="det-header">
-        <button class="icon-btn" id="det-back" aria-label="Back">${backIcon}</button>
-        <div style="flex:1"></div>
-        <button class="icon-btn" id="det-edit" aria-label="Edit">${editIcon}</button>
+  /* ------------------------------------------------------------------
+     Render HTML.
+     Name is an always-editable input; edit button is removed.
+     Save bar is position:fixed (relative to the panel transform) so it
+     always sits above the nav bar regardless of content height.
+     ------------------------------------------------------------------ */
+  el.detail.innerHTML = `
+    <div class="det-header">
+      <button class="det-back-btn" id="det-back" aria-label="Back">${ICON_BACK}</button>
+    </div>
+    <div class="det-card">
+      <div class="det-name-row">
+        <input class="det-name-input" id="det-name-input" type="text"
+               value="${esc(slot.name || '')}" data-edit-field="name" aria-label="Card Name">
       </div>
-      <div class="det-body">
-        <div class="det-title-row">
-          <div class="det-name">${esc(slot?.name || '(unnamed card)')}</div>
-        </div>
-        <div class="det-badges">
-          <span class="badge badge-asset">Slot ${slotNumber}</span>
-          ${slot?.cardType ? `<span class="badge badge-asset">${esc(slot.cardType)}</span>` : ''}
-          <span class="badge badge-panel">${esc(rack.name)}</span>
-        </div>
-        <div class="det-card">
-          <div class="det-fields">${fieldsHtml}</div>
-        </div>
-        ${ioCard}
-        ${powerBusCards}
+      <div class="det-badges">
+        <span class="badge badge-asset">Slot ${slotNumber}</span>
+        ${slot.cardType ? `<span class="badge badge-asset">${esc(slot.cardType)}</span>` : ''}
+        <span class="badge badge-panel">${esc(rack.name)}</span>
       </div>
-    `;
+      <div class="det-fields">${fieldsHtml}</div>
+    </div>
+    ${ioCard}
+    ${powerBusCards}
+    <div class="det-save-bar" id="det-save-bar">
+      <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
+      <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
+    </div>
+  `;
 
-    el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
-    el.detail.querySelector('#det-edit')?.addEventListener('click', () => openSlotForm(id, slotNumber));
-    el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
-        const expanded = btn.getAttribute('aria-expanded') === 'true';
-        btn.setAttribute('aria-expanded', String(!expanded));
-        body.style.display = expanded ? 'none' : 'block';
-      });
+  /* ------------------------------------------------------------------
+     Wire all [data-edit-field] inputs → state.detailChanges
+     ------------------------------------------------------------------ */
+  el.detail.querySelectorAll('[data-edit-field]').forEach(control => {
+    const key = control.dataset.editField;
+    const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
+    control.addEventListener(ev, () => {
+      state.detailChanges[key] = control.value;
     });
+  });
+
+  /* ------------------------------------------------------------------
+     Wire IO point cells → state.detailSlotIoPoints.
+     Use _ioDirty sentinel so hasUnsavedDetailChanges() fires even when
+     the user only edits IO points and no standard fields.
+     ------------------------------------------------------------------ */
+  el.detail.querySelectorAll('[data-io-idx]').forEach(control => {
+    const idx   = +control.dataset.ioIdx;
+    const field = control.dataset.ioField;
+    const ev    = control.tagName === 'SELECT' ? 'change' : 'input';
+    control.addEventListener(ev, () => {
+      if (state.detailSlotIoPoints[idx]) {
+        state.detailSlotIoPoints[idx][field] = control.value;
+        state.detailChanges._ioDirty = true; // sentinel for navigation guard
+      }
+    });
+  });
+
+  /* ------------------------------------------------------------------
+     Button wiring
+     ------------------------------------------------------------------ */
+  el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+
+  el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
+    renderDetail();
+  });
+
+  el.detail.querySelector('#det-save-changes')?.addEventListener('click', async () => {
+    const ok = await saveDetailChanges('__plc_slot__', id);
+    if (ok) renderDetail({ preserveScroll: true });
+  });
+
+  // Collapsible section toggles
+  el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      body.style.display = expanded ? 'none' : 'block';
+    });
+  });
+
   el.detail.scrollTop = savedScroll;
 }
 
@@ -567,9 +635,10 @@ async function renderEntityDetail(savedScroll) {
     renderDetail();
   });
 
-  // Save: commit all pending changes (fields + media + wiring + switch tables)
-  el.detail.querySelector('#det-save-changes')?.addEventListener('click', () => {
-    saveDetailChanges(type, id);
+  // Save: commit all pending changes, then re-render to reflect committed values.
+  el.detail.querySelector('#det-save-changes')?.addEventListener('click', async () => {
+    const ok = await saveDetailChanges(type, id);
+    if (ok) renderDetail({ preserveScroll: true });
   });
 
   // Child-entity card clicks / delete buttons
@@ -779,9 +848,14 @@ async function buildChildSections(type, id, item) {
  * from the freshly saved item so inputs reflect the committed values.
  */
 async function saveDetailChanges(type, id) {
+  // Slot cards are sub-objects of a rack asset — delegate to the slot saver.
+  if (type === '__plc_slot__') {
+    return saveSlotDetailChanges(id, state.detailSlotNumber);
+  }
+
   const cfg  = ENTITY[type];
   const item = await getById(type, id);
-  if (!item) return;
+  if (!item) return false;
 
   // Merge field-level changes over the saved item
   const updatedItem = { ...item, ...state.detailChanges };
@@ -812,16 +886,60 @@ async function saveDetailChanges(type, id) {
   for (const f of getEffectiveFields(type, updatedItem)) {
     if (f.required && !updatedItem[f.key]) {
       showToast(`${f.label} is required`, 'error');
-      return;
+      return false;
     }
   }
 
   await upsert(type, updatedItem);
   await refreshAll();
 
-  // Reset all detail edit state before re-render so the guard doesn't fire
+  // Clear edit state so hasUnsavedDetailChanges() returns false before any re-render.
   _clearDetailEditState();
 
   showToast(`${cfg.label} saved`, 'success');
-  renderDetail({ preserveScroll: true });
+  // Callers are responsible for re-rendering (or navigating away) after a successful save.
+  return true;
+}
+
+/* ============================================================
+   SLOT DETAIL SAVE — commits inline slot card edits to IndexedDB
+   ============================================================ */
+
+/**
+ * Saves pending inline edits for a PLC slot card:
+ *   - Standard fields (state.detailChanges → merged into the slot object)
+ *   - IO point rows (state.detailSlotIoPoints, resized to match ioPointCount if changed)
+ *
+ * The slot is a sub-object of its parent rack asset; the full rack is re-upserted.
+ * Returns true on success, false if the rack/slot cannot be found.
+ */
+async function saveSlotDetailChanges(rackId, slotNumber) {
+  const rack = await getById('assets', rackId);
+  if (!rack) return false;
+
+  const slotIdx = (rack.slots || []).findIndex(s => s.slotNumber === slotNumber);
+  if (slotIdx === -1) return false;
+
+  const slot        = rack.slots[slotIdx];
+  const updatedSlot = { ...slot, ...state.detailChanges };
+
+  // Remove internal sentinels that must not be persisted
+  delete updatedSlot._ioDirty;
+
+  // Sync IO point array length to match ioPointCount (may have changed via field edit)
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    const count = parseInt(updatedSlot.ioPointCount ?? slot.ioPointCount) || 0;
+    const pts   = state.detailSlotIoPoints.slice(0, count);
+    while (pts.length < count) pts.push({ label: 'Spare', signalType: '', wiringType: '' });
+    updatedSlot.ioPoints = pts;
+  }
+
+  const updatedSlots = [...rack.slots];
+  updatedSlots[slotIdx] = updatedSlot;
+
+  await upsert('assets', { ...rack, slots: updatedSlots });
+  await refreshAll();
+  _clearDetailEditState();
+  showToast('Card saved', 'success');
+  return true;
 }

@@ -574,20 +574,21 @@ body {
   display: block;
 }
 .det-save-bar {
-  position: sticky;
-  /* Stick just above the nav bar. The detail panel extends behind the nav (inset: 0)
-     so bottom: 0 would hide the bar behind the nav; var(--nav-h) places it on top. */
+  /* Fixed relative to .detail-panel — the panel's transform creates a new containing
+     block, so 'fixed' here means fixed to the panel bounds (= the viewport) rather
+     than to the document.  The bar therefore always sits just above the nav bar
+     regardless of how much content the panel contains. */
+  position: fixed;
   bottom: var(--nav-h);
+  left: 0;
+  right: 0;
   background: var(--surface);
   border-top: 2px solid var(--primary);
-  padding: 12px 0 4px;
+  padding: 12px 16px;
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  /* Always visible — no longer toggled via .visible class */
-  opacity: 1;
-  pointer-events: auto;
-  margin-top: 8px;
+  z-index: 10;
 }
 
 /* =====================================================
@@ -895,6 +896,8 @@ body {
 .confirm-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
 .confirm-msg { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
 .confirm-actions { display: flex; gap: 8px; }
+/* Stacked layout used by the 3-button unsaved-changes dialog */
+.confirm-actions.confirm-stacked { flex-direction: column; }
 
 /* =====================================================
    TOAST
