@@ -911,8 +911,6 @@ body {
 .confirm-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
 .confirm-msg { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
 .confirm-actions { display: flex; gap: 8px; }
-/* Stacked layout used by the 3-button unsaved-changes dialog */
-.confirm-actions.confirm-stacked { flex-direction: column; }
 
 /* =====================================================
    TOAST

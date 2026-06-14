@@ -333,15 +333,14 @@ async function duplicateItem(type, id) {
 
   let duplicateChildren = false;
   if (childRels.length) {
-    const desc = childRels.map(r => `${r.count} ${r.label.toLowerCase()}`).join(', ');
-    el.confirmYes.textContent = 'Yes, duplicate all';
-    el.confirmNo.textContent  = 'No, just this item';
-    duplicateChildren = await confirm(
+    const desc   = childRels.map(r => `${r.count} ${r.label.toLowerCase()}`).join(', ');
+    const result = await confirmThreeWay(
       'Duplicate children?',
-      `"${original.name}" has ${desc}. Duplicate these too?`
+      `"${original.name}" has ${desc}. Duplicate these too?`,
+      { cancelLabel: 'Cancel', midLabel: 'No, just this item', midClass: 'btn-outline', yesLabel: 'Yes, duplicate all', yesClass: 'btn-primary' }
     );
-    el.confirmYes.textContent = 'Delete';
-    el.confirmNo.textContent  = 'Cancel';
+    if (result === 'cancel') return;
+    duplicateChildren = result === 'yes';
   }
 
   state.formDuplicateSource = { sourceId: id, duplicateChildren };

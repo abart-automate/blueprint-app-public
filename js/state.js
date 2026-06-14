@@ -102,37 +102,50 @@ function confirm(title, msg) {
 }
 
 /**
- * Shows a 3-button "unsaved changes" dialog.
- * Resolves with: 'save' — user wants to save then proceed
- *                'discard' — user wants to discard and proceed
- *                null — user cancelled (stay on page)
+ * Shows a 3-button dialog laid out left-to-right.
+ * Returns: 'cancel' | 'mid' | 'yes'
+ * Button classes are restored to their HTML defaults on cleanup.
  */
-function confirmUnsaved(title, msg) {
+function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel, yesClass }) {
   return new Promise(resolve => {
-    el.confirmT.textContent     = title;
-    el.confirmM.textContent     = msg;
-    el.confirmNo.textContent    = 'Cancel';
-    el.confirmSave.textContent  = 'Save Changes';
-    el.confirmYes.textContent   = 'Discard';
+    el.confirmT.textContent      = title;
+    el.confirmM.textContent      = msg;
+    el.confirmNo.textContent     = cancelLabel;
+    el.confirmSave.textContent   = midLabel;
+    el.confirmYes.textContent    = yesLabel;
+    el.confirmSave.className     = `btn ${midClass}`;
+    el.confirmYes.className      = `btn ${yesClass}`;
     el.confirmSave.style.display = '';
-    el.confirmBD.querySelector('.confirm-actions').classList.add('confirm-stacked');
     el.confirmBD.classList.add('open');
 
-    const onSave    = () => { cleanup(); resolve('save');    };
-    const onDiscard = () => { cleanup(); resolve('discard'); };
-    const onCancel  = () => { cleanup(); resolve(null);      };
-    const cleanup = () => {
+    const onCancel = () => { cleanup(); resolve('cancel'); };
+    const onMid    = () => { cleanup(); resolve('mid');    };
+    const onYes    = () => { cleanup(); resolve('yes');    };
+    const cleanup  = () => {
       el.confirmBD.classList.remove('open');
       el.confirmSave.style.display = 'none';
-      el.confirmBD.querySelector('.confirm-actions').classList.remove('confirm-stacked');
-      el.confirmSave.removeEventListener('click', onSave);
-      el.confirmYes.removeEventListener('click', onDiscard);
+      el.confirmSave.className     = 'btn btn-primary'; // restore HTML defaults
+      el.confirmYes.className      = 'btn btn-danger';
       el.confirmNo.removeEventListener('click', onCancel);
+      el.confirmSave.removeEventListener('click', onMid);
+      el.confirmYes.removeEventListener('click', onYes);
     };
-    el.confirmSave.addEventListener('click', onSave);
-    el.confirmYes.addEventListener('click', onDiscard);
     el.confirmNo.addEventListener('click', onCancel);
+    el.confirmSave.addEventListener('click', onMid);
+    el.confirmYes.addEventListener('click', onYes);
   });
+}
+
+/**
+ * Shows a 3-button "unsaved changes" dialog (left-to-right).
+ * Resolves with: 'save' | 'discard' | null (cancel)
+ */
+function confirmUnsaved(title, msg) {
+  return confirmThreeWay(title, msg, {
+    cancelLabel: 'Cancel',
+    midLabel:    'Save Changes', midClass: 'btn-primary',
+    yesLabel:    'Discard',      yesClass: 'btn-danger',
+  }).then(r => r === 'mid' ? 'save' : r === 'yes' ? 'discard' : null);
 }
 
 /* ---- CACHE & REFS ---- */
