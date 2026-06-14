@@ -36,6 +36,16 @@
   --radius-sm:     8px;
   --shadow:        0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
   --shadow-md:     0 4px 8px rgba(0,0,0,.10);
+
+  /* Field system — change --field-focus to retheme all focused fields at once */
+  --field-bg:          var(--bg);
+  --field-bg-focus:    var(--surface);
+  --field-border:      var(--border);
+  --field-focus:       var(--primary);
+  --field-focus-ring:  rgba(29,78,216,0.15);
+  --field-text:        var(--text);
+  --field-empty-text:  #94a3b8;
+  --bg-alt:            #e8edf4;
 }
 
 /* =====================================================
@@ -519,16 +529,20 @@ body {
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 10px;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
   outline: none;
   background: transparent;
   width: 100%;
-  padding: 0 0 2px;
-  color: var(--text);
-  transition: border-color 0.15s;
+  padding: 4px 6px;
+  color: var(--field-text);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-.det-name-input:focus { border-bottom-color: var(--primary); }
+.det-name-input:focus {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px var(--field-focus-ring);
+  background: var(--field-bg);
+}
 
 .det-add-child-btn {
   width: 28px;
@@ -561,24 +575,50 @@ body {
 .det-name.det-field-editable {
   cursor: text;
 }
-.det-inline-input,
-.det-inline-select,
-.det-inline-textarea {
+/* =====================================================
+   UNIFIED FIELD STYLES — detail inline + form sheet
+   ===================================================== */
+.f-input, .f-select, .f-textarea,
+.det-inline-input, .det-inline-select, .det-inline-textarea {
   width: 100%;
+  min-height: 48px;
+  background: var(--field-bg);
+  border: 1.5px solid var(--field-border);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
   font-size: 15px;
-  border: none;
-  border-bottom: 2px solid var(--primary);
-  outline: none;
-  background: transparent;
-  padding: 2px 0;
-  color: var(--text);
   font-family: inherit;
+  color: var(--field-text);
   line-height: 1.5;
-}
-.det-inline-textarea {
-  resize: vertical;
-  min-height: 60px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
   display: block;
+}
+.f-input:focus, .f-select:focus, .f-textarea:focus,
+.det-inline-input:focus, .det-inline-select:focus, .det-inline-textarea:focus {
+  border-color: var(--field-focus);
+  background: var(--field-bg-focus);
+  box-shadow: 0 0 0 3px var(--field-focus-ring);
+}
+.f-select, .det-inline-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 34px;
+}
+.f-textarea, .det-inline-textarea {
+  resize: vertical;
+  min-height: 76px;
+}
+.f-input.field-empty, .f-select.field-empty, .f-textarea.field-empty,
+.det-inline-input.field-empty, .det-inline-select.field-empty, .det-inline-textarea.field-empty {
+  color: var(--field-empty-text);
+}
+.f-input::placeholder, .f-textarea::placeholder,
+.det-inline-input::placeholder, .det-inline-textarea::placeholder {
+  color: var(--field-empty-text);
 }
 .det-save-bar {
   /* Static flex child — always rendered at the bottom of the flex column.
@@ -795,35 +835,7 @@ body {
 }
 .fg-label .req { color: var(--danger); margin-left: 2px; }
 
-.f-input,
-.f-select,
-.f-textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 11px 12px;
-  font-size: 15px;
-  font-family: inherit;
-  color: var(--text);
-  transition: border-color 0.15s;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.f-input:focus,
-.f-select:focus,
-.f-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  background: var(--surface);
-}
-.f-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 34px;
-}
-.f-textarea { resize: vertical; min-height: 76px; }
+/* .f-input, .f-select, .f-textarea rules are in the UNIFIED FIELD STYLES block above */
 
 /* Image upload */
 .img-upload {
@@ -1905,4 +1917,56 @@ body {
   height: 100%;
   border-radius: 3px;
   transition: width 0.4s ease;
+}
+
+/* =====================================================
+   LANDSCAPE — keep fields usable when height is tight
+   ===================================================== */
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --nav-h: 52px; }
+  #bottom-nav { height: var(--nav-h); }
+  .f-input, .f-select, .f-textarea,
+  .det-inline-input, .det-inline-select, .det-inline-textarea {
+    min-height: 44px;
+    padding: 9px 12px;
+  }
+  .det-panel-scroll { padding: 8px 10px 4px; }
+  .det-card { padding: 12px; }
+  .sheet { max-height: 85dvh; }
+}
+
+/* =====================================================
+   DARK MODE — defaults to OS preference
+   ===================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #3b82f6;   --primary-lt: #1e3a5f;
+    --surface: #1e2433;   --bg: #131720;   --bg-alt: #1a2030;
+    --text: #e2e8f0;      --muted: #94a3b8;   --border: #2d3748;
+    --danger: #f87171;    --danger-lt: #3f1515;
+    --success: #4ade80;   --success-lt: #14291e;
+    --c-area: #a78bfa;    --c-area-lt: #2d1f5e;
+    --c-panel: #22d3ee;   --c-panel-lt: #0c2a35;
+    --c-power: #fbbf24;   --c-power-lt: #3b2800;
+    --c-safety: #f87171;  --c-safety-lt: #3f1515;
+    --c-network: #4ade80; --c-network-lt: #14291e;
+    --c-asset: #94a3b8;   --c-asset-lt: #1e2433;
+    --c-plant: #818cf8;   --c-plant-lt: #1e1f4a;
+    --shadow: 0 1px 3px rgba(0,0,0,.40), 0 1px 2px rgba(0,0,0,.30);
+    --shadow-md: 0 4px 8px rgba(0,0,0,.45);
+    --field-bg: #1a2030;          --field-bg-focus: #1e2433;
+    --field-border: #2d3748;      --field-focus: #3b82f6;
+    --field-focus-ring: rgba(59,130,246,0.20);
+    --field-text: #e2e8f0;        --field-empty-text: #475569;
+  }
+  /* Select chevron — lighter stroke for dark backgrounds */
+  .f-select, .det-inline-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  /* Surfaces with hardcoded colors that variables don't reach */
+  .toast         { background: #334155; }
+  .toast.success { background: #14532d; }
+  .toast.error   { background: #7f1d1d; }
+  .offline-bar   { background: #92400e; color: #fef3c7; }
+  .sheet-backdrop, .confirm-backdrop { background: rgba(0,0,0,0.65); }
 }

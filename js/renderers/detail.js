@@ -89,15 +89,15 @@ async function renderSlotDetail(savedScroll) {
              <tr>
                <td>${i}</td>
                ${isAnalog ? `
-                 <td><select class="det-inline-select" data-io-idx="${i}" data-io-field="signalType">
+                 <td><select class="det-inline-select${!r.signalType ? ' field-empty' : ''}" data-io-idx="${i}" data-io-field="signalType">
                    <option value=""></option>
                    ${IO_SIGNAL_OPTS.map(o => `<option value="${esc(o)}"${r.signalType === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
                  </select></td>
-                 <td><select class="det-inline-select" data-io-idx="${i}" data-io-field="wiringType">
+                 <td><select class="det-inline-select${!r.wiringType ? ' field-empty' : ''}" data-io-idx="${i}" data-io-field="wiringType">
                    <option value=""></option>
                    ${IO_WIRING_OPTS.map(o => `<option value="${esc(o)}"${r.wiringType === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
                  </select></td>` : ''}
-               <td><input type="text" class="det-inline-input" data-io-idx="${i}" data-io-field="label" value="${esc(r.label || '')}"></td>
+               <td><input type="text" class="det-inline-input${!r.label ? ' field-empty' : ''}" data-io-idx="${i}" data-io-field="label" value="${esc(r.label || '')}" placeholder="Label"></td>
              </tr>`).join('')}
            </tbody>
          </table>`
@@ -186,6 +186,16 @@ async function renderSlotDetail(savedScroll) {
         state.detailChanges._ioDirty = true; // sentinel for navigation guard
       }
     });
+  });
+
+  /* Delegated toggle for .field-empty — covers all field and IO controls */
+  el.detail.addEventListener('input',  e => {
+    const f = e.target.closest('[data-edit-field], [data-io-idx]');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
+  el.detail.addEventListener('change', e => {
+    const f = e.target.closest('[data-edit-field], [data-io-idx]');
+    if (f) f.classList.toggle('field-empty', !f.value);
   });
 
   /* ------------------------------------------------------------------
@@ -277,21 +287,23 @@ function buildSlotRow(rackId, slotNumber, slot) {
  * @returns {string} HTML string for the control, wrapped in .det-fval
  */
 function buildEditableFieldHtml(f, item) {
-  const rawVal = item[f.key] ?? '';
+  const rawVal   = item[f.key] ?? '';
+  const isEmpty  = rawVal === '' || rawVal == null;
+  const emptyCls = isEmpty ? ' field-empty' : '';
 
   if (f.type === 'text') {
-    return `<input type="text" class="det-inline-input" data-edit-field="${f.key}" value="${esc(String(rawVal))}">`;
+    return `<input type="text" class="det-inline-input${emptyCls}" data-edit-field="${f.key}" value="${esc(String(rawVal))}" placeholder="${esc(f.label)}">`;
   }
 
   if (f.type === 'textarea') {
-    return `<textarea class="det-inline-textarea" data-edit-field="${f.key}">${esc(String(rawVal))}</textarea>`;
+    return `<textarea class="det-inline-textarea${emptyCls}" data-edit-field="${f.key}" placeholder="${esc(f.label)}">${esc(String(rawVal))}</textarea>`;
   }
 
   if (f.type === 'enum') {
     const opts = (f.options || []).map(o =>
       `<option value="${esc(o)}"${o === rawVal ? ' selected' : ''}>${esc(o)}</option>`
     ).join('');
-    return `<select class="det-inline-select" data-edit-field="${f.key}">
+    return `<select class="det-inline-select${emptyCls}" data-edit-field="${f.key}">
       <option value="">— Select —</option>
       ${opts}
     </select>`;
@@ -302,7 +314,7 @@ function buildEditableFieldHtml(f, item) {
     const opts = refItems.map(i =>
       `<option value="${i.id}"${i.id === rawVal ? ' selected' : ''}>${esc(i.name)}</option>`
     ).join('');
-    return `<select class="det-inline-select" data-edit-field="${f.key}">
+    return `<select class="det-inline-select${emptyCls}" data-edit-field="${f.key}">
       <option value="">— Unassigned —</option>
       ${opts}
     </select>`;
@@ -628,6 +640,16 @@ async function renderEntityDetail(savedScroll) {
     control.addEventListener(ev, () => {
       state.detailChanges[key] = control.value;
     });
+  });
+
+  /* Delegated toggle for .field-empty — covers all editable field controls */
+  el.detail.addEventListener('input',  e => {
+    const f = e.target.closest('[data-edit-field]');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
+  el.detail.addEventListener('change', e => {
+    const f = e.target.closest('[data-edit-field]');
+    if (f) f.classList.toggle('field-empty', !f.value);
   });
 
   // When the user changes the panel, auto-fill the area to match the panel's area.

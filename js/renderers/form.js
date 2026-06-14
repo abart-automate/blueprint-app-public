@@ -45,15 +45,19 @@ async function renderSlotForm() {
   const cardTypeOpts = ['Controller','Communication','Analog','Digital','Specialty']
     .map(t => `<option value="${t}"${existing?.cardType === t ? ' selected' : ''}>${t}</option>`)
     .join('');
+  const nameEmptyCls      = !existing?.name          ? ' field-empty' : '';
+  const cardTypeEmptyCls  = !existing?.cardType       ? ' field-empty' : '';
+  const partNumEmptyCls   = !existing?.partNumber     ? ' field-empty' : '';
+  const firmwareEmptyCls  = !existing?.firmwareVersion ? ' field-empty' : '';
   el.formBody.innerHTML = `
-    <div class="fg"><label class="f-label">Card Name</label>
-      <input class="f-input" id="f-name" type="text" value="${esc(existing?.name || '')}"></div>
-    <div class="fg"><label class="f-label">Card Type</label>
-      <select class="f-select" id="f-cardType"><option value=""></option>${cardTypeOpts}</select></div>
-    <div class="fg"><label class="f-label">Part Number</label>
-      <input class="f-input" id="f-partNumber" type="text" value="${esc(existing?.partNumber || '')}"></div>
-    <div class="fg"><label class="f-label">Firmware Version</label>
-      <input class="f-input" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}"></div>
+    <div class="fg"><label class="fg-label">Card Name</label>
+      <input class="f-input${nameEmptyCls}" id="f-name" type="text" value="${esc(existing?.name || '')}" placeholder="Card Name"></div>
+    <div class="fg"><label class="fg-label">Card Type</label>
+      <select class="f-select${cardTypeEmptyCls}" id="f-cardType"><option value=""></option>${cardTypeOpts}</select></div>
+    <div class="fg"><label class="fg-label">Part Number</label>
+      <input class="f-input${partNumEmptyCls}" id="f-partNumber" type="text" value="${esc(existing?.partNumber || '')}" placeholder="Part Number"></div>
+    <div class="fg"><label class="fg-label">Firmware Version</label>
+      <input class="f-input${firmwareEmptyCls}" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}" placeholder="Firmware Version"></div>
     <div id="slot-cardtype-container"></div>
     <div id="network-address-container"></div>
     <div id="io-points-wrap" style="display:none">
@@ -65,6 +69,16 @@ async function renderSlotForm() {
       <div id="power-bus-container"></div>
     </div>
   `;
+
+  /* Delegated .field-empty toggle for slot form */
+  el.formBody.addEventListener('input',  e => {
+    const f = e.target.closest('.f-input, .f-textarea');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
+  el.formBody.addEventListener('change', e => {
+    const f = e.target.closest('.f-select');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
 
   const renderSlotCardTypeFields = async () => {
     const cardType  = $('f-cardType')?.value;
@@ -192,6 +206,16 @@ async function renderEntityForm() {
   }
 
   el.formBody.innerHTML = html;
+
+  /* Delegated .field-empty toggle — covers static fields and all dynamic containers */
+  el.formBody.addEventListener('input',  e => {
+    const f = e.target.closest('.f-input, .f-textarea');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
+  el.formBody.addEventListener('change', e => {
+    const f = e.target.closest('.f-select');
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
 
   if (cfg.itemTables) {
     for (const t of cfg.itemTables) renderItemTable(t.key, t.label);
@@ -429,19 +453,20 @@ async function buildFormField(f, existing, type) {
   const presetVal = !existing
     ? (state.formPreset?.field === f.key ? state.formPreset.value : (state.formPreset?.extra?.[f.key] ?? null))
     : null;
-  const val = existing?.[f.key] ?? presetVal ?? '';
+  const val      = existing?.[f.key] ?? presetVal ?? '';
+  const emptyCls = !val ? ' field-empty' : '';
 
   if (f.type === 'text') {
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
-      <input id="f-${f.key}" class="f-input" type="text" value="${esc(val)}" placeholder="${esc(f.label)}">
+      <input id="f-${f.key}" class="f-input${emptyCls}" type="text" value="${esc(val)}" placeholder="${esc(f.label)}">
     </div>`;
   }
 
   if (f.type === 'textarea') {
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}</label>
-      <textarea id="f-${f.key}" class="f-textarea" placeholder="${esc(f.label)}">${esc(val)}</textarea>
+      <textarea id="f-${f.key}" class="f-textarea${emptyCls}" placeholder="${esc(f.label)}">${esc(val)}</textarea>
     </div>`;
   }
 
@@ -449,7 +474,7 @@ async function buildFormField(f, existing, type) {
     const opts = f.options.map(o => `<option value="${esc(o)}" ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}</label>
-      <select id="f-${f.key}" class="f-select">
+      <select id="f-${f.key}" class="f-select${emptyCls}">
         <option value="">— Select —</option>
         ${opts}
       </select>
@@ -462,7 +487,7 @@ async function buildFormField(f, existing, type) {
     const opts  = items.map(i => `<option value="${i.id}" ${i.id === val ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
-      <select id="f-${f.key}" class="f-select"${f.readOnly ? ' disabled' : ''}>
+      <select id="f-${f.key}" class="f-select${emptyCls}"${f.readOnly ? ' disabled' : ''}>
         <option value="">— Unassigned —</option>
         ${opts}
       </select>
@@ -470,12 +495,13 @@ async function buildFormField(f, existing, type) {
   }
 
   if (f.type === 'assign-type') {
-    const preset = state.formPreset?.field === 'assignedToType' ? state.formPreset.value : null;
-    const current = existing?.assignedToType || preset || '';
+    const preset   = state.formPreset?.field === 'assignedToType' ? state.formPreset.value : null;
+    const current  = existing?.assignedToType || preset || '';
+    const typeCls  = !current ? ' field-empty' : '';
     const opts = f.options.map(o => `<option value="${o}" ${o === current ? 'selected' : ''}>${esc(o)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}</label>
-      <select id="f-assign-type" class="f-select">
+      <select id="f-assign-type" class="f-select${typeCls}">
         <option value="">— Select type —</option>
         ${opts}
       </select>
@@ -485,7 +511,7 @@ async function buildFormField(f, existing, type) {
   if (f.type === 'assign-id') {
     return `<div class="fg" id="fg-assign-id" style="display:none">
       <label class="fg-label" id="label-assign-id">Assigned Item</label>
-      <select id="f-assign-id" class="f-select">
+      <select id="f-assign-id" class="f-select field-empty">
         <option value="">— Select —</option>
       </select>
     </div>`;
