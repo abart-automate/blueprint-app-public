@@ -263,10 +263,14 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
     const asset = await getById('assets', assetId);
     if (!asset) continue;
     asset.slots = assetRows.map(row => {
-      let ioPoints = [];
-      let powerBus = [];
-      try { ioPoints = row['IO Points'] ? JSON.parse(row['IO Points']) : []; } catch {}
-      try { powerBus = row['Power Bus'] ? JSON.parse(row['Power Bus']) : []; } catch {}
+      let ioPoints       = [];
+      let powerBus       = [];
+      let terminalWiring = [];
+      let networkPorts   = [];
+      try { ioPoints       = row['IO Points']            ? JSON.parse(row['IO Points'])            : []; } catch {}
+      try { powerBus       = row['Power Bus']            ? JSON.parse(row['Power Bus'])            : []; } catch {}
+      try { terminalWiring = row['Terminal Block Wiring'] ? JSON.parse(row['Terminal Block Wiring']) : []; } catch {}
+      try { networkPorts   = row['Network Ports']        ? JSON.parse(row['Network Ports'])        : []; } catch {}
       const slotNum = row['Slot Number'];
       return {
         slotNumber:      slotNum !== '' && slotNum != null ? Number(slotNum) : undefined,
@@ -282,6 +286,8 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
         nodeAddress:     str(row['Node Address']),
         ioPoints,
         powerBus,
+        terminalWiring,
+        networkPorts,
       };
     });
     await upsert('assets', asset);

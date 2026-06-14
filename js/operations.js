@@ -62,6 +62,18 @@ async function saveSlotForm() {
         .filter(e => e.refId)
         .map(e => ({ type: e.type, refId: e.refId, wiring: e.wiring.filter(w => w.terminal || w.label) }));
     }
+    // Terminal Block Wiring applies to Analog, Digital, and Specialty cards.
+    // Blank rows (both fields empty) are filtered out to keep stored data clean.
+    if (CARD_TYPE_TERMINAL_TYPES.has(cardType)) {
+      slotData.terminalWiring = (state.formItemTables.terminalWiring || [])
+        .filter(r => r.terminal || r.label);
+    }
+    // Network Ports apply to Controller and Communication cards.
+    // All ports are kept even without a network selected so port entries are
+    // not silently lost while the user is still configuring them.
+    if (CARD_TYPE_NET_TYPES.has(cardType)) {
+      slotData.networkPorts = state.formSlotNetworkPorts.map(p => ({...p}));
+    }
     const slots = [...(rack.slots || [])];
     const idx   = slots.findIndex(s => s.slotNumber === slotNumber);
     if (idx >= 0) slots[idx] = slotData; else slots.push(slotData);

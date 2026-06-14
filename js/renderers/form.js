@@ -68,6 +68,14 @@ async function renderSlotForm() {
       <div class="form-section-hdr">Power Bus</div>
       <div id="power-bus-container"></div>
     </div>
+    <div id="terminal-wiring-wrap" style="display:none">
+      <div class="form-section-hdr">Terminal Block Wiring</div>
+      <div id="wiring-table-terminalWiring" class="wiring-table"></div>
+    </div>
+    <div id="network-ports-wrap" style="display:none">
+      <div class="form-section-hdr">Network Ports</div>
+      <div id="network-ports-container"></div>
+    </div>
   `;
 
   /* Delegated .field-empty toggle for slot form */
@@ -109,6 +117,25 @@ async function renderSlotForm() {
       const isIo = CARD_TYPE_IO_TYPES.has(cardType);
       pbWrap.style.display = isIo ? '' : 'none';
       if (isIo) renderPowerBusTable();
+    }
+
+    // Terminal Block Wiring — visible for Analog, Digital, and Specialty cards.
+    // Uses renderItemTable in form mode (no opts needed): reads/writes state.formItemTables['terminalWiring']
+    // via the default wiring-table-terminalWiring container id.
+    const twWrap = $('terminal-wiring-wrap');
+    if (twWrap) {
+      const hasTerminal = CARD_TYPE_TERMINAL_TYPES.has(cardType);
+      twWrap.style.display = hasTerminal ? '' : 'none';
+      if (hasTerminal) renderItemTable('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label');
+    }
+
+    // Network Ports — visible for Controller and Communication cards.
+    // Uses renderNetworkPortsTable in form mode (no args): reads/writes state.formSlotNetworkPorts.
+    const npWrap = $('network-ports-wrap');
+    if (npWrap) {
+      const hasNetPorts = CARD_TYPE_NET_TYPES.has(cardType);
+      npWrap.style.display = hasNetPorts ? '' : 'none';
+      if (hasNetPorts) renderNetworkPortsTable();
     }
   };
 

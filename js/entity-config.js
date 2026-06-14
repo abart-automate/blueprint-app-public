@@ -47,8 +47,11 @@ const PLC_CARD_TYPE_FIELDS = {
 
 // Card type classification sets — used across form, detail, and operations to
 // decide which sub-panels (IO points/power bus vs. network address) to show.
-const CARD_TYPE_IO_TYPES  = new Set(['Analog', 'Digital']);
-const CARD_TYPE_NET_TYPES = new Set(['Controller', 'Communication']);
+const CARD_TYPE_IO_TYPES       = new Set(['Analog', 'Digital']);
+const CARD_TYPE_NET_TYPES      = new Set(['Controller', 'Communication']);
+// Specialty is included here because it has physical terminals even though it
+// has no IO points or power bus of its own.
+const CARD_TYPE_TERMINAL_TYPES = new Set(['Analog', 'Digital', 'Specialty']);
 
 /* ---- ICON SVG CONSTANTS ---- */
 const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;

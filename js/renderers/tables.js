@@ -413,21 +413,21 @@ function renderIoPointsTable() {
           <span class="io-point-num">${i}</span>
           <select class="f-select io-signal" data-idx="${i}" data-field="signalType"><option value=""></option>${sigOpts}</select>
           <select class="f-select io-wiring" data-idx="${i}" data-field="wiringType"><option value=""></option>${wirOpts}</select>
-          <input  class="f-input io-tag" type="text" placeholder="Label" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
+          <input  class="f-input io-tag" type="text" placeholder="Description" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
         </div>`;
     }
     return `
       <div class="wiring-form-row io-point-row">
         <span class="io-point-num">${i}</span>
-        <input class="f-input io-tag" type="text" placeholder="Label" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
+        <input class="f-input io-tag" type="text" placeholder="Description" value="${esc(r.label || '')}" data-idx="${i}" data-field="label">
       </div>`;
   }).join('');
 
   container.innerHTML = rows.length
     ? `<div class="io-point-header">
-        <span class="io-point-num">#</span>
+        <span class="io-point-num">IO Point</span>
         ${isAnalog ? '<span>Signal Type</span><span>Wiring Type</span>' : ''}
-        <span>Label</span>
+        <span>Description</span>
        </div>${rowsHtml}`
     : '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set IO Point Count to populate rows.</div>';
 
@@ -550,6 +550,88 @@ function renderPowerBusTable(
   });
 }
 
+/* ---- NETWORK PORTS TABLE ---- */
+
+/**
+ * Renders an editable list of network ports into a container element.
+ * Each port has a display-only port number and a network assignment dropdown.
+ *
+ * User interaction mirrors the Power Bus section: a "+ Add Port" button appends
+ * entries and each row has a remove button — the same wiring-add-btn / wiring-rm-btn
+ * CSS classes are used so styling is consistent.
+ *
+ * Port numbers are assigned at creation time (1-based ordinal) and are NOT
+ * re-sequenced when a middle port is deleted — they serve as stable labels.
+ *
+ * Form mode (no args): uses 'network-ports-container' and state.formSlotNetworkPorts.
+ * Detail mode: pass all four args explicitly.
+ *
+ * @param {string}   containerId - DOM id of the target container
+ * @param {Array}    ports       - Mutable array of { portNumber, networkId } objects
+ * @param {Function} rerender    - Called after add/remove to re-render; defaults to self
+ * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
+ */
+function renderNetworkPortsTable(
+  containerId = 'network-ports-container',
+  ports       = state.formSlotNetworkPorts,
+  rerender    = null,
+  onDirty     = null
+) {
+  const container = $(containerId);
+  if (!container) return;
+
+  // Build a self-referencing closure so add/remove can trigger a full re-render.
+  const doRerender = rerender ?? (() => renderNetworkPortsTable(containerId, ports, rerender, onDirty));
+
+  // Build <option> elements for the network dropdown from the loaded cache.
+  // All network types are shown — Controller/Communication cards can use any protocol.
+  const makeNetOpts = (selectedId) =>
+    (state.cache.networks || [])
+      .map(n => `<option value="${esc(n.id)}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`)
+      .join('');
+
+  const rmIcon = ICON_RM;
+
+  container.innerHTML = ports.map((port, i) => `
+    <div class="sn-network-row np-port-row" data-np-idx="${i}">
+      <div class="sn-network-row-top">
+        <span class="np-port-label">Port ${port.portNumber || i + 1}</span>
+        <button type="button" class="wiring-rm-btn np-port-rm" data-idx="${i}" aria-label="Remove port">${rmIcon}</button>
+      </div>
+      <select class="f-select np-network" data-idx="${i}">
+        <option value="">— Select Network —</option>
+        ${makeNetOpts(port.networkId)}
+      </select>
+    </div>`).join('') +
+    `<button type="button" class="wiring-add-btn np-add">+ Add Port</button>`;
+
+  // Network selection — mutate the port entry directly, notify dirty
+  container.querySelectorAll('.np-network').forEach(sel => {
+    sel.addEventListener('change', () => {
+      ports[+sel.dataset.idx].networkId = sel.value;
+      onDirty?.();
+    });
+  });
+
+  // Remove port — splice entry, notify dirty, re-render
+  container.querySelectorAll('.np-port-rm').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      ports.splice(+btn.dataset.idx, 1);
+      onDirty?.();
+      doRerender();
+    });
+  });
+
+  // Add port — assign next ordinal port number, notify dirty, re-render
+  container.querySelector('.np-add')?.addEventListener('click', () => {
+    const nextNum = ports.length > 0 ? Math.max(...ports.map(p => p.portNumber || 0)) + 1 : 1;
+    ports.push({ portNumber: nextNum, networkId: '' });
+    onDirty?.();
+    doRerender();
+  });
+}
+
 /* ---- CLASS-SPECIFIC ITEM TABLES (wiring, parameters) ---- */
 
 function renderClassItemTables(assetClass) {
@@ -587,11 +669,13 @@ function renderClassItemTables(assetClass) {
  * @param {string} placeholder1 - Column 1 placeholder text (default 'Terminal')
  * @param {string} placeholder2 - Column 2 placeholder text (default 'Label')
  * @param {object} opts
- * @param {string} opts.containerId  - DOM element id; defaults to wiring-table-{key}
- * @param {object} opts.tablesState  - Object with rows at [key]; defaults to state.formItemTables
+ * @param {string}   opts.containerId  - DOM element id; defaults to wiring-table-{key}
+ * @param {object}   opts.tablesState  - Object with rows at [key]; defaults to state.formItemTables
+ * @param {Function} opts.onDirty      - Called after any mutation (add/remove/edit) so callers
+ *                                       can set dirty flags; only used in detail mode — defaults to null
  */
 function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label', opts = {}) {
-  const { containerId = `wiring-table-${key}`, tablesState = state.formItemTables } = opts;
+  const { containerId = `wiring-table-${key}`, tablesState = state.formItemTables, onDirty = null } = opts;
   const container = $(containerId);
   if (!container) return;
   if (!tablesState[key]) tablesState[key] = [];
@@ -612,18 +696,23 @@ function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = '
     input.addEventListener('change', () => {
       const { wkey, idx, field } = input.dataset;
       tablesState[wkey][Number(idx)][field] = input.value;
+      // Notify caller so the detail panel navigation guard fires on cell edits.
+      // In form mode onDirty is null and this is a no-op.
+      onDirty?.();
     });
   });
   container.querySelectorAll('.wiring-rm-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       tablesState[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
-      // Pass opts through so detail mode keeps its container id and data source
+      onDirty?.();
+      // Pass opts through so detail mode keeps its container id, data source, and onDirty callback
       renderItemTable(btn.dataset.wkey, label, placeholder1, placeholder2, opts);
     });
   });
   container.querySelector('.wiring-add-btn').addEventListener('click', () => {
     tablesState[key].push({ terminal: '', label: '' });
+    onDirty?.();
     renderItemTable(key, label, placeholder1, placeholder2, opts);
     const inputs = container.querySelectorAll('.wiring-terminal');
     inputs[inputs.length - 1]?.focus();

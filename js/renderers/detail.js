@@ -38,6 +38,14 @@ async function renderSlotDetail(savedScroll) {
     refId:  e.refId  || '',
     wiring: (e.wiring || []).map(w => ({ ...w })),
   }));
+  // Initialize terminal wiring edit state for Analog/Digital/Specialty cards.
+  // detailItemTables is reset to {} by _clearDetailEditState, so set the key here
+  // before the HTML build so renderItemTable can hydrate the table with existing rows.
+  if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
+    state.detailItemTables.terminalWiring = (slot.terminalWiring || []).map(r => ({ ...r }));
+  }
+  // Network ports state is always reset (Controller/Communication cards) — safe to do unconditionally.
+  state.detailSlotNetworkPorts = (slot.networkPorts || []).map(p => ({ ...p }));
 
   /* ------------------------------------------------------------------
      Build editable field rows.
@@ -81,9 +89,9 @@ async function renderSlotDetail(savedScroll) {
     const rowsHtml = pts.length
       ? `<table class="wiring-det-table io-points-det-table">
            <thead><tr>
-             <th>#</th>
+             <th>IO Point</th>
              ${isAnalog ? '<th>Signal</th><th>Wiring</th>' : ''}
-             <th>Label</th>
+             <th>Description</th>
            </tr></thead>
            <tbody>${pts.map((r, i) => `
              <tr>
@@ -97,7 +105,7 @@ async function renderSlotDetail(savedScroll) {
                    <option value=""></option>
                    ${IO_WIRING_OPTS.map(o => `<option value="${esc(o)}"${r.wiringType === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
                  </select></td>` : ''}
-               <td><input type="text" class="det-inline-input${!r.label ? ' field-empty' : ''}" data-io-idx="${i}" data-io-field="label" value="${esc(r.label || '')}" placeholder="Label"></td>
+               <td><input type="text" class="det-inline-input${!r.label ? ' field-empty' : ''}" data-io-idx="${i}" data-io-field="label" value="${esc(r.label || '')}" placeholder="Description"></td>
              </tr>`).join('')}
            </tbody>
          </table>`
@@ -111,6 +119,30 @@ async function renderSlotDetail(savedScroll) {
      ------------------------------------------------------------------ */
   const powerBusCard = CARD_TYPE_IO_TYPES.has(slot.cardType)
     ? buildCollapsibleCard('Power Bus', `<div id="det-power-bus-container"></div>`, { expanded: true })
+    : '';
+
+  /* ------------------------------------------------------------------
+     Terminal Block Wiring card — Analog, Digital, Specialty.
+     Renders a placeholder; table is mounted via renderItemTable after innerHTML is set.
+     ------------------------------------------------------------------ */
+  const terminalWiringCard = CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)
+    ? buildCollapsibleCard(
+        'Terminal Block Wiring',
+        `<div id="det-terminal-wiring-container" class="wiring-table"></div>`,
+        { expanded: true }
+      )
+    : '';
+
+  /* ------------------------------------------------------------------
+     Network Ports card — Controller, Communication.
+     Renders a placeholder; table is mounted via renderNetworkPortsTable after innerHTML is set.
+     ------------------------------------------------------------------ */
+  const networkPortsCard = CARD_TYPE_NET_TYPES.has(slot.cardType)
+    ? buildCollapsibleCard(
+        'Network Ports',
+        `<div id="det-network-ports-container"></div>`,
+        { expanded: true }
+      )
     : '';
 
   /* ------------------------------------------------------------------
@@ -138,6 +170,8 @@ async function renderSlotDetail(savedScroll) {
       </div>
       ${ioCard}
       ${powerBusCard}
+      ${terminalWiringCard}
+      ${networkPortsCard}
     </div>
     <div class="det-save-bar" id="det-save-bar">
       <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
@@ -158,6 +192,36 @@ async function renderSlotDetail(savedScroll) {
       () => { state.detailChanges._pbDirty = true; }
     );
     rerenderPB();
+  }
+
+  /* ------------------------------------------------------------------
+     Mount terminal block wiring table into its placeholder container.
+     Uses renderItemTable in detail mode: reads/writes state.detailItemTables['terminalWiring'].
+     The onDirty callback sets a sentinel so hasUnsavedDetailChanges() fires when
+     the user edits terminal wiring without touching any standard fields.
+     ------------------------------------------------------------------ */
+  if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
+    renderItemTable('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label', {
+      containerId: 'det-terminal-wiring-container',
+      tablesState: state.detailItemTables,
+      onDirty:     () => { state.detailChanges._termWiringDirty = true; },
+    });
+  }
+
+  /* ------------------------------------------------------------------
+     Mount network ports table into its placeholder container.
+     Uses renderNetworkPortsTable in detail mode: reads/writes state.detailSlotNetworkPorts.
+     The rerenderNP closure is self-referencing so add/remove operations can
+     trigger a full table re-render (same pattern as rerenderPB above).
+     ------------------------------------------------------------------ */
+  if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
+    const rerenderNP = () => renderNetworkPortsTable(
+      'det-network-ports-container',
+      state.detailSlotNetworkPorts,
+      rerenderNP,
+      () => { state.detailChanges._netPortsDirty = true; }
+    );
+    rerenderNP();
   }
 
   /* ------------------------------------------------------------------
@@ -970,6 +1034,8 @@ async function saveSlotDetailChanges(rackId, slotNumber) {
   // Remove internal sentinels that must not be persisted
   delete updatedSlot._ioDirty;
   delete updatedSlot._pbDirty;
+  delete updatedSlot._termWiringDirty;
+  delete updatedSlot._netPortsDirty;
 
   // Sync IO point array length to match ioPointCount (may have changed via field edit)
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
@@ -979,6 +1045,18 @@ async function saveSlotDetailChanges(rackId, slotNumber) {
     updatedSlot.ioPoints  = pts;
     // Persist power bus (filter out empty entries with no device selected)
     updatedSlot.powerBus  = state.detailSlotPowerBus.filter(e => e.refId);
+  }
+
+  // Persist terminal wiring for Analog/Digital/Specialty — filter out blank rows
+  if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
+    updatedSlot.terminalWiring = (state.detailItemTables.terminalWiring || [])
+      .filter(r => r.terminal || r.label);
+  }
+
+  // Persist network ports for Controller/Communication — keep all entries regardless
+  // of whether a network is selected so port numbers are not silently lost
+  if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
+    updatedSlot.networkPorts = state.detailSlotNetworkPorts.map(p => ({ ...p }));
   }
 
   const updatedSlots = [...rack.slots];

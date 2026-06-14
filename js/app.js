@@ -42,8 +42,9 @@ function _clearDetailEditState() {
   state.detailItemTables     = {};
   state.detailSwitchNetworks = [];
   state.detailSwitchPorts    = [];
-  state.detailSlotIoPoints   = [];
-  state.detailSlotPowerBus   = [];
+  state.detailSlotIoPoints    = [];
+  state.detailSlotPowerBus    = [];
+  state.detailSlotNetworkPorts= [];
 }
 
 /**
@@ -194,8 +195,9 @@ function closeSheet() {
   state.formItemTables  = {};
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
-  state.formIoPoints       = [];
-  state.formPowerBus       = [];
+  state.formIoPoints        = [];
+  state.formPowerBus        = [];
+  state.formSlotNetworkPorts= [];
   state.formDuplicateSource = null;
   state.pickerMeta        = null;
 }
@@ -213,6 +215,11 @@ function openSlotForm(rackId, slotNumber) {
   state.formPowerBus = existing?.powerBus
     ? existing.powerBus.map(e => ({ type: e.type || 'Power', refId: e.refId || '', wiring: (e.wiring || []).map(w => ({...w})) }))
     : [];
+  // Initialize terminal wiring and network port form state from the saved slot.
+  // formItemTables is not set by the generic openSheet() path for slot forms, so
+  // it must be initialised explicitly here for renderItemTable to hydrate correctly.
+  state.formItemTables        = { terminalWiring: existing?.terminalWiring?.map(r => ({...r})) ?? [] };
+  state.formSlotNetworkPorts  = existing?.networkPorts?.map(p => ({...p})) ?? [];
   el.formTitle.textContent = existing
     ? `Slot ${slotNumber} — Edit Card`
     : `Slot ${slotNumber} — Add Card`;

@@ -24,6 +24,7 @@ const state = {
   detailSwitchPorts:     [],   // Array of switch port rows (managed switch assets only)
   detailSlotIoPoints:    [],   // Array of IO point rows for an in-edit PLC slot card
   detailSlotPowerBus:    [],   // Array of power-bus entries for an in-edit PLC slot card
+  detailSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication card
 
   // --- Active form ---
   formType:            null,
@@ -36,6 +37,7 @@ const state = {
   formSwitchPorts:     [],
   formIoPoints:        [],
   formPowerBus:        [],
+  formSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication slot form
   formDuplicateSource: null,
 
   // --- Data cache (populated by refreshAll / loadCache) ---

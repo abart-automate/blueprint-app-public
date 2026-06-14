@@ -147,7 +147,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 22;
+    const totalSheets = 24;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -170,8 +170,10 @@ async function exportExcel() {
     addSheet('Switch Ports',    buildSwitchPortsSheet(assetsByClass['Network Switch'], refs));
     addSheet('PLC',                buildAssetClassSheet(assetsByClass['PLC'], 'PLC', refs));
     addSheet('PLC Slots',          buildPlcSlotsSheet(assetsByClass['PLC'], refs));
-    addSheet('PLC Digital Wiring', buildPlcDigitalWiringSheet(assetsByClass['PLC'], refs));
-    addSheet('PLC Analog Wiring',  buildPlcAnalogWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Digital Wiring',   buildPlcDigitalWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Analog Wiring',    buildPlcAnalogWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Terminal Wiring',  buildPlcTerminalWiringSheet(assetsByClass['PLC'], refs));
+    addSheet('PLC Network Ports',    buildPlcNetworkPortsSheet(assetsByClass['PLC'], refs));
     addSheet('HMI', buildAssetClassSheet(assetsByClass['HMI'], 'HMI', refs));
     addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'], 'VFD', refs));
     addSheet('VFD Wiring',     buildVfdWiringSheet(assetsByClass['VFD'], refs));
@@ -273,7 +275,7 @@ function buildPlcSlotsSheet(plcAssets, refs) {
     'Asset ID', 'Asset Name', 'Slot Number', 'Name', 'Card Type',
     'Part Number', 'Firmware Version', 'Network ID', 'Network Name',
     'IO Point Count', 'Voltage', 'Protocol', 'IP Address', 'Node Address',
-    'IO Points', 'Power Bus',
+    'IO Points', 'Power Bus', 'Terminal Block Wiring', 'Network Ports',
   ];
   const rows = [];
   for (const asset of plcAssets) {
@@ -292,8 +294,10 @@ function buildPlcSlotsSheet(plcAssets, refs) {
         slot.protocol || '',
         slot.ipAddress || '',
         slot.nodeAddress || '',
-        slot.ioPoints?.length  ? JSON.stringify(slot.ioPoints)  : '',
-        slot.powerBus?.length  ? JSON.stringify(slot.powerBus)  : '',
+        slot.ioPoints?.length        ? JSON.stringify(slot.ioPoints)        : '',
+        slot.powerBus?.length        ? JSON.stringify(slot.powerBus)        : '',
+        slot.terminalWiring?.length  ? JSON.stringify(slot.terminalWiring)  : '',
+        slot.networkPorts?.length    ? JSON.stringify(slot.networkPorts)    : '',
       ]);
     }
   }
@@ -383,6 +387,53 @@ function buildPlcAnalogWiringSheet(plcAssets, refs) {
       if (slot.cardType !== 'Analog') continue;
       (slot.ioPoints || []).forEach((pt, idx) => {
         rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', idx + 1, pt.label || '', pt.signalType || '', pt.wiringType || '']);
+      });
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+/**
+ * Builds the "PLC Terminal Wiring" worksheet — one row per terminal block wiring entry.
+ * Covers Analog, Digital, and Specialty card types.
+ * The 'Wire Label' column matches the two-column Terminal / Wire Label header used in the UI.
+ */
+function buildPlcTerminalWiringSheet(plcAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Card Type', 'Terminal', 'Wire Label'];
+  const rows = [];
+  for (const asset of plcAssets) {
+    for (const slot of (asset.slots || [])) {
+      if (!['Analog', 'Digital', 'Specialty'].includes(slot.cardType)) continue;
+      (slot.terminalWiring || []).forEach(row => {
+        rows.push([
+          asset.id, asset.name || '',
+          slot.slotNumber ?? '', slot.name || '', slot.cardType || '',
+          row.terminal || '', row.label || '',
+        ]);
+      });
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+/**
+ * Builds the "PLC Network Ports" worksheet — one row per network port entry.
+ * Covers Controller and Communication card types.
+ * Network name is resolved from the refs map for human-readable output.
+ */
+function buildPlcNetworkPortsSheet(plcAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Port #', 'Network ID', 'Network Name'];
+  const rows = [];
+  for (const asset of plcAssets) {
+    for (const slot of (asset.slots || [])) {
+      if (!['Controller', 'Communication'].includes(slot.cardType)) continue;
+      (slot.networkPorts || []).forEach(port => {
+        const network = refs.networks?.get(port.networkId);
+        rows.push([
+          asset.id, asset.name || '',
+          slot.slotNumber ?? '', slot.name || '',
+          port.portNumber || '', port.networkId || '', network?.name || '',
+        ]);
       });
     }
   }
