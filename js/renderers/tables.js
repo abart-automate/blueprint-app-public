@@ -96,6 +96,41 @@ function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, r
   });
 }
 
+/* ---- SHARED: NETWORK ADDRESS FIELD BUILDER ---- */
+
+/**
+ * Builds the HTML string for network-type-specific address fields (IP address,
+ * node address, protocol, subnet mask, gateway, etc.) for a single network-connection row.
+ *
+ * The fields rendered depend on the protocol of the selected network:
+ *   Ethernet     → Protocol, IP Address, Subnet Mask, Gateway
+ *   ControlNet / DeviceNet / DH+ / Remote-IO / Serial → Node Address (+ type-specific options)
+ *
+ * This helper is shared between renderSwitchNetworksTable and renderNetworkPortsTable
+ * so field definitions and rendering logic live in exactly one place (DRY).
+ *
+ * @param {Object} row       - Data row; existing field values are read as row[f.key]
+ * @param {string} networkId - ID of the currently selected network
+ * @param {number} idx       - Row index; embedded as data-idx on every generated element
+ * @returns {string} HTML fragment; empty string when no address fields apply to this network type
+ */
+function buildNetworkAddrFieldsHtml(row, networkId, idx) {
+  const net    = state.refs.networks?.[networkId];
+  const fields = getNetworkAddrFields(networkId); // utils.js — resolves network type → field defs
+  return fields.map(f => {
+    let val = row[f.key] || '';
+    // Pre-fill the IP address prefix from the network's configured range when the field is empty
+    if (!val && f.key === 'ipAddress') val = getIpPrefix(net?.ipRange) || '';
+    if (f.type === 'enum') {
+      return `<select class="f-select sn-addr" data-idx="${idx}" data-key="${f.key}">
+        <option value="">— ${esc(f.label)} —</option>
+        ${(f.options || []).map(o => `<option value="${o}"${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+      </select>`;
+    }
+    return `<input class="f-input sn-addr" type="text" placeholder="${esc(f.label)}" data-idx="${idx}" data-key="${f.key}" value="${esc(val)}">`;
+  }).join('');
+}
+
 /* ---- SWITCH NETWORKS TABLE ---- */
 
 /**
@@ -132,22 +167,6 @@ function renderSwitchNetworksTable(
       .map(n => `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`).join('');
   const rmIcon = ICON_RM;
 
-  const buildAddrFields = (r, i) => {
-    const net    = state.refs.networks?.[r.networkId];
-    const fields = getNetworkAddrFields(r.networkId);
-    return fields.map(f => {
-      let val = r[f.key] || '';
-      if (!val && f.key === 'ipAddress') val = getIpPrefix(net?.ipRange);
-      if (f.type === 'enum') {
-        return `<select class="f-select sn-addr" data-idx="${i}" data-key="${f.key}">
-          <option value="">— ${esc(f.label)} —</option>
-          ${(f.options || []).map(o => `<option value="${o}"${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('')}
-        </select>`;
-      }
-      return `<input class="f-input sn-addr" type="text" placeholder="${esc(f.label)}" data-idx="${i}" data-key="${f.key}" value="${esc(val)}">`;
-    }).join('');
-  };
-
   // Router subclass may only have 2 network connections — resolve subclass from param or form
   const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
   const isRouter    = resolvedSubclass === 'Router';
@@ -162,7 +181,7 @@ function renderSwitchNetworksTable(
         </select>
         <button type="button" class="wiring-rm-btn sn-rm" data-idx="${i}">${rmIcon}</button>
       </div>
-      ${buildAddrFields(r, i)}
+      ${buildNetworkAddrFieldsHtml(r, r.networkId, i)}
     </div>`).join('');
   if (!atRouterMax) html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
   container.innerHTML = html;
@@ -560,15 +579,23 @@ function renderPowerBusTable(
  * entries and each row has a remove button — the same wiring-add-btn / wiring-rm-btn
  * CSS classes are used so styling is consistent.
  *
+ * Each port shows a stable port-number label, a network dropdown, and dynamic address
+ * fields (IP address, node address, protocol, etc.) that match the selected network's
+ * protocol. Address fields are rendered by the shared buildNetworkAddrFieldsHtml() helper
+ * so field definitions stay in one place (DRY with switch-network rows).
+ *
  * Port numbers are assigned at creation time (1-based ordinal) and are NOT
  * re-sequenced when a middle port is deleted — they serve as stable labels.
+ *
+ * Port data shape: { portNumber, networkId, ...addressFields } — address keys are dynamic
+ * and depend on the selected network's protocol. Old saves without address fields remain valid.
  *
  * Form mode (no args): uses 'network-ports-container' and state.formSlotNetworkPorts.
  * Detail mode: pass all four args explicitly.
  *
  * @param {string}   containerId - DOM id of the target container
- * @param {Array}    ports       - Mutable array of { portNumber, networkId } objects
- * @param {Function} rerender    - Called after add/remove to re-render; defaults to self
+ * @param {Array}    ports       - Mutable array of { portNumber, networkId, ...addrFields }
+ * @param {Function} rerender    - Called after structural changes (add/remove); defaults to self
  * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
  */
 function renderNetworkPortsTable(
@@ -580,35 +607,46 @@ function renderNetworkPortsTable(
   const container = $(containerId);
   if (!container) return;
 
-  // Build a self-referencing closure so add/remove can trigger a full re-render.
+  // Self-referencing closure so add/remove/network-change can trigger a full re-render
   const doRerender = rerender ?? (() => renderNetworkPortsTable(containerId, ports, rerender, onDirty));
 
-  // Build <option> elements for the network dropdown from the loaded cache.
-  // All network types are shown — Controller/Communication cards can use any protocol.
+  // All network types are offered — Controller/Communication cards can use any protocol
   const makeNetOpts = (selectedId) =>
     (state.cache.networks || [])
       .map(n => `<option value="${esc(n.id)}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`)
       .join('');
 
-  const rmIcon = ICON_RM;
-
   container.innerHTML = ports.map((port, i) => `
     <div class="sn-network-row np-port-row" data-np-idx="${i}">
       <div class="sn-network-row-top">
         <span class="np-port-label">Port ${port.portNumber || i + 1}</span>
-        <button type="button" class="wiring-rm-btn np-port-rm" data-idx="${i}" aria-label="Remove port">${rmIcon}</button>
+        <button type="button" class="wiring-rm-btn np-port-rm" data-idx="${i}" aria-label="Remove port">${ICON_RM}</button>
       </div>
       <select class="f-select np-network" data-idx="${i}">
         <option value="">— Select Network —</option>
         ${makeNetOpts(port.networkId)}
       </select>
+      ${buildNetworkAddrFieldsHtml(port, port.networkId, i)}
     </div>`).join('') +
     `<button type="button" class="wiring-add-btn np-add">+ Add Port</button>`;
 
-  // Network selection — mutate the port entry directly, notify dirty
+  // Network change — clear protocol-specific address fields then update networkId and re-render
+  // so the correct address fields for the newly selected network are shown
   container.querySelectorAll('.np-network').forEach(sel => {
     sel.addEventListener('change', () => {
-      ports[+sel.dataset.idx].networkId = sel.value;
+      const idx = +sel.dataset.idx;
+      Object.keys(ports[idx]).filter(k => k !== 'networkId' && k !== 'portNumber')
+            .forEach(k => delete ports[idx][k]);
+      ports[idx].networkId = sel.value;
+      onDirty?.();
+      doRerender();
+    });
+  });
+
+  // Address field input — write the keyed value directly into the port object (no re-render needed)
+  container.querySelectorAll('.sn-addr').forEach(el => {
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+      ports[+el.dataset.idx][el.dataset.key] = el.value;
       onDirty?.();
     });
   });
@@ -623,7 +661,7 @@ function renderNetworkPortsTable(
     });
   });
 
-  // Add port — assign next ordinal port number, notify dirty, re-render
+  // Add port — assign next stable ordinal (never re-sequences existing port numbers), re-render
   container.querySelector('.np-add')?.addEventListener('click', () => {
     const nextNum = ports.length > 0 ? Math.max(...ports.map(p => p.portNumber || 0)) + 1 : 1;
     ports.push({ portNumber: nextNum, networkId: '' });

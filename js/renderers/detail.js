@@ -70,12 +70,6 @@ async function renderSlotDetail(savedScroll) {
     fieldsHtml += mkField(f, slot);
   }
 
-  // Network address fields for Controller / Communication cards
-  if (CARD_TYPE_NET_TYPES.has(slot.cardType) && network) {
-    for (const f of (ENTITY.assets.networkTypeFields?.[network.networkType] || [])) {
-      fieldsHtml += mkField(f, slot);
-    }
-  }
 
   /* ------------------------------------------------------------------
      IO Points table — inline editable rows for Analog/Digital cards.
@@ -318,15 +312,8 @@ function buildSlotRow(rackId, slotNumber, slot) {
   }
   let ipTag = '';
   if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
-    const netFields = getNetworkAddrFields(slot.networkId);
-    const addrField = netFields.find(f => f.section === 'Network Address' && slot[f.key]);
-    if (addrField) {
-      const shortLabel = addrField.label.split(' ')[0];
-      ipTag = `<span class="sn-det-field">${shortLabel}<strong>${esc(slot[addrField.key])}</strong></span>`;
-    } else {
-      const addr = slot.ipAddress || slot.nodeAddress;
-      if (addr) ipTag = `<span class="sn-det-field">IP<strong>${esc(addr)}</strong></span>`;
-    }
+    const portCount = slot.networkPorts?.length || 0;
+    if (portCount > 0) ipTag = `<span class="sn-det-field">Ports<strong>${portCount}</strong></span>`;
   }
   return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
     <div class="rack-slot-hdr">
@@ -1057,6 +1044,11 @@ async function saveSlotDetailChanges(rackId, slotNumber) {
   // of whether a network is selected so port numbers are not silently lost
   if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
     updatedSlot.networkPorts = state.detailSlotNetworkPorts.map(p => ({ ...p }));
+    // Remove legacy card-level network fields — connection details now live in networkPorts[].
+    // These keys can survive the { ...slot, ...detailChanges } merge from old saved data,
+    // so they must be explicitly deleted on every save for these card types.
+    ['networkId', 'protocol', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress']
+      .forEach(k => delete updatedSlot[k]);
   }
 
   const updatedSlots = [...rack.slots];

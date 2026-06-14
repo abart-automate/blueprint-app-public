@@ -271,16 +271,17 @@ function buildSwitchPortsSheet(switchAssets, refs) {
 }
 
 function buildPlcSlotsSheet(plcAssets, refs) {
+  // Network ID / address columns removed — connection details now live per-port
+  // in the Network Ports JSON column and have their own dedicated sheet.
   const headers = [
     'Asset ID', 'Asset Name', 'Slot Number', 'Name', 'Card Type',
-    'Part Number', 'Firmware Version', 'Network ID', 'Network Name',
-    'IO Point Count', 'Voltage', 'Protocol', 'IP Address', 'Node Address',
+    'Part Number', 'Firmware Version',
+    'IO Point Count', 'Voltage',
     'IO Points', 'Power Bus', 'Terminal Block Wiring', 'Network Ports',
   ];
   const rows = [];
   for (const asset of plcAssets) {
     for (const slot of (asset.slots || [])) {
-      const network = refs.networks?.get(slot.networkId);
       rows.push([
         asset.id, asset.name || '',
         slot.slotNumber ?? '',
@@ -288,12 +289,8 @@ function buildPlcSlotsSheet(plcAssets, refs) {
         slot.cardType || '',
         slot.partNumber || '',
         slot.firmwareVersion || '',
-        slot.networkId || '', network?.name || '',
         slot.ioPointCount || '',
         slot.voltageLevel || '',
-        slot.protocol || '',
-        slot.ipAddress || '',
-        slot.nodeAddress || '',
         slot.ioPoints?.length        ? JSON.stringify(slot.ioPoints)        : '',
         slot.powerBus?.length        ? JSON.stringify(slot.powerBus)        : '',
         slot.terminalWiring?.length  ? JSON.stringify(slot.terminalWiring)  : '',
@@ -422,7 +419,9 @@ function buildPlcTerminalWiringSheet(plcAssets, refs) {
  * Network name is resolved from the refs map for human-readable output.
  */
 function buildPlcNetworkPortsSheet(plcAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Port #', 'Network ID', 'Network Name'];
+  // Address columns (Protocol, IP Address, Node Address) are included for human readability.
+  // Full fidelity (including subnet mask, gateway, etc.) is preserved in the PLC Slots JSON column.
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Port #', 'Network ID', 'Network Name', 'Protocol', 'IP Address', 'Node Address'];
   const rows = [];
   for (const asset of plcAssets) {
     for (const slot of (asset.slots || [])) {
@@ -433,6 +432,7 @@ function buildPlcNetworkPortsSheet(plcAssets, refs) {
           asset.id, asset.name || '',
           slot.slotNumber ?? '', slot.name || '',
           port.portNumber || '', port.networkId || '', network?.name || '',
+          port.protocol || '', port.ipAddress || '', port.nodeAddress || '',
         ]);
       });
     }

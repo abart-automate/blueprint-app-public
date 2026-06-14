@@ -36,12 +36,14 @@ const SERIAL_FIELDS = [
 ];
 
 const PLC_CARD_TYPE_FIELDS = {
-  Controller:    [{ key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' }],
+  // Network connectivity for Controller/Communication is handled per-port via
+  // networkPorts[]. Card-level networkId and address fields have been removed.
+  Controller:    [],
   Analog:        [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' }],
   Digital:       [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
                   { key: 'voltageLevel', label: 'Voltage',  type: 'enum',
                     options: ['24VDC','120VAC','240VAC'] }],
-  Communication: [{ key: 'networkId', label: 'Network',  type: 'ref', refStore: 'networks' }],
+  Communication: [],
   Specialty:     [],
 };
 
@@ -223,7 +225,7 @@ const ENTITY = {
     },
     getChildren: [
       { label: 'Assets', store: 'assets', field: 'networkId',
-        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId === id))).length },
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkPorts?.some(p => p.networkId === id)))).length },
     ],
   },
 

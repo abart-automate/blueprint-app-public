@@ -59,7 +59,6 @@ async function renderSlotForm() {
     <div class="fg"><label class="fg-label">Firmware Version</label>
       <input class="f-input${firmwareEmptyCls}" id="f-firmwareVersion" type="text" value="${esc(existing?.firmwareVersion || '')}" placeholder="Firmware Version"></div>
     <div id="slot-cardtype-container"></div>
-    <div id="network-address-container"></div>
     <div id="io-points-wrap" style="display:none">
       <div class="form-section-hdr">IO Points</div>
       <div id="io-points-container"></div>
@@ -97,10 +96,6 @@ async function renderSlotForm() {
       let ph = '';
       for (const f of fields) ph += await buildFormField(f, existing, 'assets');
       container.innerHTML = ph;
-      if (CARD_TYPE_NET_TYPES.has(cardType)) {
-        $('f-networkId')?.addEventListener('change', () => renderNetworkAddressFields(existing, 'assets'));
-        await renderNetworkAddressFields(existing, 'assets');
-      }
     }
     const ioWrap = $('io-points-wrap');
     if (ioWrap) {

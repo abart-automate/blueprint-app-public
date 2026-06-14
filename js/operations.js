@@ -47,15 +47,7 @@ async function saveSlotForm() {
       const el2 = $(`f-${f.key}`);
       if (el2) slotData[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
-    if (CARD_TYPE_NET_TYPES.has(cardType)) {
-      const linkedNet = state.refs.networks?.[slotData.networkId];
-      for (const f of ENTITY.assets.networkTypeFields?.[linkedNet?.networkType] || []) {
-        const el2 = $(`f-${f.key}`);
-        if (el2) slotData[f.key] = el2.value.trim();
-      }
-    }
     // ioPoints and powerBus only apply to I/O card types (Analog/Digital);
-    // Controller/Communication cards use networkId + network address fields instead.
     if (CARD_TYPE_IO_TYPES.has(cardType)) {
       slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
       slotData.powerBus = state.formPowerBus

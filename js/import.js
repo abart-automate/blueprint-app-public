@@ -278,12 +278,10 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
         cardType:        str(row['Card Type']),
         partNumber:      str(row['Part Number']),
         firmwareVersion: str(row['Firmware Version']),
-        networkId:       resolveRefId(str(row['Network ID']), str(row['Network Name']), 'networks', nameToId, idExists) || '',
         ioPointCount:    str(row['IO Point Count']),
         voltageLevel:    str(row['Voltage']),
-        protocol:        str(row['Protocol']),
-        ipAddress:       str(row['IP Address']),
-        nodeAddress:     str(row['Node Address']),
+        // networkId, protocol, ipAddress, nodeAddress removed — per-port address details
+        // are deserialized from the Network Ports JSON column via networkPorts above.
         ioPoints,
         powerBus,
         terminalWiring,
