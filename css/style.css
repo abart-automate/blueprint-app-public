@@ -42,11 +42,13 @@
   --sidebar-w:         220px;
   /* Sidebar width when icon-only (tablet 768–1199px) */
   --sidebar-w-icon:     56px;
-  /* Detail pane default width — overridden by JS when user drags to resize */
-  --detail-w-default:  360px;
+  /* List pane (search/asset column) default width — overridden by JS when user drags to resize.
+     The detail pane grows to fill the remaining space (flex:1), so this is the only variable
+     needed to control the split. */
+  --list-pane-w-default: 320px;
   /* Hard floor/ceiling for drag-to-resize (clamped in JS as well) */
-  --detail-min-w:      260px;
-  --detail-max-w:      600px;
+  --list-pane-min-w:     200px;
+  --list-pane-max-w:     480px;
 
   /* Field system — change --field-focus to retheme all focused fields at once */
   --field-bg:          var(--bg);
@@ -2112,9 +2114,9 @@ body {
 /* =====================================================
    DESKTOP LAYOUT  (≥ 1200px)
    Full three-column layout: sidebar nav (220 px) |
-   list pane (flex-grow) | detail pane (user-resizable,
-   default 360 px).  The detail pane is a permanent
-   static column — no slide-in overlay.
+   list pane (fixed width, user-resizable via drag) |
+   detail pane (flex-grow — primary/larger view).
+   The detail pane is a permanent static column — no slide-in overlay.
    ===================================================== */
 @media (min-width: 1200px) {
 
@@ -2150,10 +2152,12 @@ body {
     overflow: hidden;
   }
 
-  /* List pane: grows to fill space between sidebar and detail pane */
+  /* List pane: fixed width (user-adjustable via drag handle); detail pane gets the remaining space */
   #app-main {
-    flex: 1;
-    min-width: 280px;
+    width: var(--list-pane-w, var(--list-pane-w-default));
+    flex-shrink: 0;
+    min-width: var(--list-pane-min-w);
+    max-width: var(--list-pane-max-w);
     /* Safe-area inset no longer relevant at this breakpoint */
     padding-bottom: 12px;
   }
@@ -2163,18 +2167,15 @@ body {
     display: flex;
   }
 
-  /* --- Detail pane: permanent fixture, not an overlay --- */
+  /* --- Detail pane: permanent primary view, grows to fill available space --- */
   #detail-panel {
     /* Remove absolute overlay behavior */
     position: static;
     transform: none !important; /* block the translateX slide animation */
     left: auto;
-    /* Width is set via CSS custom property controlled by JS drag-resize;
-       falls back to the default declared in :root */
-    width: var(--detail-pane-w, var(--detail-w-default));
-    min-width: var(--detail-min-w);
-    max-width: var(--detail-max-w);
-    flex-shrink: 0;
+    /* Grows to fill the space left after the list pane; no fixed width needed */
+    flex: 1;
+    min-width: 360px;
     height: auto;      /* natural height inside the flex row */
     z-index: auto;
     border-left: 1px solid var(--border);

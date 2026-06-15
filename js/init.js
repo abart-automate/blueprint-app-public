@@ -12,10 +12,10 @@ async function init() {
        so CSS and JS branches are consistent from the very first paint. */
     initLayoutDetection();
 
-    /* Restore the user's last-saved detail-pane width (desktop only).
+    /* Restore the user's last-saved list-pane width (desktop only).
        Must run before wireEvents so the CSS custom property is set
        before the resize handle listener is attached. */
-    await applyPersistedDetailWidth();
+    await applyPersistedListPaneWidth();
 
     wireEvents();
 
@@ -37,14 +37,14 @@ async function init() {
 }
 
 /**
- * Reads the user's saved detail-pane width from IndexedDB settings and
+ * Reads the user's saved list-pane width from IndexedDB settings and
  * applies it as a CSS custom property on :root.  Falls back to the
- * CSS default (--detail-w-default: 360px) if nothing is stored yet.
+ * CSS default (--list-pane-w-default: 320px) if nothing is stored yet.
  */
-async function applyPersistedDetailWidth() {
-  const w = await getSetting('detailPaneWidth');
+async function applyPersistedListPaneWidth() {
+  const w = await getSetting('listPaneWidth');
   if (w && Number.isFinite(Number(w))) {
-    document.documentElement.style.setProperty('--detail-pane-w', Number(w) + 'px');
+    document.documentElement.style.setProperty('--list-pane-w', Number(w) + 'px');
   }
 }
 

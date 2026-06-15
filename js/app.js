@@ -107,10 +107,13 @@ function renderDetailPlaceholder() {
  * Wires up the drag-to-resize handle between the list pane and detail pane.
  *
  * On pointerdown the handle captures the pointer and tracks pointermove to
- * compute a new detail-pane width.  The width is clamped between
- * --detail-min-w and --detail-max-w, applied live as a CSS custom property
- * on :root, and persisted to IndexedDB on pointerup so the preference
- * survives page reload.
+ * compute a new list-pane width.  The list pane is fixed-width; the detail
+ * pane grows to fill the remaining space (flex:1), so resizing the list pane
+ * indirectly controls how much room the detail pane receives.
+ *
+ * The width is clamped between --list-pane-min-w and --list-pane-max-w,
+ * applied live as a CSS custom property on :root, and persisted to IndexedDB
+ * on pointerup so the preference survives page reload.
  *
  * Uses Pointer Events API so the same code handles mouse, touch, and
  * stylus without extra polyfills.
@@ -129,24 +132,24 @@ function initDetailResizeHandle() {
     handle.classList.add('dragging');
     handle.setPointerCapture(e.pointerId);
 
-    /* Capture the starting cursor position and current pane width so we can
-       compute a delta rather than reading getBoundingClientRect every frame. */
+    /* Capture the starting cursor position and current list-pane width so we
+       can compute a delta rather than reading getBoundingClientRect every frame. */
     const startX = e.clientX;
     const rootStyle = getComputedStyle(document.documentElement);
     const startW = parseInt(
-      rootStyle.getPropertyValue('--detail-pane-w') || rootStyle.getPropertyValue('--detail-w-default'),
+      rootStyle.getPropertyValue('--list-pane-w') || rootStyle.getPropertyValue('--list-pane-w-default'),
       10
-    ) || 360;
+    ) || 320;
 
     /* Read floor/ceiling from CSS variables so they stay in sync with style.css. */
-    const minW = parseInt(rootStyle.getPropertyValue('--detail-min-w'), 10) || 260;
-    const maxW = parseInt(rootStyle.getPropertyValue('--detail-max-w'), 10) || 600;
+    const minW = parseInt(rootStyle.getPropertyValue('--list-pane-min-w'), 10) || 200;
+    const maxW = parseInt(rootStyle.getPropertyValue('--list-pane-max-w'), 10) || 480;
 
     function onMove(ev) {
-      /* Dragging the handle LEFT widens the detail pane (user is "pulling" it). */
-      const delta = startX - ev.clientX;
+      /* Dragging the handle RIGHT widens the list pane; LEFT narrows it. */
+      const delta = ev.clientX - startX;
       const newW  = Math.min(maxW, Math.max(minW, startW + delta));
-      document.documentElement.style.setProperty('--detail-pane-w', newW + 'px');
+      document.documentElement.style.setProperty('--list-pane-w', newW + 'px');
     }
 
     function onUp() {
@@ -154,12 +157,12 @@ function initDetailResizeHandle() {
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup',   onUp);
 
-      /* Persist the final width to IndexedDB so it survives reload. */
+      /* Persist the final list-pane width to IndexedDB so it survives reload. */
       const finalW = parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--detail-pane-w'),
+        getComputedStyle(document.documentElement).getPropertyValue('--list-pane-w'),
         10
       );
-      if (Number.isFinite(finalW)) setSetting('detailPaneWidth', finalW);
+      if (Number.isFinite(finalW)) setSetting('listPaneWidth', finalW);
     }
 
     handle.addEventListener('pointermove', onMove);
