@@ -20,22 +20,48 @@
 <body>
   <div id="app">
 
-    <header id="app-header">
-      <button id="back-btn" class="icon-btn" style="visibility:hidden" aria-label="Back">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      </button>
-      <h1 id="page-title">blueprint</h1>
-      <button id="add-btn" class="icon-btn" style="visibility:hidden" aria-label="Add">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-    </header>
+    <!-- =========================================================
+         CONTENT AREA — header + split-pane body
+         On mobile: single flex column (list only visible in body).
+         On tablet/desktop: sidebar nav pushes this area right via
+         order:-1 on #bottom-nav.
+         ========================================================= -->
+    <div class="app-content">
 
-    <main id="app-main"></main>
+      <header id="app-header">
+        <button id="back-btn" class="icon-btn" style="visibility:hidden" aria-label="Back">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h1 id="page-title">blueprint</h1>
+        <button id="add-btn" class="icon-btn" style="visibility:hidden" aria-label="Add">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </header>
 
-    <!-- Detail slide-over -->
-    <div id="detail-panel" class="detail-panel" aria-hidden="true"></div>
+      <!-- Split-pane body:
+           Mobile/tablet → #app-main fills width; #detail-panel overlays it.
+           Desktop       → #app-main | resize-handle | #detail-panel in a row. -->
+      <div class="app-body">
 
-    <!-- Bottom sheet form -->
+        <main id="app-main"></main>
+
+        <!-- Visible only on desktop (≥1200 px): drag to resize the detail pane. -->
+        <div id="detail-resize-handle" class="detail-resize-handle" aria-hidden="true"></div>
+
+        <!-- Detail panel: slide-over overlay on mobile/tablet, permanent pane on desktop. -->
+        <div id="detail-panel" class="detail-panel" aria-hidden="true"></div>
+
+      </div>
+    </div><!-- /.app-content -->
+
+    <!-- =========================================================
+         FULL-SCREEN OVERLAYS
+         These stay as direct children of #app so their
+         position:absolute uses the full-viewport #app box as the
+         containing block on every layout mode.
+         ========================================================= -->
+
+    <!-- Bottom sheet form (mobile/tablet) / centered dialog (desktop) -->
     <div id="sheet-backdrop" class="sheet-backdrop" aria-hidden="true"></div>
     <div id="form-sheet" class="form-sheet" aria-hidden="true">
       <div class="sheet-handle-bar"></div>
@@ -64,48 +90,62 @@
       </div>
     </div>
 
-    <!-- Toast -->
+    <!-- Toast notification -->
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <!-- Bottom navigation -->
+    <!-- =========================================================
+         NAVIGATION
+         Mobile/tablet: horizontal bottom bar (default flex-row).
+         Desktop: vertical left sidebar (CSS sets order:-1 and
+         flex-direction:column so it appears to the left of
+         .app-content without changing DOM order).
+         ========================================================= -->
     <nav id="bottom-nav">
-      <button class="nav-btn" data-page="home">
+
+      <!-- Brand block — only rendered visibly on the desktop sidebar -->
+      <div class="nav-brand">
+        <img src="icons/icon-96.png" alt="" class="nav-brand-icon" width="28" height="28">
+        <span class="nav-brand-name">Blueprint</span>
+      </div>
+
+      <button class="nav-btn" data-page="home" aria-label="Home">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        <span>Home</span>
+        <span class="nav-label">Home</span>
       </button>
-      <button class="nav-btn" data-page="checklist">
+      <button class="nav-btn" data-page="checklist" aria-label="Checklist">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span>Checklist</span>
+        <span class="nav-label">Checklist</span>
       </button>
-      <button class="nav-btn" data-page="areas">
+      <button class="nav-btn" data-page="areas" aria-label="Areas">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-        <span>Areas</span>
+        <span class="nav-label">Areas</span>
       </button>
-      <button class="nav-btn" data-page="panels">
+      <button class="nav-btn" data-page="panels" aria-label="Panels">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        <span>Panels</span>
+        <span class="nav-label">Panels</span>
       </button>
-      <button class="nav-btn" data-page="power">
+      <button class="nav-btn" data-page="power" aria-label="Power">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        <span>Power</span>
+        <span class="nav-label">Power</span>
       </button>
-      <button class="nav-btn" data-page="safety">
+      <button class="nav-btn" data-page="safety" aria-label="Safety">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>Safety</span>
+        <span class="nav-label">Safety</span>
       </button>
-      <button class="nav-btn" data-page="networks">
+      <button class="nav-btn" data-page="networks" aria-label="Networks">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="1" y="16" width="6" height="6" rx="1"/><rect x="17" y="16" width="6" height="6" rx="1"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="4" y1="16" x2="12" y2="14"/><line x1="20" y1="16" x2="12" y2="14"/></svg>
-        <span>Networks</span>
+        <span class="nav-label">Networks</span>
       </button>
-      <button class="nav-btn" data-page="assets">
+      <button class="nav-btn" data-page="assets" aria-label="Assets">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        <span>Assets</span>
+        <span class="nav-label">Assets</span>
       </button>
-    </nav>
+
+    </nav><!-- /#bottom-nav -->
 
     <input type="file" id="import-file-input" accept=".json,.xlsx" style="display:none" aria-hidden="true">
 
-  </div>
+  </div><!-- /#app -->
   <script src="js/version.js"></script>
   <script src="js/vendor/jszip.min.js"></script>
   <script src="js/vendor/xlsx.full.min.js"></script>

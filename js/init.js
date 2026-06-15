@@ -7,7 +7,18 @@
 async function init() {
   try {
     await initDB();
+
+    /* Detect viewport size and stamp body[data-layout] before any rendering
+       so CSS and JS branches are consistent from the very first paint. */
+    initLayoutDetection();
+
+    /* Restore the user's last-saved detail-pane width (desktop only).
+       Must run before wireEvents so the CSS custom property is set
+       before the resize handle listener is attached. */
+    await applyPersistedDetailWidth();
+
     wireEvents();
+
     const hash = window.location.hash.replace('#', '') || 'home';
     const startPage = (ENTITY[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
     navigate(startPage);
@@ -22,6 +33,18 @@ async function init() {
         <p style="margin-top:8px;font-family:monospace;font-size:12px">${esc(String(err))}</p>
       </div>
     `;
+  }
+}
+
+/**
+ * Reads the user's saved detail-pane width from IndexedDB settings and
+ * applies it as a CSS custom property on :root.  Falls back to the
+ * CSS default (--detail-w-default: 360px) if nothing is stored yet.
+ */
+async function applyPersistedDetailWidth() {
+  const w = await getSetting('detailPaneWidth');
+  if (w && Number.isFinite(Number(w))) {
+    document.documentElement.style.setProperty('--detail-pane-w', Number(w) + 'px');
   }
 }
 
@@ -68,7 +91,9 @@ function initOfflineIndicator() {
       <circle cx="12" cy="20" r="1"/>
     </svg>
     <span>Offline</span>`;
-  document.getElementById('bottom-nav').before(bar);
+  /* Insert before #app-header so the bar sits at the top of .app-content
+     on all layout modes (mobile, tablet, desktop sidebar). */
+  document.getElementById('app-header').before(bar);
   const update = () => { bar.style.display = navigator.onLine ? 'none' : 'flex'; };
   update();
   window.addEventListener('online', update);

@@ -37,6 +37,17 @@
   --shadow:        0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
   --shadow-md:     0 4px 8px rgba(0,0,0,.10);
 
+  /* ---- Desktop layout sizing ---- */
+  /* Sidebar width when labels are visible (desktop ≥1200px) */
+  --sidebar-w:         220px;
+  /* Sidebar width when icon-only (tablet 768–1199px) */
+  --sidebar-w-icon:     56px;
+  /* Detail pane default width — overridden by JS when user drags to resize */
+  --detail-w-default:  360px;
+  /* Hard floor/ceiling for drag-to-resize (clamped in JS as well) */
+  --detail-min-w:      260px;
+  --detail-max-w:      600px;
+
   /* Field system — change --field-focus to retheme all focused fields at once */
   --field-bg:          var(--bg);
   --field-bg-focus:    var(--surface);
@@ -80,6 +91,91 @@ body {
   flex-direction: column;
   position: relative;
   overflow: hidden;
+}
+
+/* =====================================================
+   APP-CONTENT + APP-BODY WRAPPERS
+   .app-content: vertical column holding the header + body row.
+   .app-body:    flex row on desktop (list pane | resize handle | detail
+                 pane) and flex column on mobile (only #app-main is in
+                 normal flow; detail is position:absolute within it).
+   ===================================================== */
+.app-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.app-body {
+  flex: 1;
+  /* Anchors the absolutely-positioned detail panel on mobile/tablet */
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The detail panel is now inside .app-body (which sits above the nav),
+   so the save bar no longer needs to clear the nav height. */
+.app-body .det-save-bar {
+  margin-bottom: 0;
+}
+
+/* =====================================================
+   NAV BRAND (desktop sidebar only)
+   Hidden on mobile/tablet; shown on desktop where the nav
+   becomes a left sidebar with room for a brand block.
+   ===================================================== */
+.nav-brand {
+  display: none; /* revealed by desktop breakpoint below */
+  align-items: center;
+  gap: 10px;
+  padding: 16px 14px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.nav-brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.nav-brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* =====================================================
+   NAV LABEL (desktop sidebar only)
+   The text label under each nav icon on mobile becomes
+   an inline label to the right of the icon on desktop.
+   ===================================================== */
+.nav-label {
+  display: none; /* revealed at ≥1200px */
+}
+
+/* =====================================================
+   DRAG-TO-RESIZE HANDLE (desktop detail pane)
+   Thin vertical strip between the list pane and the
+   detail pane. Hidden on mobile/tablet.
+   ===================================================== */
+.detail-resize-handle {
+  display: none; /* revealed by desktop breakpoint */
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 1;
+}
+.detail-resize-handle:hover,
+.detail-resize-handle.dragging {
+  background: var(--primary);
 }
 
 /* =====================================================
@@ -1931,6 +2027,222 @@ body {
   .det-panel-scroll { padding: 8px 10px 4px; }
   .det-card { padding: 12px; }
   .sheet { max-height: 85dvh; }
+}
+
+/* =====================================================
+   TABLET LAYOUT  (768px – 1199px)
+   The bottom nav becomes a narrow icon-only sidebar on
+   the left.  The detail panel still slides in as a
+   right-side overlay (50 % width) rather than a
+   permanent pane — there isn't enough horizontal space
+   to lock all three columns.
+   ===================================================== */
+@media (min-width: 768px) {
+
+  /* Lift the 600 px mobile cap; go full-viewport width */
+  #app {
+    max-width: none;
+    margin: 0;
+    flex-direction: row;
+  }
+
+  /* --- Left sidebar (icon-only) --- */
+  #bottom-nav {
+    /* Pull the nav to the leftmost position in the flex row */
+    order: -1;
+    width: var(--sidebar-w-icon);
+    height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    /* Replace the horizontal top-border with a vertical right-border */
+    border-top: none;
+    border-right: 1px solid var(--border);
+    /* Safe-area bottom padding is irrelevant for a left sidebar */
+    padding-bottom: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+  }
+
+  /* Nav buttons: stack icon above tiny label (label hidden on tablet) */
+  .nav-btn {
+    flex: none;          /* don't stretch to fill the row; size by content */
+    width: 100%;
+    flex-direction: column;
+    padding: 12px 4px;
+    position: relative;
+    /* Active indicator: left-side accent bar instead of bottom highlight */
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-left-color 0.15s, background 0.15s;
+  }
+  .nav-btn.active {
+    border-left-color: var(--primary);
+    background: var(--primary-lt);
+  }
+
+  /* Content wrapper fills the remaining horizontal space */
+  .app-content {
+    flex: 1;
+    min-width: 0; /* prevent flex children from overflowing */
+  }
+
+  /* Body area: detail overlays on tablet (position:absolute still active) */
+  .app-body {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Tablet detail panel: right-side overlay, half the content width.
+     The existing translateX slide-in animation still applies — the panel
+     starts off-screen to the right and slides to its left:auto right:0 position. */
+  #detail-panel {
+    /* Override inset: 0 so the panel anchors to the right half only */
+    left: auto;
+    width: 50%;
+    min-width: 280px;
+  }
+
+  /* Toast: nav is now a sidebar, so raise the toast above the viewport
+     bottom edge rather than above a bottom nav bar. */
+  .toast {
+    bottom: 12px;
+  }
+}
+
+/* =====================================================
+   DESKTOP LAYOUT  (≥ 1200px)
+   Full three-column layout: sidebar nav (220 px) |
+   list pane (flex-grow) | detail pane (user-resizable,
+   default 360 px).  The detail pane is a permanent
+   static column — no slide-in overlay.
+   ===================================================== */
+@media (min-width: 1200px) {
+
+  /* Expand sidebar to show icon + label */
+  #bottom-nav {
+    width: var(--sidebar-w);
+  }
+
+  /* --- Nav button: horizontal icon + label layout --- */
+  .nav-btn {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+
+  /* Show text labels next to icons */
+  .nav-label {
+    display: block;
+    font-weight: 500;
+  }
+
+  /* Show the brand block at the top of the sidebar */
+  .nav-brand {
+    display: flex;
+  }
+
+  /* --- Split-pane body: list | resize-handle | detail --- */
+  .app-body {
+    flex-direction: row;
+    overflow: hidden;
+  }
+
+  /* List pane: grows to fill space between sidebar and detail pane */
+  #app-main {
+    flex: 1;
+    min-width: 280px;
+    /* Safe-area inset no longer relevant at this breakpoint */
+    padding-bottom: 12px;
+  }
+
+  /* Show the drag handle between the two panes */
+  .detail-resize-handle {
+    display: flex;
+  }
+
+  /* --- Detail pane: permanent fixture, not an overlay --- */
+  #detail-panel {
+    /* Remove absolute overlay behavior */
+    position: static;
+    transform: none !important; /* block the translateX slide animation */
+    left: auto;
+    /* Width is set via CSS custom property controlled by JS drag-resize;
+       falls back to the default declared in :root */
+    width: var(--detail-pane-w, var(--detail-w-default));
+    min-width: var(--detail-min-w);
+    max-width: var(--detail-max-w);
+    flex-shrink: 0;
+    height: auto;      /* natural height inside the flex row */
+    z-index: auto;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  /* Make the save bar sticky at the pane bottom instead of fixed
+     (fixed positioning doesn't work well inside a non-full-screen pane). */
+  #detail-panel .det-save-bar {
+    position: sticky;
+    bottom: 0;
+    /* Compensate for the sticky bar covering the last field */
+    box-shadow: 0 -4px 12px rgba(0,0,0,.06);
+  }
+
+  /* Scrollable content inside the permanent detail pane — let flex handle
+     height so there is no second scrollbar beside the pane's own scroll. */
+  #detail-panel .det-panel-scroll {
+    flex: none;
+    overflow: visible;
+  }
+
+  /* --- Form sheet: centered modal dialog instead of bottom sheet --- */
+  #form-sheet {
+    position: fixed;
+    /* Override mobile bottom/left/right anchoring */
+    bottom: auto;
+    left: 50%;
+    top: 50%;
+    right: auto;
+    /* Hidden state: slightly above center, faded out */
+    transform: translate(-50%, -48%);
+    opacity: 0;
+    max-width: 620px;
+    width: 92%;
+    max-height: 88dvh;
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px rgba(0,0,0,.18);
+    /* Add opacity to the existing transform transition for a fade+slide-up effect */
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+  }
+  /* Open state: centred and fully visible */
+  #form-sheet.open {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+
+  /* The drag handle bar is a mobile/tablet affordance only */
+  .sheet-handle-bar {
+    display: none;
+  }
+
+  /* Toast: fixed near the bottom-centre of the viewport */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: auto;
+    min-width: 200px;
+    max-width: 400px;
+    border-radius: var(--radius-sm);
+  }
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* =====================================================

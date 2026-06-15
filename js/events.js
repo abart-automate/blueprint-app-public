@@ -49,4 +49,7 @@ function wireEvents() {
       e.target.value = '';
     }
   });
+
+  // Detail-pane drag-to-resize (desktop only — no-ops on mobile/tablet)
+  initDetailResizeHandle();
 }

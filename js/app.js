@@ -51,15 +51,29 @@ function _clearDetailEditState() {
  * Closes the detail panel immediately — no unsaved-changes prompt.
  * Used internally after the user has already confirmed they want to discard,
  * or when there is nothing to discard.
+ *
+ * Mobile/tablet: animates the panel back off-screen, then hides it.
+ * Desktop:       the panel stays visible but is replaced with a placeholder
+ *                because the detail pane is a permanent column.
  */
 function _closeDetailImmediate() {
   el.detail.classList.remove('open');
-  el.detail.classList.add('animating');
-  setTimeout(() => {
-    el.detail.classList.remove('animating');
-    el.detail.style.display = 'none';
+
+  if (getLayoutMode() !== 'desktop') {
+    /* Animate the panel out before hiding it so the slide-out transition
+       plays instead of disappearing instantly. */
+    el.detail.classList.add('animating');
+    setTimeout(() => {
+      el.detail.classList.remove('animating');
+      el.detail.style.display = 'none';
+      el.detail.innerHTML = '';
+    }, 300);
+  } else {
+    /* Desktop: clear content and show the "select an item" empty state. */
     el.detail.innerHTML = '';
-  }, 300);
+    renderDetailPlaceholder();
+  }
+
   state.detailType       = null;
   state.detailId         = null;
   state.detailSlotNumber = null;
@@ -69,32 +83,137 @@ function _closeDetailImmediate() {
 }
 
 /**
+ * Renders an empty-state placeholder inside the detail pane when no entity
+ * is selected.  Only meaningful on desktop where the pane is always visible.
+ * Reuses the existing .empty and .det-panel-scroll CSS classes.
+ */
+function renderDetailPlaceholder() {
+  el.detail.innerHTML = `
+    <div class="det-panel-scroll" style="display:flex;align-items:center;justify-content:center;height:100%">
+      <div class="empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <h3>Select an item</h3>
+        <p>Click any item in the list to view its details here.</p>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Wires up the drag-to-resize handle between the list pane and detail pane.
+ *
+ * On pointerdown the handle captures the pointer and tracks pointermove to
+ * compute a new detail-pane width.  The width is clamped between
+ * --detail-min-w and --detail-max-w, applied live as a CSS custom property
+ * on :root, and persisted to IndexedDB on pointerup so the preference
+ * survives page reload.
+ *
+ * Uses Pointer Events API so the same code handles mouse, touch, and
+ * stylus without extra polyfills.
+ *
+ * On mobile/tablet this function is effectively a no-op because the handle
+ * element is display:none and getLayoutMode() guards the pointerdown handler.
+ */
+function initDetailResizeHandle() {
+  const handle = el.resizeHandle;
+  if (!handle) return;
+
+  handle.addEventListener('pointerdown', e => {
+    /* Guard: only active when the handle is visible (desktop layout). */
+    if (getLayoutMode() !== 'desktop') return;
+
+    handle.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+
+    /* Capture the starting cursor position and current pane width so we can
+       compute a delta rather than reading getBoundingClientRect every frame. */
+    const startX = e.clientX;
+    const rootStyle = getComputedStyle(document.documentElement);
+    const startW = parseInt(
+      rootStyle.getPropertyValue('--detail-pane-w') || rootStyle.getPropertyValue('--detail-w-default'),
+      10
+    ) || 360;
+
+    /* Read floor/ceiling from CSS variables so they stay in sync with style.css. */
+    const minW = parseInt(rootStyle.getPropertyValue('--detail-min-w'), 10) || 260;
+    const maxW = parseInt(rootStyle.getPropertyValue('--detail-max-w'), 10) || 600;
+
+    function onMove(ev) {
+      /* Dragging the handle LEFT widens the detail pane (user is "pulling" it). */
+      const delta = startX - ev.clientX;
+      const newW  = Math.min(maxW, Math.max(minW, startW + delta));
+      document.documentElement.style.setProperty('--detail-pane-w', newW + 'px');
+    }
+
+    function onUp() {
+      handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup',   onUp);
+
+      /* Persist the final width to IndexedDB so it survives reload. */
+      const finalW = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--detail-pane-w'),
+        10
+      );
+      if (Number.isFinite(finalW)) setSetting('detailPaneWidth', finalW);
+    }
+
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup',   onUp);
+  });
+}
+
+/**
  * Opens the detail panel for an entity. If a panel is already open, pushes it
  * onto detailStack so the back button can return to it.
  * @param {string} type  - Entity store name (e.g. 'assets', 'panels')
  * @param {string} id    - Entity id
+ *
+ * Mobile/tablet: animates the overlay panel in from the right (unchanged).
+ * Desktop:       the pane is permanently visible; we just update its content.
  */
 function openDetail(type, id) {
   const wasOpen = !!(state.detailType && state.detailId);
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId });
-    // Reset edit state when drilling into a child so the parent's changes
-    // don't linger and trigger a false unsaved-changes prompt on the way back
+    /* Reset edit state when drilling into a child so the parent's changes
+       don't linger and trigger a false unsaved-changes prompt on the way back. */
     _clearDetailEditState();
   }
   state.detailType = type;
   state.detailId   = id;
   renderDetail();
-  if (!wasOpen) {
-    el.detail.classList.remove('animating');
-    el.detail.style.display = 'flex';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => el.detail.classList.add('open'));
-    });
+
+  if (getLayoutMode() !== 'desktop') {
+    /* Mobile / tablet: slide the overlay panel in from the right. */
+    if (!wasOpen) {
+      el.detail.classList.remove('animating');
+      el.detail.style.display = 'flex';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => el.detail.classList.add('open'));
+      });
+    }
+    /* Show header back button so users can exit the overlay. */
+    el.backBtn.style.visibility = 'visible';
+    el.addBtn.style.visibility  = 'hidden';
+    el.pageTitle.textContent    = ENTITY[type].label;
+  } else {
+    /* Desktop: panel is always visible in the right column.
+       Keep the page title and Add button in the header (back button is only
+       shown when there is a parent detail to pop back to). */
+    if (state.detailStack.length > 0) {
+      el.backBtn.style.visibility = 'visible';
+      el.addBtn.style.visibility  = 'hidden';
+    } else {
+      el.backBtn.style.visibility = 'hidden';
+      el.addBtn.style.visibility  = 'visible';
+    }
+    el.pageTitle.textContent = ENTITY[state.page]?.plural || 'blueprint';
   }
-  el.backBtn.style.visibility = 'visible';
-  el.addBtn.style.visibility  = 'hidden';
-  el.pageTitle.textContent    = ENTITY[type].label;
 }
 
 /**
@@ -239,11 +358,15 @@ function openSlotDetail(rackId, slotNumber) {
   state.detailId         = rackId;
   state.detailSlotNumber = slotNumber;
   renderDetail();
-  if (!wasOpen) {
-    el.detail.classList.remove('animating');
-    el.detail.style.display = 'flex';
-    requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
+
+  if (getLayoutMode() !== 'desktop') {
+    if (!wasOpen) {
+      el.detail.classList.remove('animating');
+      el.detail.style.display = 'flex';
+      requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
+    }
   }
+  /* Back button is always shown when navigating into a slot (stack is non-empty). */
   el.backBtn.style.visibility = 'visible';
   el.addBtn.style.visibility  = 'hidden';
   el.pageTitle.textContent    = `Slot ${slotNumber}`;

@@ -52,26 +52,27 @@ const state = {
 
 const $ = id => document.getElementById(id);
 const el = {
-  header:    $('app-header'),
-  main:      $('app-main'),
-  backBtn:   $('back-btn'),
-  addBtn:    $('add-btn'),
-  pageTitle: $('page-title'),
-  detail:    $('detail-panel'),
-  backdrop:  $('sheet-backdrop'),
-  sheet:     $('form-sheet'),
-  formTitle: $('form-title'),
-  formBody:  $('form-body'),
-  formSave:  $('form-save'),
-  formCancel:$('form-cancel'),
-  confirmBD:   $('confirm-backdrop'),
-  confirmT:    $('confirm-title'),
-  confirmM:    $('confirm-msg'),
-  confirmNo:   $('confirm-no'),
-  confirmSave: $('confirm-save'),   // 3rd button used only by confirmUnsaved()
-  confirmYes:  $('confirm-yes'),
-  toast:     $('toast'),
-  nav:       $('bottom-nav'),
+  header:       $('app-header'),
+  main:         $('app-main'),
+  backBtn:      $('back-btn'),
+  addBtn:       $('add-btn'),
+  pageTitle:    $('page-title'),
+  detail:       $('detail-panel'),
+  resizeHandle: $('detail-resize-handle'), // drag handle between list and detail panes (desktop)
+  backdrop:     $('sheet-backdrop'),
+  sheet:        $('form-sheet'),
+  formTitle:    $('form-title'),
+  formBody:     $('form-body'),
+  formSave:     $('form-save'),
+  formCancel:   $('form-cancel'),
+  confirmBD:    $('confirm-backdrop'),
+  confirmT:     $('confirm-title'),
+  confirmM:     $('confirm-msg'),
+  confirmNo:    $('confirm-no'),
+  confirmSave:  $('confirm-save'),   // 3rd button used only by confirmUnsaved()
+  confirmYes:   $('confirm-yes'),
+  toast:        $('toast'),
+  nav:          $('bottom-nav'),
 };
 
 /* ---- TOAST ---- */

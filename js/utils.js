@@ -308,6 +308,62 @@ function normalizeMediaItems(value) {
   return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
 }
 
+/* ---- RESPONSIVE LAYOUT DETECTION ---- */
+
+/**
+ * Returns the current responsive tier based on window.innerWidth.
+ *
+ * 'mobile'  → < 768 px  Current single-column overlay behaviour unchanged.
+ * 'tablet'  → 768–1199 px  Icon-only sidebar; detail slides in as right overlay.
+ * 'desktop' → ≥ 1200 px  Three-column layout; detail is a permanent side pane.
+ *
+ * These thresholds mirror the CSS @media breakpoints in style.css.
+ */
+function getLayoutMode() {
+  if (window.innerWidth >= 1200) return 'desktop';
+  if (window.innerWidth >= 768)  return 'tablet';
+  return 'mobile';
+}
+
+/**
+ * Stamps the current layout mode on document.body as a data-layout attribute
+ * so both CSS (body[data-layout="desktop"] selectors) and JS can branch on it
+ * without duplicating the breakpoint numbers.
+ *
+ * Also initialises the desktop detail pane if we are already on a wide
+ * viewport at page load (before the user clicks any entity card).
+ *
+ * Called once from init() and re-evaluates on every window resize (debounced
+ * to 100 ms to avoid thrashing layout during continuous drag).
+ */
+function initLayoutDetection() {
+  function applyLayout() {
+    const mode = getLayoutMode();
+    document.body.dataset.layout = mode;
+
+    if (mode === 'desktop') {
+      /* On desktop the detail pane is always visible.  If nothing is
+         currently selected, show the empty-state placeholder.
+         renderDetailPlaceholder lives in app.js (loaded after utils.js). */
+      const panel = document.getElementById('detail-panel');
+      if (panel) {
+        panel.style.display = 'flex';
+        if (!panel.innerHTML.trim() && typeof renderDetailPlaceholder === 'function') {
+          renderDetailPlaceholder();
+        }
+      }
+    }
+  }
+
+  applyLayout();
+
+  let _resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(applyLayout, 100);
+  });
+}
+
 /* ---- LIGHTBOX ---- */
 
 // Opens a fullscreen lightbox for an image or video media item.
