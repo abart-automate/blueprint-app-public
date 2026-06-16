@@ -421,6 +421,9 @@ function openMediaLightbox(mediaItem) {
     lb.appendChild(closeBtn);
     document.querySelector('#app').appendChild(lb);
   }
+  // Revoke the outgoing lightbox blob URL before replacing it — the lightbox lives in #app,
+  // not inside el.detail, so revokeBlobUrlsInContainer(el.detail) never reaches it.
+  revokeBlobUrlsInContainer(lb);
   lb.querySelectorAll('img, video').forEach(el => el.remove());
 
   const src = createMediaUrl(mediaItem);
@@ -442,5 +445,7 @@ function openMediaLightbox(mediaItem) {
 function _closeLightbox(lb) {
   const video = lb.querySelector('video');
   if (video) video.pause();
+  // Revoke blob URL before removing the element from DOM.
+  revokeBlobUrlsInContainer(lb);
   lb.remove();
 }

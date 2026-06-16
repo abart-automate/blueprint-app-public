@@ -59,6 +59,16 @@ function _clearDetailEditState() {
 function _closeDetailImmediate() {
   el.detail.classList.remove('open');
 
+  // Revoke all blob URLs while el.detail DOM is still intact — must precede innerHTML = ''.
+  // revokeBlobUrlsInContainer catches untracked child-section URLs (from getCardThumbSrc,
+  // not in _mediaUrls) that revokeAllMediaUrls cannot reach. Placing both calls here —
+  // before the layout branch — ensures desktop (immediate innerHTML = '') and mobile
+  // (innerHTML = '' fires 300ms later in setTimeout) both operate on the live DOM.
+  revokeBlobUrlsInContainer(el.detail);
+  // Release all tracked blob URLs now that the detail panel is gone.
+  // (Form-specific URLs are handled by revokeFormMediaUrls in closeSheet.)
+  revokeAllMediaUrls();
+
   if (getLayoutMode() !== 'desktop') {
     /* Animate the panel out before hiding it so the slide-out transition
        plays instead of disappearing instantly. */
@@ -79,12 +89,6 @@ function _closeDetailImmediate() {
   state.detailSlotNumber = null;
   state.detailStack      = [];
   _clearDetailEditState();
-  // Revoke untracked child-section card thumbnail URLs that revokeAllMediaUrls() cannot
-  // reach (they are not in _mediaUrls). Must run while el.detail still holds its DOM.
-  revokeBlobUrlsInContainer(el.detail);
-  // Release all tracked blob URLs now that the detail panel is gone.
-  // (Form-specific URLs are handled by revokeFormMediaUrls in closeSheet.)
-  revokeAllMediaUrls();
   setHeaderForPage(state.page);
 }
 
@@ -528,6 +532,11 @@ const PAGE_RENDERERS = {
 
 /** Re-renders the current page based on state.page. */
 async function renderPage() {
+  // Revoke any blob URLs from the outgoing page's card list before replacing el.main.
+  // getCardThumbSrc() creates untracked URLs invisible to revokeAllMediaUrls(); they must
+  // be explicitly revoked here on every page navigation to prevent accumulation toward the
+  // per-page blob URL cap.
+  revokeBlobUrlsInContainer(el.main);
   el.main.innerHTML = '<div class="spinner"></div>';
   await (PAGE_RENDERERS[state.page] || (() => renderList(state.page)))();
 }
@@ -976,6 +985,9 @@ async function renderList(type, opts = {}) {
 
   const parentFilter = buildParentFilterChips(type, items, opts.chipField);
 
+  // Revoke card thumbnails from any previous list before replacing el.main content.
+  // This covers direct calls (e.g., post-form-save paths) where renderPage() is not the entry.
+  revokeBlobUrlsInContainer(el.main);
   el.main.innerHTML = `
     <div class="search-wrap">
       <span class="search-icon">
