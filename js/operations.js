@@ -36,6 +36,9 @@ async function saveSlotForm() {
     const rack     = state.refs.assets?.[rackId];
     if (!rack) { showToast('Rack not found', 'error'); return; }
     const cardType = $('f-cardType')?.value || '';
+    // Card Type must be selected before type-specific sections (IO points, terminal wiring,
+    // network ports) can be collected — reject early so the user gets clear feedback.
+    if (!cardType) { showToast('Card Type is required', 'error'); return; }
     const slotData = {
       slotNumber,
       name:            $('f-name')?.value.trim()            || '',
@@ -69,12 +72,19 @@ async function saveSlotForm() {
     const slots = [...(rack.slots || [])];
     const idx   = slots.findIndex(s => s.slotNumber === slotNumber);
     if (idx >= 0) slots[idx] = slotData; else slots.push(slotData);
-    await upsert('assets', { ...rack, slots });
-    await refreshAll();
-    closeSheet();
-    showToast('Card saved', 'success');
-    renderPage();
-    renderDetail({ preserveScroll: true });
+    try {
+      await upsert('assets', { ...rack, slots });
+      await refreshAll();
+      closeSheet();
+      showToast('Card saved', 'success');
+      renderPage();
+      renderDetail({ preserveScroll: true });
+    } catch (err) {
+      // Surface hidden exceptions (quota exceeded, transaction failure, etc.)
+      // that would otherwise be swallowed as unhandled promise rejections.
+      showToast('Failed to save card', 'error');
+      console.error('[saveSlotForm]', err);
+    }
 }
 
 async function savePlantForm() {

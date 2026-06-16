@@ -79,6 +79,9 @@ function _closeDetailImmediate() {
   state.detailSlotNumber = null;
   state.detailStack      = [];
   _clearDetailEditState();
+  // Release all tracked blob URLs now that the detail panel is gone.
+  // (Form-specific URLs are handled by revokeFormMediaUrls in closeSheet.)
+  revokeAllMediaUrls();
   setHeaderForPage(state.page);
 }
 
@@ -294,6 +297,9 @@ function openSheet(type, id = null, preset = null) {
   el.formTitle.textContent = isCopy
     ? `Duplicate ${subLabel || ENTITY[type].label}`
     : (id ? 'Edit ' : 'Add ') + (subLabel || ENTITY[type].label);
+  // Mark the blob URL pool boundary before the form renders so that
+  // revokeFormMediaUrls() in closeSheet() only revokes form-specific URLs.
+  markFormMediaStart();
   renderForm();
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';
@@ -308,7 +314,9 @@ function closeSheet() {
   el.formSave.textContent = 'Save';
   el.formSave.disabled    = false;
   setTimeout(() => { el.sheet.style.display = 'none'; el.formBody.innerHTML = ''; }, 300);
-  revokeAllMediaUrls();
+  // Only revoke blob URLs created during this form session; detail-panel URLs must stay
+  // valid because the detail panel may still be visible with thumbnails referencing them.
+  revokeFormMediaUrls();
   state.formType         = null;
   state.formId           = null;
   state.formPreset       = null;
@@ -345,6 +353,8 @@ function openSlotForm(rackId, slotNumber) {
   el.formTitle.textContent = existing
     ? `Slot ${slotNumber} — Edit Card`
     : `Slot ${slotNumber} — Add Card`;
+  // Mark the blob URL pool boundary before the form renders — same reason as openSheet().
+  markFormMediaStart();
   renderForm();
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';

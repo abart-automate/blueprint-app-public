@@ -663,20 +663,26 @@ async function renderEntityDetail(savedScroll) {
       const slotId    = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
       const container = document.getElementById(slotId);
       if (container) {
-        renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
-          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); state.detailMediaDirty = true; },
-          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   state.detailMediaDirty = true; },
+        // Self-referencing closure mirrors renderEntityForm's reSlot() pattern so
+        // thumbnails appear immediately without waiting for Save to trigger renderDetail().
+        const reSlot = () => renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
+          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); state.detailMediaDirty = true; reSlot(); },
+          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   state.detailMediaDirty = true; reSlot(); },
         });
+        reSlot();
       }
     }
   }
   if (!cfg.noImages) {
     const gallery = document.getElementById('det-gallery');
     if (gallery) {
-      renderMediaGallery(gallery, state.detailImages, {
-        onAdd:    items => { state.detailImages.push(...items); state.detailMediaDirty = true; },
-        onRemove: i     => { state.detailImages.splice(i, 1);  state.detailMediaDirty = true; },
+      // Self-referencing closure mirrors renderEntityForm's reGallery() pattern —
+      // same reason: immediate thumbnail visibility without a Save round-trip.
+      const reGallery = () => renderMediaGallery(gallery, state.detailImages, {
+        onAdd:    items => { state.detailImages.push(...items); state.detailMediaDirty = true; reGallery(); },
+        onRemove: i     => { state.detailImages.splice(i, 1);  state.detailMediaDirty = true; reGallery(); },
       });
+      reGallery();
     }
   }
 
@@ -1054,9 +1060,16 @@ async function saveSlotDetailChanges(rackId, slotNumber) {
   const updatedSlots = [...rack.slots];
   updatedSlots[slotIdx] = updatedSlot;
 
-  await upsert('assets', { ...rack, slots: updatedSlots });
-  await refreshAll();
-  _clearDetailEditState();
-  showToast('Card saved', 'success');
+  try {
+    await upsert('assets', { ...rack, slots: updatedSlots });
+    await refreshAll();
+    _clearDetailEditState();
+    showToast('Card saved', 'success');
+  } catch (err) {
+    // Prevent silent failure on DB errors — same pattern as saveSlotForm in operations.js.
+    showToast('Failed to save card', 'error');
+    console.error('[saveSlotDetailChanges]', err);
+    return false;
+  }
   return true;
 }

@@ -273,6 +273,11 @@ function base64ToMediaItem(dataUrl) {
 /* ---- OBJECT URL LIFECYCLE ---- */
 
 const _mediaUrls = [];
+// Index into _mediaUrls where the current form session's URLs begin.
+// Set by markFormMediaStart() each time a sheet form opens so that
+// revokeFormMediaUrls() can revoke only form-specific entries, leaving
+// detail-panel blob URLs intact for the still-visible detail panel.
+let _formMediaStart = 0;
 
 // Creates and tracks a blob object URL. Call revokeAllMediaUrls() when done.
 // If mediaItem has a _legacySrc (base64 string), returns it directly without creating a URL.
@@ -283,9 +288,24 @@ function createMediaUrl(mediaItem) {
   return url;
 }
 
+// Records the pool boundary just before a sheet form opens.
+// Any URLs pushed to _mediaUrls after this point belong to the form session.
+function markFormMediaStart() {
+  _formMediaStart = _mediaUrls.length;
+}
+
+// Revoke only blob URLs created since the last markFormMediaStart() call.
+// Detail-panel blob URLs (added before the form opened) are left intact so
+// thumbnails in the still-visible detail panel are not invalidated.
+function revokeFormMediaUrls() {
+  _mediaUrls.splice(_formMediaStart).forEach(u => URL.revokeObjectURL(u));
+}
+
+// Revoke every tracked blob URL — call when the detail panel closes or all data is cleared.
 function revokeAllMediaUrls() {
   _mediaUrls.forEach(u => URL.revokeObjectURL(u));
   _mediaUrls.length = 0;
+  _formMediaStart = 0;
 }
 
 // Returns a displayable src string for use in card thumbnail <img> elements.
