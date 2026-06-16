@@ -288,6 +288,16 @@ function createMediaUrl(mediaItem) {
   return url;
 }
 
+// Revoke a single tracked blob URL and remove it from the pool.
+// Call this before discarding an <img>/<video> that used createMediaUrl() so the
+// pool does not grow unboundedly when a gallery is re-rendered on every add/remove.
+// Revoking an already-revoked or untracked URL is a safe no-op.
+function revokeTrackedMediaUrl(url) {
+  const i = _mediaUrls.indexOf(url);
+  if (i !== -1) _mediaUrls.splice(i, 1);
+  URL.revokeObjectURL(url);
+}
+
 // Records the pool boundary just before a sheet form opens.
 // Any URLs pushed to _mediaUrls after this point belong to the form session.
 function markFormMediaStart() {
