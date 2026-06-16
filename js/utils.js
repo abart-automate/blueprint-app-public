@@ -298,6 +298,16 @@ function revokeTrackedMediaUrl(url) {
   URL.revokeObjectURL(url);
 }
 
+// Revoke all blob URLs currently referenced by <img>/<video> elements inside containerEl.
+// Call this immediately before any innerHTML assignment that destroys blob-src elements.
+// Safe for both tracked URLs (removed from _mediaUrls pool + revoked) and untracked URLs
+// such as those from getCardThumbSrc() (URL.revokeObjectURL called directly; no pool op).
+function revokeBlobUrlsInContainer(containerEl) {
+  containerEl.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').forEach(el => {
+    revokeTrackedMediaUrl(el.src);
+  });
+}
+
 // Records the pool boundary just before a sheet form opens.
 // Any URLs pushed to _mediaUrls after this point belong to the form session.
 function markFormMediaStart() {

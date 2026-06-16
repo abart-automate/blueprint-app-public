@@ -565,6 +565,12 @@ async function renderEntityDetail(savedScroll) {
      The "Edit" button (opens bottom-sheet form) is removed — all editing
      happens inline.  The "Duplicate" button is kept.
      ------------------------------------------------------------------ */
+  // Revoke all blob URLs in the current detail panel before replacing its HTML.
+  // Gallery <img>/<video> elements created by createMediaUrl() are tracked in _mediaUrls;
+  // child-section card thumbnails from getCardThumbSrc() are untracked. Both are destroyed
+  // by the innerHTML replacement — without this call they accumulate on every Save re-render
+  // and eventually exhaust the browser's per-page blob URL cap, breaking all thumbnails.
+  revokeBlobUrlsInContainer(el.detail);
   // All scrollable content goes inside .det-panel-scroll; the save bar sits
   // outside as a sibling so the flex column pins it above the nav bar.
   el.detail.innerHTML = `

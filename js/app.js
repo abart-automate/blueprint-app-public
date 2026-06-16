@@ -79,6 +79,9 @@ function _closeDetailImmediate() {
   state.detailSlotNumber = null;
   state.detailStack      = [];
   _clearDetailEditState();
+  // Revoke untracked child-section card thumbnail URLs that revokeAllMediaUrls() cannot
+  // reach (they are not in _mediaUrls). Must run while el.detail still holds its DOM.
+  revokeBlobUrlsInContainer(el.detail);
   // Release all tracked blob URLs now that the detail panel is gone.
   // (Form-specific URLs are handled by revokeFormMediaUrls in closeSheet.)
   revokeAllMediaUrls();
@@ -990,6 +993,11 @@ async function renderList(type, opts = {}) {
   let activeParent = 'all';
 
   const render = () => {
+    // Revoke outgoing card thumbnail blob URLs before replacing the card list.
+    // getCardThumbSrc() creates intentionally untracked URLs; they must be explicitly
+    // revoked on every re-render to prevent unbounded accumulation toward the per-page
+    // blob URL cap. Covers both the empty-state and populated-state branches below.
+    revokeBlobUrlsInContainer(list);
     const q     = el.main.querySelector('#list-search')?.value?.toLowerCase() || '';
     const shown = items.filter(item => {
       const matchQ = !q || item.name?.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q) || item.tag?.toLowerCase().includes(q);

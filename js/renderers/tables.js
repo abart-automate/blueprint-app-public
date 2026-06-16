@@ -59,14 +59,8 @@ function _makeUploadInput(multiple, onFiles) {
 // Shared core: renders media thumbs into containerEl.
 // emptyHtml: markup shown when readonly and no items. uploadLabel: upload button text.
 function _renderMediaItems(containerEl, mediaItems, { onAdd, onRemove, readonly, emptyHtml, uploadLabel } = {}) {
-  // Revoke and untrack blob URLs from the outgoing thumbs before clearing the container.
-  // Without this, every reGallery()/reSlot() re-render adds new URLs to the shared pool
-  // while the old ones stay live. iOS Safari (and some other engines) impose a per-page
-  // cap on blob URLs; once hit, URL.createObjectURL() starts returning unusable URLs and
-  // all subsequent thumbnails render as broken images.
-  containerEl.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').forEach(el => {
-    revokeTrackedMediaUrl(el.src);
-  });
+  // Revoke outgoing blob URLs before clearing — see revokeBlobUrlsInContainer() in utils.js.
+  revokeBlobUrlsInContainer(containerEl);
   containerEl.innerHTML = '';
   if (!mediaItems.length && readonly) {
     containerEl.innerHTML = emptyHtml;
