@@ -970,11 +970,16 @@ async function saveDetailChanges(type, id) {
   // Remove the internal sentinel used by switch-table dirty tracking
   delete updatedItem._switchDirty;
 
-  // Persist current media state (always write, even if unchanged, so no data is lost)
-  updatedItem.images = state.detailImages;
-  updatedItem.namedPhotos = Object.fromEntries(
-    Object.entries(state.detailNamedPhotos)
-  );
+  // Persist current media state. Freshen blobs before writing — IDB-backed blobs retrieved
+  // in a previous session cannot be reliably re-stored via structured clone in WebKit/Safari
+  // and come back as zero-byte blobs on the next read. freshenMediaItems() converts each
+  // blob to a fresh in-memory copy so the round-trip works correctly.
+  updatedItem.images = await freshenMediaItems(state.detailImages);
+  const _freshNamedPhotos = {};
+  for (const [_slot, _items] of Object.entries(state.detailNamedPhotos)) {
+    _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
+  }
+  updatedItem.namedPhotos = _freshNamedPhotos;
 
   // Persist each editable wiring table key back into the item
   for (const [key, rows] of Object.entries(state.detailItemTables)) {

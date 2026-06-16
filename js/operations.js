@@ -179,8 +179,14 @@ async function saveEntityForm() {
     }
   }
 
-  item.images = [...state.formImages];
-  if (cfg.requiredPhotoSlots) item.namedPhotos = {...state.formNamedPhotos};
+  item.images = await freshenMediaItems(state.formImages);
+  if (cfg.requiredPhotoSlots) {
+    const _freshNamedPhotos = {};
+    for (const [_slot, _items] of Object.entries(state.formNamedPhotos)) {
+      _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
+    }
+    item.namedPhotos = _freshNamedPhotos;
+  }
   for (const t of itemTables(type, item))
     item[t.key] = (state.formItemTables[t.key] || []).filter(r => r.terminal || r.label);
 

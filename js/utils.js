@@ -348,6 +348,24 @@ function normalizeMediaItems(value) {
   return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
 }
 
+// Converts IDB-backed blobs to fresh in-memory blobs before writing back to IndexedDB.
+// WebKit/Safari cannot reliably re-store blobs retrieved from IndexedDB via structured
+// clone — they write back as zero-byte blobs, causing broken thumbnails after a
+// close-and-reopen cycle. Reading via arrayBuffer() + new Blob() produces a true
+// in-memory copy that the structured clone algorithm handles correctly.
+async function freshenMediaItems(items) {
+  if (!items?.length) return [];
+  return Promise.all(items.map(async mi => {
+    if (!mi?.blob || mi._legacySrc) return mi;
+    try {
+      const buf = await mi.blob.arrayBuffer();
+      return { ...mi, blob: new Blob([buf], { type: mi.blob.type || mi.mimeType }) };
+    } catch {
+      return mi;
+    }
+  }));
+}
+
 /* ---- RESPONSIVE LAYOUT DETECTION ---- */
 
 /**
