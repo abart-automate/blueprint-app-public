@@ -78,14 +78,7 @@ async function renderSlotForm() {
   `;
 
   /* Delegated .field-empty toggle for slot form */
-  el.formBody.addEventListener('input',  e => {
-    const f = e.target.closest('.f-input, .f-textarea');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
-  el.formBody.addEventListener('change', e => {
-    const f = e.target.closest('.f-select');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
+  attachFieldEmptyToggle(el.formBody, '.f-input, .f-textarea', '.f-select');
 
   const renderSlotCardTypeFields = async () => {
     const cardType  = $('f-cardType')?.value;
@@ -230,14 +223,7 @@ async function renderEntityForm() {
   el.formBody.innerHTML = html;
 
   /* Delegated .field-empty toggle — covers static fields and all dynamic containers */
-  el.formBody.addEventListener('input',  e => {
-    const f = e.target.closest('.f-input, .f-textarea');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
-  el.formBody.addEventListener('change', e => {
-    const f = e.target.closest('.f-select');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
+  attachFieldEmptyToggle(el.formBody, '.f-input, .f-textarea', '.f-select');
 
   if (cfg.itemTables) {
     for (const t of cfg.itemTables) renderItemTable(t.key, t.label);
@@ -493,12 +479,11 @@ async function buildFormField(f, existing, type) {
   }
 
   if (f.type === 'enum') {
-    const opts = f.options.map(o => `<option value="${esc(o)}" ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}</label>
       <select id="f-${f.key}" class="f-select${emptyCls}">
         <option value="">— Select —</option>
-        ${opts}
+        ${buildEnumOptions(f.options, val)}
       </select>
     </div>`;
   }
@@ -506,12 +491,11 @@ async function buildFormField(f, existing, type) {
   if (f.type === 'ref') {
     let items = state.cache[f.refStore] || [];
     if (f.refFilter) items = items.filter(f.refFilter);
-    const opts  = items.map(i => `<option value="${i.id}" ${i.id === val ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
       <select id="f-${f.key}" class="f-select${emptyCls}"${f.readOnly ? ' disabled' : ''}>
         <option value="">— Unassigned —</option>
-        ${opts}
+        ${buildRefOptions(items, val)}
       </select>
     </div>`;
   }
@@ -520,12 +504,11 @@ async function buildFormField(f, existing, type) {
     const preset   = state.formPreset?.field === 'assignedToType' ? state.formPreset.value : null;
     const current  = existing?.assignedToType || preset || '';
     const typeCls  = !current ? ' field-empty' : '';
-    const opts = f.options.map(o => `<option value="${o}" ${o === current ? 'selected' : ''}>${esc(o)}</option>`).join('');
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}</label>
       <select id="f-assign-type" class="f-select${typeCls}">
         <option value="">— Select type —</option>
-        ${opts}
+        ${buildEnumOptions(f.options, current)}
       </select>
     </div>`;
   }

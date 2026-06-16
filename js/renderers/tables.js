@@ -163,10 +163,10 @@ function renderSwitchNetworksTable(
   if (!container) return;
   const rows = networks;
   const takenNetIds = new Set(rows.map(r => r.networkId).filter(Boolean));
-  const makeNetOpts = (selectedId) =>
-    (state.cache.networks || [])
-      .filter(n => n.networkType === 'Ethernet' && (!takenNetIds.has(n.id) || n.id === selectedId))
-      .map(n => `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`).join('');
+  const makeNetOpts = (selectedId) => buildNetworkOptions(
+    selectedId,
+    (state.cache.networks || []).filter(n => n.networkType === 'Ethernet' && (!takenNetIds.has(n.id) || n.id === selectedId))
+  );
   const rmIcon = ICON_RM;
 
   // Router subclass may only have 2 network connections — resolve subclass from param or form
@@ -189,7 +189,7 @@ function renderSwitchNetworksTable(
   container.innerHTML = html;
 
   // Helper: trigger a full re-render of both tables (detail mode uses closure; form mode calls directly)
-  const doRerender = () => rerender ? rerender() : (renderSwitchNetworksTable(), renderSwitchPortsTable());
+  const doRerender = rerender ?? (() => (renderSwitchNetworksTable(), renderSwitchPortsTable()));
 
   container.querySelectorAll('.sn-network').forEach(sel => {
     sel.addEventListener('change', () => {
@@ -276,10 +276,7 @@ function renderSwitchPortsTable(
   const assignedNetIds = new Set(networks.map(r => r.networkId).filter(Boolean));
   const assignedNets   = (state.cache.networks || []).filter(n => assignedNetIds.has(n.id));
 
-  const makeNetOpts = (selectedId) =>
-    assignedNets.map(n =>
-      `<option value="${n.id}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`
-    ).join('');
+  const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, assignedNets);
 
   const makeDeviceOpts = (networkId, selectedId) => {
     const opts = [];
@@ -328,7 +325,7 @@ function renderSwitchPortsTable(
   container.innerHTML = html;
 
   // Helper: re-render ports table (detail mode uses closure; form mode calls directly)
-  const doRerender = () => rerender ? rerender() : renderSwitchPortsTable();
+  const doRerender = rerender ?? (() => renderSwitchPortsTable());
 
   container.querySelectorAll('.sp-port').forEach(inp => {
     inp.addEventListener('change', () => {
@@ -613,10 +610,7 @@ function renderNetworkPortsTable(
   const doRerender = rerender ?? (() => renderNetworkPortsTable(containerId, ports, rerender, onDirty));
 
   // All network types are offered — Controller/Communication cards can use any protocol
-  const makeNetOpts = (selectedId) =>
-    (state.cache.networks || [])
-      .map(n => `<option value="${esc(n.id)}"${n.id === selectedId ? ' selected' : ''}>${esc(n.name)}</option>`)
-      .join('');
+  const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, state.cache.networks || []);
 
   container.innerHTML = ports.map((port, i) => `
     <div class="sn-network-row np-port-row" data-np-idx="${i}">

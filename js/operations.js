@@ -5,6 +5,8 @@
    openDetail, renderPage, renderDetail)
    ============================================================ */
 
+const _getChildren = type => ENTITY[type]?.getChildren ?? [];
+
 /** Dispatcher: routes to the appropriate save handler based on state.formType. */
 async function saveForm() {
   const type = state.formType;
@@ -122,6 +124,22 @@ function validateUniqueIp(item, allAssets) {
   return null;
 }
 
+// Returns an error string if any other item in the store already has the same name, or null.
+function validateUniqueName(type, item) {
+  const nameVal = item.name?.trim();
+  if (!nameVal) return null;
+  const conflict = (state.cache[type] || []).find(i => i.id !== item.id && i.name === nameVal);
+  return conflict ? `Name "${nameVal}" is already in use` : null;
+}
+
+// Returns the first field config that is required but empty, or null if all required fields pass.
+function validateRequiredFields(type, item) {
+  for (const f of getEffectiveFields(type, item)) {
+    if (f.required && !item[f.key]) return f;
+  }
+  return null;
+}
+
 // Saves the currently-open entity form. Uses getEffectiveFields() for a single-pass
 // field read covering base, protocol, class, subclass, and network-type fields.
 // Switch/Router port and network tables are read from form state, not DOM inputs.
@@ -159,25 +177,11 @@ async function saveEntityForm() {
     if (ipError) { showToast(ipError, 'error'); return; }
   }
 
-  // Enforce store-wide name uniqueness
-  const nameVal = item.name?.trim();
-  if (nameVal && ENTITY[type]) {
-    const conflict = (state.cache[type] || []).find(i => i.id !== item.id && i.name === nameVal);
-    if (conflict) {
-      showToast(`Name "${nameVal}" is already in use`, 'error');
-      $('f-name')?.focus();
-      return;
-    }
-  }
+  const nameError = validateUniqueName(type, item);
+  if (nameError) { showToast(nameError, 'error'); $('f-name')?.focus(); return; }
 
-  // Validate required fields
-  for (const f of getEffectiveFields(type, item)) {
-    if (f.required && !item[f.key]) {
-      showToast(`${f.label} is required`, 'error');
-      $(`f-${f.key}`)?.focus();
-      return;
-    }
-  }
+  const missingField = validateRequiredFields(type, item);
+  if (missingField) { showToast(`${missingField.label} is required`, 'error'); $(`f-${missingField.key}`)?.focus(); return; }
 
   item.images = await freshenMediaItems(state.formImages);
   if (cfg.requiredPhotoSlots) {
@@ -250,7 +254,7 @@ async function deleteItem(type, id, name) {
 
   // Collect direct children from cache
   const childRels = [];
-  for (const rel of ENTITY[type].getChildren) {
+  for (const rel of _getChildren(type)) {
     let items = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
     if (rel.filter) items = items.filter(rel.filter);
     if (items.length > 0) childRels.push({ ...rel, items });
@@ -294,7 +298,7 @@ async function deleteItem(type, id, name) {
 }
 
 async function cascadeDeleteItem(type, id) {
-  for (const rel of ENTITY[type].getChildren) {
+  for (const rel of _getChildren(type)) {
     let children = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
     if (rel.filter) children = children.filter(rel.filter);
     for (const child of children) {
@@ -343,9 +347,8 @@ async function duplicateItem(type, id) {
   const original = state.refs[type]?.[id];
   if (!original) return;
 
-  const cfg = ENTITY[type];
   const childRels = [];
-  for (const rel of cfg.getChildren || []) {
+  for (const rel of _getChildren(type)) {
     const children = (state.cache[rel.store] || [])
       .filter(i => i[rel.field] === id && (!rel.filter || rel.filter(i)));
     if (children.length) childRels.push({ ...rel, count: children.length });
@@ -369,8 +372,7 @@ async function duplicateItem(type, id) {
 }
 
 async function cascadeDuplicateChildren(type, sourceId, newParentId) {
-  const cfg = ENTITY[type];
-  for (const rel of cfg.getChildren || []) {
+  for (const rel of _getChildren(type)) {
     const children = (state.cache[rel.store] || [])
       .filter(i => i[rel.field] === sourceId && (!rel.filter || rel.filter(i)));
     for (const child of children) {
@@ -458,6 +460,8 @@ async function showExportOptions() {
    IMPORT / EXPORT WRAPPERS
    ============================================================ */
 
+const _toArr = v => Array.isArray(v) ? v : (v ? [v] : []);
+
 async function _blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -478,8 +482,7 @@ async function _serializeEntityMedia(entity) {
   if (out.namedPhotos) {
     const slots = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
-      const arr = Array.isArray(value) ? value : (value ? [value] : []);
-      slots[slot] = await Promise.all(arr.map(async item => {
+      slots[slot] = await Promise.all(_toArr(value).map(async item => {
         if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
         return item;
       }));
@@ -499,8 +502,7 @@ function _deserializeEntityMedia(entity) {
   if (out.namedPhotos) {
     const slots = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
-      const arr = Array.isArray(value) ? value : (value ? [value] : []);
-      slots[slot] = arr
+      slots[slot] = _toArr(value)
         .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
         .filter(item => item?.blob instanceof Blob || typeof item === 'string');
     }

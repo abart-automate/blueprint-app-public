@@ -133,41 +133,37 @@ function calcPanelDevicesCompleteness(panelId) {
   return Math.round(allItems.reduce((sum, { type, item }) => sum + calcCompleteness(type, item), 0) / allItems.length);
 }
 
+function buildProgressRow(label, pct, color, marginTop = '') {
+  const style = marginTop ? ` style="margin-top:${marginTop}"` : '';
+  return `<div class="det-completeness-row"${style}>
+           <span class="det-completeness-label">${label}</span>
+           <span class="det-completeness-pct" style="color:${color}">${pct}%</span>
+         </div>
+         <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>`;
+}
+
 function buildDetailCompletenessHtml(type, item) {
   if (type === 'areas') {
     const pct = calcAreaCompleteness(item);
     const color = completenessColor(pct);
     return `
       <div class="det-card det-completeness-card">
-        <div class="det-completeness-row">
-          <span class="det-completeness-label">Area Completeness</span>
-          <span class="det-completeness-pct" style="color:${color}">${pct}%</span>
-        </div>
-        <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>
+        ${buildProgressRow('Area Completeness', pct, color)}
       </div>`;
   }
   if (type === 'panels') {
     const panelPct = calcCompleteness('panels', item);
     const panelColor = completenessColor(panelPct);
     const devPct = calcPanelDevicesCompleteness(item.id);
-    const devColor = devPct !== null ? completenessColor(devPct) : 'var(--muted)';
     const devRow = devPct !== null
-      ? `<div class="det-completeness-row" style="margin-top:12px">
-           <span class="det-completeness-label">Devices</span>
-           <span class="det-completeness-pct" style="color:${devColor}">${devPct}%</span>
-         </div>
-         <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${devPct}%;background:${devColor}"></div></div>`
+      ? buildProgressRow('Devices', devPct, completenessColor(devPct), '12px')
       : `<div class="det-completeness-row" style="margin-top:12px">
            <span class="det-completeness-label">Devices</span>
            <span style="font-size:13px;color:var(--muted)">None assigned</span>
          </div>`;
     return `
       <div class="det-card det-completeness-card">
-        <div class="det-completeness-row">
-          <span class="det-completeness-label">Panel</span>
-          <span class="det-completeness-pct" style="color:${panelColor}">${panelPct}%</span>
-        </div>
-        <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${panelPct}%;background:${panelColor}"></div></div>
+        ${buildProgressRow('Panel', panelPct, panelColor)}
         ${devRow}
       </div>`;
   }
@@ -175,11 +171,7 @@ function buildDetailCompletenessHtml(type, item) {
   const color = completenessColor(pct);
   return `
     <div class="det-card det-completeness-card">
-      <div class="det-completeness-row">
-        <span class="det-completeness-label">Completeness</span>
-        <span class="det-completeness-pct" style="color:${color}">${pct}%</span>
-      </div>
-      <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>
+      ${buildProgressRow('Completeness', pct, color)}
     </div>`;
 }
 
@@ -419,6 +411,45 @@ function initLayoutDetection() {
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(applyLayout, 100);
+  });
+}
+
+/* ---- OPTION BUILDERS ---- */
+
+// Builds <option> HTML for a list of string values (enum fields).
+function buildEnumOptions(options, selectedVal) {
+  return options
+    .map(o => `<option value="${esc(o)}"${o === selectedVal ? ' selected' : ''}>${esc(o)}</option>`)
+    .join('');
+}
+
+// Builds <option> HTML for a list of {id, name} ref objects.
+function buildRefOptions(items, selectedId) {
+  return items
+    .map(i => `<option value="${esc(i.id)}"${i.id === selectedId ? ' selected' : ''}>${esc(i.name)}</option>`)
+    .join('');
+}
+
+// Builds <option> HTML from a pre-filtered array of network objects.
+// Callers are responsible for filtering (Ethernet-only, assigned-only, etc.).
+function buildNetworkOptions(selectedId, networks) {
+  return buildRefOptions(networks, selectedId);
+}
+
+/* ---- FIELD-EMPTY TOGGLE ---- */
+
+// Attaches delegated input/change listeners that toggle the 'field-empty' class
+// based on whether the matched element has a value. changeSel defaults to inputSel
+// when both events should use the same selector (e.g. detail view); pass separate
+// selectors when input and select controls use different class names (e.g. form view).
+function attachFieldEmptyToggle(container, inputSel, changeSel = inputSel) {
+  container.addEventListener('input', e => {
+    const f = e.target.closest(inputSel);
+    if (f) f.classList.toggle('field-empty', !f.value);
+  });
+  container.addEventListener('change', e => {
+    const f = e.target.closest(changeSel);
+    if (f) f.classList.toggle('field-empty', !f.value);
   });
 }
 

@@ -247,14 +247,7 @@ async function renderSlotDetail(savedScroll) {
   });
 
   /* Delegated toggle for .field-empty — covers all field and IO controls */
-  el.detail.addEventListener('input',  e => {
-    const f = e.target.closest('[data-edit-field], [data-io-idx]');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
-  el.detail.addEventListener('change', e => {
-    const f = e.target.closest('[data-edit-field], [data-io-idx]');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
+  attachFieldEmptyToggle(el.detail, '[data-edit-field], [data-io-idx]');
 
   /* ------------------------------------------------------------------
      Button wiring
@@ -351,23 +344,16 @@ function buildEditableFieldHtml(f, item) {
   }
 
   if (f.type === 'enum') {
-    const opts = (f.options || []).map(o =>
-      `<option value="${esc(o)}"${o === rawVal ? ' selected' : ''}>${esc(o)}</option>`
-    ).join('');
     return `<select class="det-inline-select${emptyCls}" data-edit-field="${f.key}">
       <option value="">— Select —</option>
-      ${opts}
+      ${buildEnumOptions(f.options || [], rawVal)}
     </select>`;
   }
 
   if (f.type === 'ref') {
-    const refItems = state.cache[f.refStore] || [];
-    const opts = refItems.map(i =>
-      `<option value="${i.id}"${i.id === rawVal ? ' selected' : ''}>${esc(i.name)}</option>`
-    ).join('');
     return `<select class="det-inline-select${emptyCls}" data-edit-field="${f.key}">
       <option value="">— Unassigned —</option>
-      ${opts}
+      ${buildRefOptions(state.cache[f.refStore] || [], rawVal)}
     </select>`;
   }
 
@@ -544,16 +530,11 @@ async function renderEntityDetail(savedScroll) {
       ? `<div style="font-size:14px;color:var(--muted)">No slots configured — set Slot Count above.</div>`
       : Array.from({ length: slotCount }, (_, k) => buildSlotRow(item.id, k, slotsMap.get(k))).join('');
 
-    rackSlotsCard = `
-      <div class="det-card det-collapsible">
-        <button class="det-section-toggle" aria-expanded="true">
-          <span class="section-label" style="margin:0">${title}</span>
-          ${ICON_CHEVRON}
-        </button>
-        <div class="det-section-body">
-          <div class="sn-det-list">${slotRows}</div>
-        </div>
-      </div>`;
+    rackSlotsCard = buildCollapsibleCard(
+      title,
+      `<div class="sn-det-list">${slotRows}</div>`,
+      { expanded: true }
+    );
   }
 
   const childSections = await buildChildSections(type, id, item);
@@ -706,14 +687,7 @@ async function renderEntityDetail(savedScroll) {
   });
 
   /* Delegated toggle for .field-empty — covers all editable field controls */
-  el.detail.addEventListener('input',  e => {
-    const f = e.target.closest('[data-edit-field]');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
-  el.detail.addEventListener('change', e => {
-    const f = e.target.closest('[data-edit-field]');
-    if (f) f.classList.toggle('field-empty', !f.value);
-  });
+  attachFieldEmptyToggle(el.detail, '[data-edit-field]');
 
   // When the user changes the panel, auto-fill the area to match the panel's area.
   // This mirrors the cascade logic previously in activateInlineEdit.
