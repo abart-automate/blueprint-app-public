@@ -18,6 +18,7 @@ async function init() {
     await applyPersistedListPaneWidth();
 
     wireEvents();
+    initVisibilityRefresh();
 
     const hash = window.location.hash.replace('#', '') || 'home';
     const startPage = (ENTITY[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
@@ -46,6 +47,41 @@ async function applyPersistedListPaneWidth() {
   if (w && Number.isFinite(Number(w))) {
     document.documentElement.style.setProperty('--list-pane-w', Number(w) + 'px');
   }
+}
+
+/* ============================================================
+   VISIBILITY / BFCACHE REFRESH
+   ============================================================ */
+
+/**
+ * Wires browser lifecycle events that can leave the list pane with stale card data.
+ *
+ * visibilitychange — fires when the user backgrounds the PWA on mobile, switches to
+ *   another browser tab, or returns. On becoming visible, we re-render the current page
+ *   so cards reflect any data changes that occurred while the app was hidden.
+ *
+ * pageshow — fires when the browser restores a page from the back/forward cache (bfcache).
+ *   e.persisted === true signals a bfcache restore, which bypasses normal navigation so
+ *   the stale in-memory state from the previous load would otherwise remain on screen.
+ *
+ * Both handlers guard against interrupting an open detail panel or bottom-sheet form;
+ * the user's in-progress edits must not be discarded by a background refresh.
+ */
+function initVisibilityRefresh() {
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    // Don't interrupt an in-progress edit in the detail panel or form sheet.
+    if (state.detailType || state.formType) return;
+    await renderPage();
+  });
+
+  window.addEventListener('pageshow', async (e) => {
+    // Only re-render when the browser served this page from bfcache, not on a normal load
+    // (which already triggers navigate() → renderPage() via init()).
+    if (!e.persisted) return;
+    if (state.detailType || state.formType) return;
+    await renderPage();
+  });
 }
 
 /* ============================================================

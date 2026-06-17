@@ -55,6 +55,10 @@ function _clearDetailEditState() {
  * Mobile/tablet: animates the panel back off-screen, then hides it.
  * Desktop:       the panel stays visible but is replaced with a placeholder
  *                because the detail pane is a permanent column.
+ *
+ * Does NOT refresh the list pane — that is the caller's responsibility:
+ *   - closeDetail() calls renderPage() after this to show up-to-date card data.
+ *   - navigate() skips the extra renderPage() because it calls renderPage() itself.
  */
 function _closeDetailImmediate() {
   el.detail.classList.remove('open');
@@ -263,6 +267,11 @@ async function closeDetail() {
   }
 
   _closeDetailImmediate();
+  // Re-render the list so any saves made in the detail panel (e.g. % complete changes)
+  // are immediately reflected on the cards. saveDetailChanges() already called refreshAll(),
+  // so state.cache is fresh — renderPage() repaints the list without needing a round-trip
+  // to IndexedDB first (renderList() does call loadCache(), but from a hot in-memory store).
+  await renderPage();
 }
 
 /* ============================================================
