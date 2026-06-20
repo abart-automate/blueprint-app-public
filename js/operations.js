@@ -215,21 +215,6 @@ async function saveEntityForm() {
     );
   }
 
-  // Post-save: cascade duplicate children if this was a duplication
-  if (state.formDuplicateSource) {
-    const { sourceId, duplicateChildren } = state.formDuplicateSource;
-    state.formDuplicateSource = null;
-    if (duplicateChildren) {
-      await cascadeDuplicateChildren(type, sourceId, saved.id);
-    }
-    await refreshAll();
-    closeSheet();
-    showToast(`${cfg.label} duplicated`, 'success');
-    renderPage();
-    openDetail(type, saved.id);
-    return;
-  }
-
   await refreshAll();
   closeSheet();
   showToast(`${cfg.label} saved`, 'success');
@@ -333,6 +318,51 @@ async function clearAllData() {
    DUPLICATE
    ============================================================ */
 
+// Strips system-generated and media fields before duplication.
+// upsert() then assigns a fresh id, createdAt, and updatedAt.
+function _stripMediaAndSystemFields(entity, overrides = {}) {
+  const { id: _id, createdAt: _c, updatedAt: _u, images: _img, namedPhotos: _np, ...rest } = entity;
+  return { ...rest, ...overrides };
+}
+
+// Shows a scrollable checklist of panel children for the user to select.
+// Appended to #app (position:relative) so the absolute overlay covers the full viewport.
+// Resolves with the selected subset array, or null if the user cancels.
+function showChildSelector(children) {
+  const BADGE = { power: 'badge-power', safety: 'badge-safety', assets: 'badge-asset' };
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'confirm-backdrop open';
+    backdrop.innerHTML = `
+      <div class="confirm-box confirm-box--wide">
+        <div class="confirm-title">Select items to duplicate</div>
+        <div class="confirm-msg">Uncheck any items to omit from the new panel:</div>
+        <div class="child-selector-list">
+          ${children.map((c, i) => `
+            <label class="child-selector-item">
+              <input type="checkbox" value="${i}" checked>
+              <span class="badge ${BADGE[c._store] || ''}">${c.typeLabel}</span>
+              <span>${c.name}</span>
+            </label>
+          `).join('')}
+        </div>
+        <div class="confirm-actions">
+          <button class="btn btn-outline" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary"  data-action="ok">Continue</button>
+        </div>
+      </div>`;
+    $('app').appendChild(backdrop);
+
+    const cleanup = () => $('app').removeChild(backdrop);
+    backdrop.querySelector('[data-action=cancel]').addEventListener('click', () => { cleanup(); resolve(null); });
+    backdrop.querySelector('[data-action=ok]').addEventListener('click', () => {
+      const selected = [...backdrop.querySelectorAll('input[type=checkbox]:checked')]
+        .map(cb => children[parseInt(cb.value)]);
+      cleanup(); resolve(selected);
+    });
+  });
+}
+
 function uniqueCopyName(store, baseName) {
   const existing = new Set((state.cache[store] || []).map(i => i.name));
   const candidate = `${baseName} (copy)`;
@@ -347,41 +377,58 @@ async function duplicateItem(type, id) {
   const original = state.refs[type]?.[id];
   if (!original) return;
 
-  const childRels = [];
-  for (const rel of _getChildren(type)) {
-    const children = (state.cache[rel.store] || [])
-      .filter(i => i[rel.field] === id && (!rel.filter || rel.filter(i)));
-    if (children.length) childRels.push({ ...rel, count: children.length });
-  }
+  const cfg = ENTITY[type];
 
-  let duplicateChildren = false;
-  if (childRels.length) {
-    const desc   = childRels.map(r => `${r.count} ${r.label.toLowerCase()}`).join(', ');
-    const result = await confirmThreeWay(
-      'Duplicate children?',
-      `"${original.name}" has ${desc}. Duplicate these too?`,
-      { cancelLabel: 'Cancel', midLabel: 'No, just this item', midClass: 'btn-outline', yesLabel: 'Yes, duplicate all', yesClass: 'btn-primary' }
+  // Step 1: get a name for the new item
+  const newName = await promptInput(
+    `Duplicate ${cfg.label}`,
+    `Enter a name for the new ${cfg.label.toLowerCase()}:`,
+    uniqueCopyName(type, original.name)
+  );
+  if (newName === null) return;
+
+  // Step 2: for panels, let the user select which children to include
+  let selectedChildren = [];
+  if (type === 'panels') {
+    const childDefs = [
+      { store: 'power',  field: 'panelId', typeLabel: 'Power'  },
+      { store: 'safety', field: 'panelId', typeLabel: 'Safety' },
+      { store: 'assets', field: 'panelId', typeLabel: 'Asset'  },
+    ];
+    const allChildren = childDefs.flatMap(def =>
+      (state.cache[def.store] || [])
+        .filter(item => item[def.field] === id)
+        .map(item => ({ ...item, _store: def.store, _field: def.field, typeLabel: def.typeLabel }))
     );
-    if (result === 'cancel') return;
-    duplicateChildren = result === 'yes';
-  }
-
-  state.formDuplicateSource = { sourceId: id, duplicateChildren };
-  const copy = { ...original, name: uniqueCopyName(type, original.name) };
-  openSheet(type, null, { copyFrom: copy });
-}
-
-async function cascadeDuplicateChildren(type, sourceId, newParentId) {
-  for (const rel of _getChildren(type)) {
-    const children = (state.cache[rel.store] || [])
-      .filter(i => i[rel.field] === sourceId && (!rel.filter || rel.filter(i)));
-    for (const child of children) {
-      const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = child;
-      const childCopy = { ...rest, [rel.field]: newParentId, name: uniqueCopyName(rel.store, child.name) };
-      const saved = await upsert(rel.store, childCopy);
-      await cascadeDuplicateChildren(rel.store, child.id, saved.id);
+    if (allChildren.length > 0) {
+      const chosen = await showChildSelector(allChildren);
+      if (chosen === null) return; // cancelled — abort before saving the panel
+      selectedChildren = chosen;
     }
   }
+
+  // Step 3: save the duplicated panel/item (no media)
+  const saved = await upsert(type, _stripMediaAndSystemFields(original, { name: newName }));
+
+  // Step 4: for each selected child, prompt for a name then save
+  for (const child of selectedChildren) {
+    const childName = await promptInput(
+      `Duplicate ${child.typeLabel}`,
+      `Enter a name for the copy of "${child.name}":`,
+      uniqueCopyName(child._store, child.name)
+    );
+    if (childName === null) continue; // user skipped this child
+    await upsert(child._store, _stripMediaAndSystemFields(child, {
+      name:           childName,
+      [child._field]: saved.id,
+      areaId:         saved.areaId || child.areaId || '',
+    }));
+  }
+
+  await refreshAll();
+  showToast(`${cfg.label} duplicated`, 'success');
+  renderPage();
+  openDetail(type, saved.id);
 }
 
 /* ============================================================

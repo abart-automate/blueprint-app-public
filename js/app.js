@@ -344,7 +344,6 @@ function closeSheet() {
   state.formIoPoints        = [];
   state.formPowerBus        = [];
   state.formSlotNetworkPorts= [];
-  state.formDuplicateSource = null;
   state.pickerMeta        = null;
 }
 
@@ -1262,8 +1261,8 @@ function matchParentChip(type, item, parentId, chipFieldKey) {
    populateAssignId, filterPowerByPanel are in js/renderers/form.js. */
 
 /* saveForm, savePickerForm, saveSlotForm, savePlantForm, saveEntityForm,
-   deleteItem, cascadeDeleteItem, uniqueCopyName, duplicateItem,
-   cascadeDuplicateChildren, showExportOptions, exportData, importData,
+   deleteItem, cascadeDeleteItem, _stripMediaAndSystemFields, showChildSelector,
+   uniqueCopyName, duplicateItem, showExportOptions, exportData, importData,
    processImportFile are defined in js/operations.js (loaded before this file). */
 
 

@@ -90,6 +90,19 @@
       </div>
     </div>
 
+    <!-- Name prompt dialog (used for duplicate flow) -->
+    <div id="prompt-backdrop" class="confirm-backdrop" aria-hidden="true">
+      <div class="confirm-box">
+        <div id="prompt-title" class="confirm-title"></div>
+        <div id="prompt-msg" class="confirm-msg"></div>
+        <input id="prompt-input" class="f-input" type="text" autocomplete="off">
+        <div class="confirm-actions">
+          <button id="prompt-cancel" class="btn btn-outline">Cancel</button>
+          <button id="prompt-ok" class="btn btn-primary">OK</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast notification -->
     <div id="toast" class="toast" aria-live="polite"></div>
 

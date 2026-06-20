@@ -38,8 +38,6 @@ const state = {
   formIoPoints:        [],
   formPowerBus:        [],
   formSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication slot form
-  formDuplicateSource: null,
-
   // --- Data cache (populated by refreshAll / loadCache) ---
   cache: { partsLibrary: [] },
   refs:  {},
@@ -71,6 +69,12 @@ const el = {
   confirmNo:    $('confirm-no'),
   confirmSave:  $('confirm-save'),   // 3rd button used only by confirmUnsaved()
   confirmYes:   $('confirm-yes'),
+  promptBD:     $('prompt-backdrop'),
+  promptT:      $('prompt-title'),
+  promptM:      $('prompt-msg'),
+  promptField:  $('prompt-input'),
+  promptCancel: $('prompt-cancel'),
+  promptOk:     $('prompt-ok'),
   toast:        $('toast'),
   nav:          $('bottom-nav'),
 };
@@ -149,6 +153,44 @@ function confirmUnsaved(title, msg) {
     midLabel:    'Save Changes', midClass: 'btn-primary',
     yesLabel:    'Discard',      yesClass: 'btn-danger',
   }).then(r => r === 'mid' ? 'save' : r === 'yes' ? 'discard' : null);
+}
+
+/**
+ * Shows a text-input prompt dialog.
+ * Resolves with the trimmed string the user entered, or null if cancelled.
+ * Requires a non-empty value — blank submission shakes the input and re-focuses.
+ */
+function promptInput(title, msg, defaultValue = '') {
+  return new Promise(resolve => {
+    el.promptT.textContent = title;
+    el.promptM.textContent = msg;
+    el.promptField.value   = defaultValue;
+    el.promptBD.classList.add('open');
+    requestAnimationFrame(() => { el.promptField.focus(); el.promptField.select(); });
+
+    const submit = () => {
+      const val = el.promptField.value.trim();
+      if (!val) {
+        el.promptField.classList.add('field-invalid');
+        setTimeout(() => el.promptField.classList.remove('field-invalid'), 600);
+        el.promptField.focus();
+        return;
+      }
+      cleanup(); resolve(val);
+    };
+    const cancel = () => { cleanup(); resolve(null); };
+    const onKey  = e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') cancel(); };
+
+    const cleanup = () => {
+      el.promptBD.classList.remove('open');
+      el.promptOk.removeEventListener('click', submit);
+      el.promptCancel.removeEventListener('click', cancel);
+      el.promptField.removeEventListener('keydown', onKey);
+    };
+    el.promptOk.addEventListener('click', submit);
+    el.promptCancel.addEventListener('click', cancel);
+    el.promptField.addEventListener('keydown', onKey);
+  });
 }
 
 /* ---- CACHE & REFS ---- */
