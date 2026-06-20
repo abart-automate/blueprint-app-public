@@ -324,17 +324,14 @@ const ENTITY = {
     },
     subclassFields: {
       Managed: [
-        { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Switch Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Switch Details' },
       ],
       Unmanaged: [
-        { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Switch Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Switch Details' },
       ],
       Router: [
-        { key: 'portCount',       label: 'Port Count',       type: 'text', section: 'Switch Details' },
         { key: 'macAddress',      label: 'MAC Address',      type: 'text', section: 'Router Details' },
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Router Details' },
       ],

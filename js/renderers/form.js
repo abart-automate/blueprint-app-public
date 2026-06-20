@@ -321,20 +321,6 @@ async function renderEntityForm() {
         $('f-networkId').addEventListener('change', _renderNetAddr);
         await _renderNetAddr();
       }
-      const portCountEl = $('f-portCount');
-      if (portCountEl) {
-        portCountEl.addEventListener('change', () => {
-          const count   = Math.max(0, parseInt(portCountEl.value) || 0);
-          const current = state.formSwitchPorts.length;
-          if (count > current) {
-            for (let i = current + 1; i <= count; i++)
-              state.formSwitchPorts.push({ portName: `Port ${i}`, networkId: '', assetId: '', slotNumber: null });
-          } else if (count < current) {
-            state.formSwitchPorts.splice(count);
-          }
-          renderSwitchPortsTable();
-        });
-      }
       const cardTypeEl = $('f-cardType');
       if (cardTypeEl) {
         cardTypeEl.addEventListener('change', renderCardTypeFields);
