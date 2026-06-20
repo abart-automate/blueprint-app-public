@@ -262,7 +262,9 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
   for (const [assetId, assetRows] of grouped) {
     const asset = await getById('assets', assetId);
     if (!asset) continue;
-    asset.slots = assetRows.map(row => {
+    // Rows are read in sheet order (= original slot order). Renumber after mapping
+    // so slotNumber always equals array index, filling any gaps from pre-change exports.
+    asset.slots = renumberSlots(assetRows.map(row => {
       let ioPoints       = [];
       let powerBus       = [];
       let terminalWiring = [];
@@ -271,9 +273,8 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
       try { powerBus       = row['Power Bus']            ? JSON.parse(row['Power Bus'])            : []; } catch {}
       try { terminalWiring = row['Terminal Block Wiring'] ? JSON.parse(row['Terminal Block Wiring']) : []; } catch {}
       try { networkPorts   = row['Network Ports']        ? JSON.parse(row['Network Ports'])        : []; } catch {}
-      const slotNum = row['Slot Number'];
       return {
-        slotNumber:      slotNum !== '' && slotNum != null ? Number(slotNum) : undefined,
+        slotNumber:      0, // placeholder — renumberSlots overwrites this immediately
         name:            str(row['Name']),
         cardType:        str(row['Card Type']),
         partNumber:      str(row['Part Number']),
@@ -287,7 +288,7 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
         terminalWiring,
         networkPorts,
       };
-    });
+    }));
     await upsert('assets', asset);
   }
 }

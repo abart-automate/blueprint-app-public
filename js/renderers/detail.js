@@ -287,11 +287,22 @@ function buildFieldPills(fields, data) {
     .join('');
 }
 
-function buildSlotRow(rackId, slotNumber, slot) {
+/**
+ * Builds a single PLC slot row for the Cards section of the PLC detail panel.
+ *
+ * @param {string} rackId     - ID of the parent PLC asset
+ * @param {number} slotNumber - Array index (= display number) of this slot
+ * @param {object|null} slot  - Slot data object, or null for an empty placeholder
+ * @param {object} opts
+ * @param {boolean} opts.isFirst - True when this is the first slot (disables up-reorder button)
+ * @param {boolean} opts.isLast  - True when this is the last slot (disables down-reorder button)
+ */
+function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = false } = {}) {
+  // Defensive fallback for data-inconsistency edge cases — normal path never reaches this.
   if (!slot) {
     return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
       <div class="rack-slot-hdr"><span class="sn-det-name">Slot ${slotNumber}</span></div>
-      <div class="sn-det-fields" style="color:var(--muted)">Empty — tap to add card</div>
+      <div class="sn-det-fields" style="color:var(--muted)">Empty</div>
     </div>`;
   }
   const typeTag = slot.cardType   ? `<span class="sn-det-field">${esc(slot.cardType)}</span>` : '';
@@ -310,8 +321,14 @@ function buildSlotRow(rackId, slotNumber, slot) {
   }
   return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
     <div class="rack-slot-hdr">
+      <button class="rack-slot-grip slot-action-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Drag to reorder" title="Drag to reorder">${ICON_GRIP}</button>
       <span class="sn-det-name">Slot ${slotNumber}</span>
-      <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Clear slot">${ICON_RM}</button>
+      <div class="rack-slot-actions">
+        <button class="rack-slot-up slot-action-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Move slot up" title="Move up"${isFirst ? ' disabled' : ''}>${ICON_CHEVRON_UP}</button>
+        <button class="rack-slot-dn slot-action-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Move slot down" title="Move down"${isLast ? ' disabled' : ''}>${ICON_CHEVRON_DOWN}</button>
+        <button class="rack-slot-dup slot-action-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Duplicate slot" title="Duplicate slot">${ICON_DUPLICATE}</button>
+        <button class="rack-slot-clear wiring-rm-btn" data-rack-id="${rackId}" data-slot-num="${slotNumber}" aria-label="Delete slot">${ICON_RM}</button>
+      </div>
     </div>
     <div class="sn-det-fields"><span class="sn-det-field"><strong>${esc(slot.name || '—')}</strong></span>${typeTag}${pnTag}${revTag}${ioTag}${ipTag}</div>
   </div>`;
@@ -519,20 +536,22 @@ async function renderEntityDetail(savedScroll) {
     }
   }
 
-  // PLC rack slots card — slots remain click-to-open (not inline editable)
+  // PLC rack slots card — slots are managed dynamically (add/reorder/duplicate/delete).
+  // slotNumber always equals array index; no fixed slot count field is required.
   let rackSlotsCard = '';
   if (type === 'assets' && item.assetClass === 'PLC') {
-    const slotCount = parseInt(item.slotCount) || 0;
-    const slotsMap  = new Map((item.slots || []).map(s => [s.slotNumber, s]));
-    const cardCount = (item.slots || []).length;
+    const slots     = item.slots || [];
+    const last      = slots.length - 1;
+    const cardCount = slots.length;
     const title     = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
-    const slotRows  = slotCount === 0
-      ? `<div style="font-size:14px;color:var(--muted)">No slots configured — set Slot Count above.</div>`
-      : Array.from({ length: slotCount }, (_, k) => buildSlotRow(item.id, k, slotsMap.get(k))).join('');
+    const slotRows  = slots.length === 0
+      ? `<div style="font-size:14px;color:var(--muted)">No slots — use Add Slot to begin.</div>`
+      : slots.map((s, i) => buildSlotRow(item.id, i, s, { isFirst: i === 0, isLast: i === last })).join('');
+    const addBtn    = `<button class="wiring-add-btn rack-add-slot-btn" data-rack-id="${item.id}" style="margin-top:8px">+ Add Slot</button>`;
 
     rackSlotsCard = buildCollapsibleCard(
       title,
-      `<div class="sn-det-list">${slotRows}</div>`,
+      `<div class="sn-det-list">${slotRows}</div>${addBtn}`,
       { expanded: true }
     );
   }
@@ -572,7 +591,7 @@ async function renderEntityDetail(savedScroll) {
                       value="${esc(item.name)}" data-edit-field="name"
                       aria-label="Name">
                <button class="det-edit-btn" id="det-duplicate" aria-label="Duplicate">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                 ${ICON_DUPLICATE}
                </button>
              </div>`
         }
@@ -734,18 +753,26 @@ async function renderEntityDetail(savedScroll) {
     });
   });
 
-  // PLC rack slot rows
+  // ---- PLC rack slot interactions ----
+
+  // Row click — all rows are populated, so always open the slot detail.
+  // Guard against clicks on any of the action buttons inside the row.
   el.detail.querySelectorAll('.rack-slot-row').forEach(row => {
     row.addEventListener('click', e => {
-      if (e.target.closest('.rack-slot-clear')) return;
-      const rackId  = row.dataset.rackId;
-      const slotNum = +row.dataset.slotNum;
-      const rack    = state.refs.assets?.[rackId];
-      const hasCard = rack?.slots?.some(s => s.slotNumber === slotNum);
-      if (hasCard) openSlotDetail(rackId, slotNum);
-      else         openSlotForm(rackId, slotNum);
+      if (e.target.closest('.slot-action-btn, .wiring-rm-btn, .rack-slot-grip')) return;
+      openSlotDetail(row.dataset.rackId, +row.dataset.slotNum);
     });
   });
+
+  // Add Slot button — opens the slot card form for a new slot appended at the end.
+  el.detail.querySelectorAll('.rack-add-slot-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rack = state.refs.assets?.[btn.dataset.rackId];
+      openSlotForm(btn.dataset.rackId, rack?.slots?.length ?? 0);
+    });
+  });
+
+  // Delete slot — remove from array, renumber remaining slots so indices stay sequential.
   el.detail.querySelectorAll('.rack-slot-clear').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -753,13 +780,161 @@ async function renderEntityDetail(savedScroll) {
       const slotNum = +btn.dataset.slotNum;
       const rack    = state.refs.assets?.[rackId];
       if (!rack) return;
-      const slot = rack.slots?.find(s => s.slotNumber === slotNum);
-      const ok = await confirm('Delete card?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`);
+      const slot = rack.slots?.[slotNum];
+      const ok = await confirm('Delete slot?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`);
       if (!ok) return;
-      const slots = (rack.slots || []).filter(s => s.slotNumber !== slotNum);
+      const slots = renumberSlots((rack.slots || []).filter((_, i) => i !== slotNum));
       await upsert('assets', { ...rack, slots });
       await refreshAll();
       renderDetail({ preserveScroll: true });
+    });
+  });
+
+  // Move slot up — swap with predecessor, renumber, persist.
+  el.detail.querySelectorAll('.rack-slot-up').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const rackId  = btn.dataset.rackId;
+      const idx     = +btn.dataset.slotNum;
+      const rack    = state.refs.assets?.[rackId];
+      if (!rack || idx <= 0) return;
+      const slots = [...(rack.slots || [])];
+      [slots[idx - 1], slots[idx]] = [slots[idx], slots[idx - 1]];
+      await upsert('assets', { ...rack, slots: renumberSlots(slots) });
+      await refreshAll();
+      renderDetail({ preserveScroll: true });
+    });
+  });
+
+  // Move slot down — swap with successor, renumber, persist.
+  el.detail.querySelectorAll('.rack-slot-dn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const rackId  = btn.dataset.rackId;
+      const idx     = +btn.dataset.slotNum;
+      const rack    = state.refs.assets?.[rackId];
+      if (!rack || idx >= (rack.slots?.length ?? 0) - 1) return;
+      const slots = [...(rack.slots || [])];
+      [slots[idx], slots[idx + 1]] = [slots[idx + 1], slots[idx]];
+      await upsert('assets', { ...rack, slots: renumberSlots(slots) });
+      await refreshAll();
+      renderDetail({ preserveScroll: true });
+    });
+  });
+
+  // Duplicate slot — deep-copy the card, clear networkPorts (keep safety/power/terminals),
+  // append at the end, renumber, persist.
+  el.detail.querySelectorAll('.rack-slot-dup').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const rackId  = btn.dataset.rackId;
+      const idx     = +btn.dataset.slotNum;
+      const rack    = state.refs.assets?.[rackId];
+      const src     = rack?.slots?.[idx];
+      if (!src) return;
+      const copy = {
+        ...src,
+        ioPoints:       (src.ioPoints       || []).map(p => ({ ...p })),
+        powerBus:       (src.powerBus       || []).map(b => ({ ...b, wiring: (b.wiring || []).map(w => ({ ...w })) })),
+        terminalWiring: (src.terminalWiring || []).map(t => ({ ...t })),
+        // Network port assignments are specific to one physical card — clear them on copy.
+        networkPorts:   [],
+      };
+      const slots = renumberSlots([...(rack.slots || []), copy]);
+      await upsert('assets', { ...rack, slots });
+      await refreshAll();
+      renderDetail({ preserveScroll: true });
+    });
+  });
+
+  // Drag-to-reorder via Pointer Events API — same approach as the detail-pane resize handle.
+  // The grip icon on each slot row acts as the drag handle; setPointerCapture keeps events
+  // routing to the grip even when the pointer moves outside it during a fast drag.
+  el.detail.querySelectorAll('.rack-slot-grip').forEach(grip => {
+    grip.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      const rackId      = grip.dataset.rackId;
+      const rack        = state.refs.assets?.[rackId];
+      if (!rack?.slots?.length) return;
+
+      const draggedIdx  = +grip.dataset.slotNum;
+      const rows        = [...el.detail.querySelectorAll(`.rack-slot-row[data-rack-id="${rackId}"]`)];
+      if (rows.length < 2) return; // Nothing to reorder with a single slot.
+
+      // Snapshot each row's vertical midpoint at drag-start so we can determine the
+      // insertion position without querying the DOM on every pointermove.
+      const rowMids = rows.map(r => {
+        const rect = r.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      });
+
+      // Ghost: a semi-transparent clone that follows the pointer.
+      const srcRow   = rows[draggedIdx];
+      const srcRect  = srcRow.getBoundingClientRect();
+      const ghost    = srcRow.cloneNode(true);
+      ghost.classList.add('rack-slot-ghost');
+      ghost.style.width  = `${srcRect.width}px`;
+      ghost.style.height = `${srcRect.height}px`;
+      ghost.style.top    = `${srcRect.top}px`;
+      ghost.style.left   = `${srcRect.left}px`;
+      document.body.appendChild(ghost);
+
+      // Drop indicator: a horizontal line shown between rows.
+      const indicator = document.createElement('div');
+      indicator.className = 'rack-slot-drop-indicator';
+      document.body.appendChild(indicator);
+
+      srcRow.classList.add('rack-slot-dragging');
+      grip.setPointerCapture(e.pointerId);
+
+      let currentDropIdx = draggedIdx;
+
+      function computeDropIdx(clientY) {
+        // Find the first row whose midpoint is below the pointer — insert before it.
+        const after = rowMids.findIndex(mid => clientY < mid);
+        if (after === -1) return rows.length - 1; // below all rows → last position
+        return Math.max(0, after > draggedIdx ? after - 1 : after);
+      }
+
+      function positionIndicator(dropIdx) {
+        // Place the indicator line below row dropIdx (or above row 0 when dropping before it).
+        const refRow  = rows[dropIdx];
+        const refRect = refRow.getBoundingClientRect();
+        // If dropping BEFORE the dragged index, show line above refRow; otherwise below.
+        const y = dropIdx < draggedIdx ? refRect.top : refRect.bottom;
+        indicator.style.top   = `${y + window.scrollY}px`;
+        indicator.style.left  = `${refRect.left}px`;
+        indicator.style.width = `${refRect.width}px`;
+      }
+
+      function onMove(ev) {
+        ghost.style.top = `${srcRect.top + (ev.clientY - e.clientY)}px`;
+        currentDropIdx  = computeDropIdx(ev.clientY);
+        positionIndicator(currentDropIdx);
+      }
+
+      async function onUp() {
+        grip.removeEventListener('pointermove', onMove);
+        grip.removeEventListener('pointerup',   onUp);
+        ghost.remove();
+        indicator.remove();
+        srcRow.classList.remove('rack-slot-dragging');
+
+        if (currentDropIdx !== draggedIdx) {
+          const slots  = [...rack.slots];
+          const [moved] = slots.splice(draggedIdx, 1);
+          // computeDropIdx already adjusts for the index shift caused by removing the
+          // dragged element (returns after-1 when dropping past the original position),
+          // so insertAt is always the final currentDropIdx with no additional offset needed.
+          slots.splice(currentDropIdx, 0, moved);
+          await upsert('assets', { ...rack, slots: renumberSlots(slots) });
+          await refreshAll();
+          renderDetail({ preserveScroll: true });
+        }
+      }
+
+      grip.addEventListener('pointermove', onMove);
+      grip.addEventListener('pointerup',   onUp);
     });
   });
 

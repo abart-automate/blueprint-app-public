@@ -622,6 +622,8 @@ body {
   box-shadow: var(--shadow);
 }
 .det-edit-btn:active { opacity: 0.7; }
+/* Scale ICON_DUPLICATE (defined at 14px) up to the original 18px inside the entity button */
+.det-edit-btn svg { width: 18px; height: 18px; }
 
 .det-name-input {
   font-size: 22px;
@@ -1981,10 +1983,85 @@ body {
 .rack-slot-hdr {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 6px;
 }
-.rack-slot-hdr .sn-det-name { margin-bottom: 0; }
+.rack-slot-hdr .sn-det-name { margin-bottom: 0; flex: 1; }
+
+/* Slot action buttons — up/down/duplicate/grip shared base style */
+.slot-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.slot-action-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.slot-action-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Drag grip — shown at the left edge of each slot row header */
+.rack-slot-grip {
+  cursor: grab;
+  border-color: transparent;
+  color: var(--muted);
+  opacity: 0.5;
+}
+.rack-slot-grip:hover {
+  opacity: 1;
+  background: var(--hover);
+  border-color: var(--border);
+}
+.rack-slot-grip:active { cursor: grabbing; }
+
+/* Right-side action group (up / down / duplicate / delete) */
+.rack-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Visual state while a slot row is being dragged */
+.rack-slot-dragging {
+  opacity: 0.35;
+}
+
+/* Ghost clone that follows the pointer during drag */
+.rack-slot-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.85;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  padding: 10px 12px;
+}
+
+/* Drop target indicator line shown between slot rows during drag */
+.rack-slot-drop-indicator {
+  position: absolute;
+  height: 2px;
+  background: var(--accent, #2563eb);
+  border-radius: 2px;
+  z-index: 9998;
+  pointer-events: none;
+}
 .sn-det-name {
   font-size: 14px;
   font-weight: 700;

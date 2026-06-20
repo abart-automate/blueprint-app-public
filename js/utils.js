@@ -65,6 +65,13 @@ function isManagedSwitch(assetClass, subclass) {
   return assetClass === 'Network Switch' && (subclass === 'Managed' || subclass === 'Router');
 }
 
+// Reassigns slotNumber on every slot to match its position in the array.
+// Call after any add, delete, reorder, or duplicate so the invariant
+// slotNumber === array-index is always true before persisting.
+function renumberSlots(slots) {
+  return slots.map((s, i) => ({ ...s, slotNumber: i }));
+}
+
 // Returns the networkTypeFields config for the network with the given id.
 function getNetworkAddrFields(networkId) {
   const net = state.refs.networks?.[networkId];

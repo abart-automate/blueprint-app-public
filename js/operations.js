@@ -74,8 +74,10 @@ async function saveSlotForm() {
     const slots = [...(rack.slots || [])];
     const idx   = slots.findIndex(s => s.slotNumber === slotNumber);
     if (idx >= 0) slots[idx] = slotData; else slots.push(slotData);
+    // Renumber after every mutation so slotNumber always matches array index.
+    const numbered = renumberSlots(slots);
     try {
-      await upsert('assets', { ...rack, slots });
+      await upsert('assets', { ...rack, slots: numbered });
       await refreshAll();
       closeSheet();
       showToast('Card saved', 'success');
