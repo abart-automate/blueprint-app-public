@@ -61,8 +61,35 @@ function itemTables(type, item) {
   ];
 }
 
-function isManagedSwitch(assetClass, subclass) {
-  return assetClass === 'Network Switch' && (subclass === 'Managed' || subclass === 'Router');
+/**
+ * Returns true for any Network Switch asset with a subtype selected.
+ * All three subtypes (Managed, Unmanaged, Router) display the full switch UI
+ * (VLANs + port table). Subtype-specific constraints (VLAN limits, port
+ * auto-assignment) are enforced inside the individual table renderers.
+ *
+ * @param {string} assetClass - The asset's class string
+ * @param {string} subclass   - The asset's subclass/subtype string
+ * @returns {boolean}
+ */
+function isSwitchAsset(assetClass, subclass) {
+  return assetClass === 'Network Switch' && !!subclass;
+}
+
+/**
+ * Resolves the option list for an enum field config object.
+ * For 'assetSubclass' the options are dynamic — derived from the item's assetClass
+ * via ENTITY.assets.classSubclasses. All other enum fields return their static
+ * f.options list.
+ *
+ * @param {object} f    - Field config (key, type, options, …)
+ * @param {object} item - Current entity data (provides assetClass context)
+ * @returns {string[]}
+ */
+function resolveFieldOptions(f, item) {
+  if (f.key === 'assetSubclass') {
+    return ENTITY.assets.classSubclasses?.[item?.assetClass] || [];
+  }
+  return f.options || [];
 }
 
 // Reassigns slotNumber on every slot to match its position in the array.

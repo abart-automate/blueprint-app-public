@@ -361,9 +361,10 @@ function buildEditableFieldHtml(f, item) {
   }
 
   if (f.type === 'enum') {
+    // resolveFieldOptions handles assetSubclass whose options are dynamic (driven by assetClass)
     return `<select class="det-inline-select${emptyCls}" data-edit-field="${f.key}">
       <option value="">— Select —</option>
-      ${buildEnumOptions(f.options || [], rawVal)}
+      ${buildEnumOptions(resolveFieldOptions(f, item), rawVal)}
     </select>`;
   }
 
@@ -423,7 +424,7 @@ async function renderEntityDetail(savedScroll) {
   }
 
   // Load switch table state for managed switch assets
-  const showSwitchTables = type === 'assets' && isManagedSwitch(item.assetClass, item.assetSubclass);
+  const showSwitchTables = type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass);
   if (showSwitchTables) {
     state.detailSwitchNetworks = (item.switchNetworks || []).map(r => ({ ...r }));
     state.detailSwitchPorts    = (item.switchPorts    || []).map(r => ({ ...r }));
@@ -512,7 +513,7 @@ async function renderEntityDetail(savedScroll) {
   let switchPortsCard    = '';
   if (showSwitchTables) {
     switchNetworksCard = buildCollapsibleCard(
-      'Network Connections',
+      'VLANs',
       `<div id="det-switch-networks-container"></div>`,
       { expanded: true }
     );
@@ -653,7 +654,8 @@ async function renderEntityDetail(savedScroll) {
         state.detailSwitchPorts,
         rerenderSwitch,
         () => { state.detailChanges._switchDirty = true; },
-        item.id // exclude the switch itself from device options
+        item.id,           // exclude the switch itself from device options
+        item.assetSubclass // drives Unmanaged auto-assignment logic
       );
     };
     rerenderSwitch();
@@ -1136,7 +1138,7 @@ async function saveDetailChanges(type, id) {
   }
 
   // Persist switch tables for managed switch assets
-  if (type === 'assets' && isManagedSwitch(item.assetClass, item.assetSubclass)) {
+  if (type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
     updatedItem.switchNetworks = state.detailSwitchNetworks.filter(r => r.networkId);
     updatedItem.switchPorts    = state.detailSwitchPorts.filter(
       r => r.portName || r.networkId || r.assetId

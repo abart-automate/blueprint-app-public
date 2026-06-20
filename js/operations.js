@@ -167,7 +167,7 @@ async function saveEntityForm() {
 
   // Switch/Router tables are state-driven, not form fields.
   if (type === 'assets') {
-    const showTables = isManagedSwitch(item.assetClass, item.assetSubclass);
+    const showTables = isSwitchAsset(item.assetClass, item.assetSubclass);
     if (showTables) {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);

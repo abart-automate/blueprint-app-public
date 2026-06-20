@@ -180,7 +180,7 @@ async function renderEntityForm() {
     html += `<div id="network-address-container"></div>`;
     html += `
       <div id="switch-networks-wrap" style="display:none">
-        <div class="form-section-hdr">Network Connections</div>
+        <div class="form-section-hdr">VLANs</div>
         <div id="switch-networks-container"></div>
       </div>
       <div id="switch-ports-wrap" style="display:none">
@@ -291,7 +291,7 @@ async function renderEntityForm() {
     const updateSwitchTables = () => {
       const assetClass = $('f-assetClass')?.value;
       const subclass   = $('f-assetSubclass')?.value;
-      const showTables = isManagedSwitch(assetClass, subclass);
+      const showTables = isSwitchAsset(assetClass, subclass);
       const snWrap = $('switch-networks-wrap');
       const spWrap = $('switch-ports-wrap');
       if (snWrap) snWrap.style.display = showTables ? '' : 'none';

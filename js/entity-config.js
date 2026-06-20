@@ -261,10 +261,9 @@ const ENTITY = {
     },
     networkTypeFields: {
       'Ethernet': [
-        { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['Ethernet','Modbus TCP','Other'], required: true },
-        { key: 'ipAddress',  label: 'IP Address',   type: 'text', section: 'Network Address' },
-        { key: 'subnetMask', label: 'Subnet Mask',  type: 'text', section: 'Network Address' },
-        { key: 'gateway',    label: 'Gateway',      type: 'text', section: 'Network Address' },
+        { key: 'ipAddress',  label: 'IP Address',  type: 'text', section: 'Network Address' },
+        { key: 'subnetMask', label: 'Subnet Mask', type: 'text', section: 'Network Address' },
+        { key: 'gateway',    label: 'Gateway',     type: 'text', section: 'Network Address' },
       ],
       'ControlNet': [
         { key: 'nodeAddress', label: 'Node Address', type: 'text', section: 'Network Address' },
@@ -340,7 +339,6 @@ const ENTITY = {
         { key: 'firmwareVersion', label: 'Firmware Version', type: 'text', section: 'Router Details' },
       ],
     },
-    getSubtitle: (item, refs) => refs?.panels?.[item.panelId]?.name || '',
     getChildren: [],
   },
 };

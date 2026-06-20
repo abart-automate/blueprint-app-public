@@ -169,10 +169,16 @@ function renderSwitchNetworksTable(
   );
   const rmIcon = ICON_RM;
 
-  // Router subclass may only have 2 network connections — resolve subclass from param or form
+  // Subclass-based VLAN limits:
+  //   Router    → max 2 VLANs (WAN + LAN)
+  //   Unmanaged → max 1 VLAN  (single network assignment only)
+  //   Managed   → unlimited
   const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
-  const isRouter    = resolvedSubclass === 'Router';
-  const atRouterMax = isRouter && rows.length >= 2;
+  const isRouter       = resolvedSubclass === 'Router';
+  const isUnmanaged    = resolvedSubclass === 'Unmanaged';
+  const atRouterMax    = isRouter    && rows.length >= 2;
+  const atUnmanagedMax = isUnmanaged && rows.length >= 1;
+  const atVlanMax      = atRouterMax || atUnmanagedMax;
 
   let html = rows.map((r, i) => `
     <div class="sn-network-row" data-idx="${i}">
@@ -185,7 +191,7 @@ function renderSwitchNetworksTable(
       </div>
       ${buildNetworkAddrFieldsHtml(r, r.networkId, i)}
     </div>`).join('');
-  if (!atRouterMax) html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
+  if (!atVlanMax) html += `<button type="button" class="wiring-add-btn sn-add">+ Add Network</button>`;
   container.innerHTML = html;
 
   // Helper: trigger a full re-render of both tables (detail mode uses closure; form mode calls directly)
@@ -198,6 +204,10 @@ function renderSwitchNetworksTable(
       const keys = Object.keys(networks[idx]).filter(k => k !== 'networkId');
       keys.forEach(k => delete networks[idx][k]);
       networks[idx].networkId = sel.value;
+      // Unmanaged: cascade the VLAN change to all ports so they stay in sync with the single VLAN
+      if (isUnmanaged) {
+        ports.forEach(p => { p.networkId = sel.value; });
+      }
       onDirty?.();
       doRerender();
     });
@@ -247,23 +257,30 @@ function renderSwitchNetworksTable(
  * Supports two calling conventions — backwards-compatible via default parameters:
  *   renderSwitchPortsTable()
  *     → form mode: uses state.formSwitchNetworks/Ports, container id='switch-ports-container'
- *   renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId)
+ *   renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass)
  *     → detail mode: uses provided arrays, custom container, closure for re-render
  *
- * @param {string}   containerId - DOM id of the container element
- * @param {Array}    networks    - Network rows (read-only reference for option lists)
- * @param {Array}    ports       - Mutable array of port row objects
- * @param {Function} rerender    - Re-render callback (detail mode); null in form mode
- * @param {Function} onDirty     - Called on any data change; null in form mode
- * @param {string}   selfId      - Entity id to exclude from device options (the switch itself)
+ * Unmanaged switches receive special treatment:
+ *   - Ports show no per-row network picker — they are auto-assigned to the single configured VLAN
+ *   - Adding a port pre-populates its networkId with that VLAN's id
+ *   - Existing port rows are silently normalised to the single VLAN before render
+ *
+ * @param {string}   containerId   - DOM id of the container element
+ * @param {Array}    networks      - Network rows (read-only reference for VLAN option lists)
+ * @param {Array}    ports         - Mutable array of port row objects
+ * @param {Function} rerender      - Re-render callback (detail mode); null in form mode
+ * @param {Function} onDirty       - Called on any data change; null in form mode
+ * @param {string}   selfId        - Entity id to exclude from device options (the switch itself)
+ * @param {string}   assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
  */
 function renderSwitchPortsTable(
-  containerId = 'switch-ports-container',
-  networks    = state.formSwitchNetworks,
-  ports       = state.formSwitchPorts,
-  rerender    = null,
-  onDirty     = null,
-  selfId      = null
+  containerId   = 'switch-ports-container',
+  networks      = state.formSwitchNetworks,
+  ports         = state.formSwitchPorts,
+  rerender      = null,
+  onDirty       = null,
+  selfId        = null,
+  assetSubclass = null
 ) {
   const container = $(containerId);
   if (!container) return;
@@ -272,6 +289,19 @@ function renderSwitchPortsTable(
 
   // Resolve the entity to exclude from device options
   const excludeId = selfId ?? state.formId;
+
+  // For Unmanaged: resolve the single auto-assigned VLAN id so ports can omit the network picker
+  const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
+  const isUnmanaged      = resolvedSubclass === 'Unmanaged';
+  const autoNetId        = isUnmanaged
+    ? (networks.find(n => n.networkId)?.networkId || '')
+    : null;
+
+  // Silently normalise existing Unmanaged ports to the single VLAN before rendering.
+  // This is a data normalisation step (not a user edit) so no dirty flag is set.
+  if (isUnmanaged && autoNetId) {
+    rows.forEach(p => { p.networkId = autoNetId; });
+  }
 
   const assignedNetIds = new Set(networks.map(r => r.networkId).filter(Boolean));
   const assignedNets   = (state.cache.networks || []).filter(n => assignedNetIds.has(n.id));
@@ -305,19 +335,25 @@ function renderSwitchPortsTable(
 
   let html = rows.map((r, i) => {
     const selId = (r.assetId && r.slotNumber != null) ? `${r.assetId}|${r.slotNumber}` : r.assetId;
+    // Unmanaged ports are auto-assigned to the single VLAN; no per-row network picker is shown.
+    // Managed/Router ports show a picker so the user can assign each port to a specific VLAN.
+    const effectiveNetId  = isUnmanaged ? autoNetId : r.networkId;
+    const networkPickerHtml = isUnmanaged
+      ? ''
+      : `<select class="f-select sp-network" data-idx="${i}">
+          <option value="">— Network —</option>
+          ${makeNetOpts(r.networkId)}
+        </select>`;
     return `
     <div class="sp-port-row">
       <div class="sp-port-row-top">
         <input class="f-input sp-port" type="text" placeholder="Port ${i + 1}" data-idx="${i}" value="${esc(r.portName || '')}">
         <button type="button" class="wiring-rm-btn sp-rm" data-idx="${i}">${rmIcon}</button>
       </div>
-      <select class="f-select sp-network" data-idx="${i}">
-        <option value="">— Network —</option>
-        ${makeNetOpts(r.networkId)}
-      </select>
+      ${networkPickerHtml}
       <select class="f-select sp-device" data-idx="${i}">
         <option value="">— No Connection —</option>
-        ${makeDeviceOpts(r.networkId, selId)}
+        ${makeDeviceOpts(effectiveNetId, selId)}
       </select>
     </div>`;
   }).join('');
@@ -334,6 +370,7 @@ function renderSwitchPortsTable(
     });
   });
 
+  // Managed/Router only: per-port network picker — not rendered for Unmanaged
   container.querySelectorAll('.sp-network').forEach(sel => {
     sel.addEventListener('change', () => {
       const idx      = +sel.dataset.idx;
@@ -391,7 +428,8 @@ function renderSwitchPortsTable(
 
   container.querySelector('.sp-add')?.addEventListener('click', () => {
     const num = ports.length + 1;
-    ports.push({ portName: `Port ${num}`, networkId: '', assetId: '', slotNumber: null });
+    // Unmanaged: pre-assign the single VLAN; Managed/Router: leave blank for the user to pick
+    ports.push({ portName: `Port ${num}`, networkId: autoNetId || '', assetId: '', slotNumber: null });
     onDirty?.();
     doRerender();
     const inputs = container.querySelectorAll('.sp-port');
