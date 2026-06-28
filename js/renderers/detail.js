@@ -783,7 +783,7 @@ async function renderEntityDetail(savedScroll) {
       const rack    = state.refs.assets?.[rackId];
       if (!rack) return;
       const slot = rack.slots?.[slotNum];
-      const ok = await confirm('Delete slot?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`);
+      const ok = await confirm('Delete slot?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`, { yesLabel: 'Delete' });
       if (!ok) return;
       const slots = renumberSlots((rack.slots || []).filter((_, i) => i !== slotNum));
       await upsert('assets', { ...rack, slots });

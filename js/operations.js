@@ -248,7 +248,7 @@ async function saveEntityForm() {
  * @param {string} name - Display name for the confirm dialog
  */
 async function deleteItem(type, id, name) {
-  const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`);
+  const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`, { yesLabel: 'Delete' });
   if (!ok) return;
 
   // Collect direct children from cache
@@ -262,14 +262,11 @@ async function deleteItem(type, id, name) {
   let deleteChildren = false;
   if (childRels.length > 0) {
     const desc = childRels.map(r => `${r.items.length} ${r.label.toLowerCase()}`).join(', ');
-    el.confirmYes.textContent = 'Also Delete';
-    el.confirmNo.textContent  = 'Keep';
     deleteChildren = await confirm(
       'Delete associated items?',
-      `"${name}" has ${desc}. Delete them too?`
+      `"${name}" has ${desc}. Delete them too?`,
+      { yesLabel: 'Delete', noLabel: 'Keep' }
     );
-    el.confirmYes.textContent = 'Delete';
-    el.confirmNo.textContent  = 'Cancel';
   }
 
   await remove(type, id);
@@ -312,11 +309,10 @@ async function cascadeDeleteItem(type, id) {
    ============================================================ */
 
 async function clearAllData() {
-  el.confirmYes.textContent = 'Clear All';
-  el.confirmNo.textContent  = 'Cancel';
   const ok = await confirm(
     'Clear All Data',
-    'This will permanently delete all areas, panels, equipment, and media. This cannot be undone.'
+    'This will permanently delete all areas, panels, equipment, and media. This cannot be undone.',
+    { yesLabel: 'Clear All' }
   );
   if (!ok) return;
   for (const name of ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings']) {

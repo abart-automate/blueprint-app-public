@@ -567,7 +567,7 @@ async function renderPartsLibraryPage() {
   });
 
   el.main.querySelector('#pl-seed-btn').addEventListener('click', async () => {
-    const ok = await confirm('Load Default Parts', 'Add all built-in Rockwell modules to the library? Existing entries will not be overwritten.');
+    const ok = await confirm('Load Default Parts', 'Add all built-in Rockwell modules to the library? Existing entries will not be overwritten.', { yesLabel: 'Load', yesClass: 'btn-primary' });
     if (!ok) return;
     await _forceSeedPartsLibrary();
     await getPartsLibraryCache();
@@ -778,7 +778,7 @@ async function savePartsLibForm() {
 }
 
 async function deletePartLibEntry(id, catalogNumber) {
-  const ok = await confirm('Delete Part', `Remove "${catalogNumber}" from the library?`);
+  const ok = await confirm('Delete Part', `Remove "${catalogNumber}" from the library?`, { yesLabel: 'Delete' });
   if (!ok) return;
   await remove('partsLibrary', id);
   await getPartsLibraryCache();

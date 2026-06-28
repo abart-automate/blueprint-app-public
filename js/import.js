@@ -33,12 +33,11 @@ async function processXlsxImport(file) {
       return;
     }
 
-    el.confirmYes.textContent = 'Merge';
     const ok = await confirm(
       'Merge Excel data?',
-      'Existing records will be updated with values from the file. Records not in the file will not be deleted.'
+      'Existing records will be updated with values from the file. Records not in the file will not be deleted.',
+      { yesLabel: 'Merge', yesClass: 'btn-primary' }
     );
-    el.confirmYes.textContent = 'Delete';
     if (!ok) return;
 
     // Load current data to build resolution maps

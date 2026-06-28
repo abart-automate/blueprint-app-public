@@ -91,15 +91,27 @@ function showToast(msg, type = '') {
 
 /* ---- CONFIRM DIALOG ---- */
 
-function confirm(title, msg) {
+/**
+ * Shows the shared Yes/Cancel confirm dialog.
+ * Labels/class are set on open and restored to the HTML defaults on cleanup, so
+ * callers never need to mutate el.confirmYes/el.confirmNo directly — every dialog
+ * declares its own button text instead of inheriting whatever a previous caller left.
+ */
+function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' } = {}) {
   return new Promise(resolve => {
-    el.confirmT.textContent = title;
-    el.confirmM.textContent = msg;
+    el.confirmT.textContent  = title;
+    el.confirmM.textContent  = msg;
+    el.confirmYes.textContent = yesLabel;
+    el.confirmNo.textContent  = noLabel;
+    el.confirmYes.className   = `btn ${yesClass}`;
     el.confirmBD.classList.add('open');
     const yes = () => { cleanup(); resolve(true); };
     const no  = () => { cleanup(); resolve(false); };
     const cleanup = () => {
       el.confirmBD.classList.remove('open');
+      el.confirmYes.textContent = 'Delete';
+      el.confirmNo.textContent  = 'Cancel';
+      el.confirmYes.className   = 'btn btn-danger';
       el.confirmYes.removeEventListener('click', yes);
       el.confirmNo.removeEventListener('click', no);
     };
@@ -131,7 +143,10 @@ function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel
     const cleanup  = () => {
       el.confirmBD.classList.remove('open');
       el.confirmSave.style.display = 'none';
-      el.confirmSave.className     = 'btn btn-primary'; // restore HTML defaults
+      el.confirmNo.textContent     = 'Cancel';   // restore HTML defaults
+      el.confirmSave.textContent   = 'Save Changes';
+      el.confirmYes.textContent    = 'Delete';
+      el.confirmSave.className     = 'btn btn-primary';
       el.confirmYes.className      = 'btn btn-danger';
       el.confirmNo.removeEventListener('click', onCancel);
       el.confirmSave.removeEventListener('click', onMid);

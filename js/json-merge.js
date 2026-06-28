@@ -330,7 +330,8 @@ async function mergeJsonImport(payload) {
       }
       const ok = await confirm(
         'Import data?',
-        `${totalNew} new item${totalNew > 1 ? 's' : ''} will be added. Existing data will not be changed.`
+        `${totalNew} new item${totalNew > 1 ? 's' : ''} will be added. Existing data will not be changed.`,
+        { yesLabel: 'Import', yesClass: 'btn-primary' }
       );
       if (!ok) return;
       await applyJsonMergePlan(payload, plan);
