@@ -377,13 +377,13 @@ function showChildSelector(children) {
   });
 }
 
-function uniqueCopyName(store, baseName) {
+function uniqueCopyName(store, baseName, suffix = 'copy') {
   const existing = new Set((state.cache[store] || []).map(i => i.name));
-  const candidate = `${baseName} (copy)`;
+  const candidate = `${baseName} (${suffix})`;
   if (!existing.has(candidate)) return candidate;
   let n = 2;
-  while (existing.has(`${baseName} (copy ${n})`)) n++;
-  return `${baseName} (copy ${n})`;
+  while (existing.has(`${baseName} (${suffix} ${n})`)) n++;
+  return `${baseName} (${suffix} ${n})`;
 }
 
 async function duplicateItem(type, id) {
@@ -643,13 +643,17 @@ async function processImportFile(file) {
       return;
     }
 
-    el.confirmYes.textContent = 'Replace All';
-    const ok = await confirm(
-      'Replace all data?',
-      'This will permanently delete all current data and replace it with the imported file. This cannot be undone.'
+    const choice = await confirmThreeWay(
+      'Import data',
+      'Merge will add new records and let you resolve any name/ID matches with existing data. Replace All will permanently delete all current data first.',
+      { cancelLabel: 'Cancel', midLabel: 'Merge', midClass: 'btn-primary', yesLabel: 'Replace All', yesClass: 'btn-danger' }
     );
-    el.confirmYes.textContent = 'Delete';
-    if (!ok) return;
+    if (choice === 'cancel') return;
+
+    if (choice === 'mid') {
+      await mergeJsonImport(payload);
+      return;
+    }
 
     const allStores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'];
     for (const name of allStores) {

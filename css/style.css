@@ -1045,6 +1045,60 @@ body {
   cursor: pointer;
 }
 
+/* JSON merge import — conflict review dialog */
+.merge-review-box { max-width: 560px; }
+.merge-review-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.merge-review-bulk .btn-sm { padding: 6px 10px; font-size: 13px; }
+.merge-review-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 8px 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.merge-review-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
+}
+.merge-review-row {
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.merge-review-row:last-child { border-bottom: none; }
+.merge-review-row-name { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.merge-review-row-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.merge-review-row-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.merge-review-row-options input[type=radio] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.merge-review-rename {
+  margin-top: 8px;
+  width: 100%;
+}
+
 /* =====================================================
    TOAST
    ===================================================== */
