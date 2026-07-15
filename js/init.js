@@ -4,9 +4,47 @@
    events.js (wireEvents), app.js (navigate, esc)
    ============================================================ */
 
+// ---------------------------------------------------------------------------
+// Data migration
+// ---------------------------------------------------------------------------
+
+// Migrates legacy VFD / Network Device / Hardwired Device records to the unified Device class.
+// Wiring key names differed per legacy type; all are normalised to deviceWiring here.
+// Runs once per database; gated by the 'migratedDeviceTypes_v1' settings flag.
+async function migrateDeviceTypes() {
+  if (await getSetting('migratedDeviceTypes_v1')) return;
+
+  const assets = await getAll('assets');
+  for (const asset of assets) {
+    if (!['VFD', 'Network Device', 'Hardwired Device'].includes(asset.assetClass)) continue;
+
+    const updated = { ...asset, assetClass: 'Device' };
+
+    // Each legacy type stored wiring under a different key; unify to deviceWiring
+    if (asset.assetClass === 'Network Device' && asset.networkDeviceWiring) {
+      updated.deviceWiring = asset.networkDeviceWiring;
+      delete updated.networkDeviceWiring;
+    } else if (asset.assetClass === 'Hardwired Device' && asset.hardwiredWiring) {
+      updated.deviceWiring = asset.hardwiredWiring;
+      delete updated.hardwiredWiring;
+    }
+
+    // Rename vfdParameters → parameters
+    if (asset.vfdParameters) {
+      updated.parameters = asset.vfdParameters;
+      delete updated.vfdParameters;
+    }
+
+    await upsert('assets', updated);
+  }
+
+  await setSetting('migratedDeviceTypes_v1', true);
+}
+
 async function init() {
   try {
     await initDB();
+    await migrateDeviceTypes();
 
     /* Detect viewport size and stamp body[data-layout] before any rendering
        so CSS and JS branches are consistent from the very first paint. */

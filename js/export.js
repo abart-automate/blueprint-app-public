@@ -136,7 +136,7 @@ async function exportExcel() {
     };
 
     // Partition assets by class
-    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'VFD', 'Network Device', 'Hardwired Device'];
+    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'Device'];
     const assetsByClass = {};
     for (const cls of assetClasses) {
       assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
@@ -147,7 +147,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 24;
+    const totalSheets = 20;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -175,13 +175,9 @@ async function exportExcel() {
     addSheet('PLC Terminal Wiring',  buildPlcTerminalWiringSheet(assetsByClass['PLC'], refs));
     addSheet('PLC Network Ports',    buildPlcNetworkPortsSheet(assetsByClass['PLC'], refs));
     addSheet('HMI', buildAssetClassSheet(assetsByClass['HMI'], 'HMI', refs));
-    addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'], 'VFD', refs));
-    addSheet('VFD Wiring',     buildVfdWiringSheet(assetsByClass['VFD'], refs));
-    addSheet('VFD Parameters', buildVfdParametersSheet(assetsByClass['VFD'], refs));
-    addSheet('Network Device',        buildAssetClassSheet(assetsByClass['Network Device'],   'Network Device',   refs));
-    addSheet('Network Device Wiring', buildNetworkDeviceWiringSheet(assetsByClass['Network Device'], refs));
-    addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
-    addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
+    addSheet('Device',            buildAssetClassSheet(assetsByClass['Device'], 'Device', refs));
+    addSheet('Device Wiring',     buildDeviceWiringSheet(assetsByClass['Device'], refs));
+    addSheet('Device Parameters', buildDeviceParametersSheet(assetsByClass['Device'], refs));
 
     const sheetMeta = workbook.SheetNames.map((name, i) => {
       const ws = workbook.Sheets[name];
@@ -228,11 +224,9 @@ function buildChecklistSheet(autoItems, customItems) {
 
 // Keys excluded from each asset class's main sheet (handled by sub-data sheets)
 const ASSET_CLASS_EXCLUDE_KEYS = {
-  'Network Switch':   ['switchPorts', 'switchNetworks'],
-  'PLC':              ['slots'],
-  'VFD':              ['vfdParameters', 'deviceWiring'],
-  'Network Device':   ['networkDeviceWiring'],
-  'Hardwired Device': ['hardwiredWiring'],
+  'Network Switch': ['switchPorts', 'switchNetworks'],
+  'PLC':            ['slots'],
+  'Device':         ['deviceWiring', 'parameters'], // both sub-arrays exported on their own sheets
 };
 
 function buildAssetClassSheet(assets, assetClass, refs) {
@@ -301,11 +295,24 @@ function buildPlcSlotsSheet(plcAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function buildVfdParametersSheet(vfdAssets, refs) {
+// Exports wiring rows (terminal / label) for all Device assets
+function buildDeviceWiringSheet(devices, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
+  const rows = [];
+  for (const asset of devices) {
+    for (const row of (asset.deviceWiring || [])) {
+      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+// Exports parameter rows (parameter / value) for all Device assets
+function buildDeviceParametersSheet(devices, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Section', 'Parameter', 'Value'];
   const rows = [];
-  for (const asset of vfdAssets) {
-    for (const param of (asset.vfdParameters || [])) {
+  for (const asset of devices) {
+    for (const param of (asset.parameters || [])) {
       rows.push([asset.id, asset.name || '', 'Parameters', param.parameter || '', param.value || '']);
     }
   }
@@ -329,38 +336,6 @@ function buildPowerWiringSheet(powerItems, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function buildVfdWiringSheet(vfdAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
-  const rows = [];
-  for (const asset of vfdAssets) {
-    for (const row of (asset.deviceWiring || [])) {
-      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
-    }
-  }
-  return buildSubDataSheet(headers, rows);
-}
-
-function buildNetworkDeviceWiringSheet(networkDeviceAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
-  const rows = [];
-  for (const asset of networkDeviceAssets) {
-    for (const row of (asset.networkDeviceWiring || [])) {
-      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
-    }
-  }
-  return buildSubDataSheet(headers, rows);
-}
-
-function buildHardwiredWiringSheet(hardwiredAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
-  const rows = [];
-  for (const asset of hardwiredAssets) {
-    for (const row of (asset.hardwiredWiring || [])) {
-      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
-    }
-  }
-  return buildSubDataSheet(headers, rows);
-}
 
 function buildPlcDigitalWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label'];

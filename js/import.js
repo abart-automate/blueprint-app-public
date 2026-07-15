@@ -9,10 +9,14 @@
 const KNOWN_SHEET_NAMES = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
-  'PLC', 'PLC Slots', 'HMI', 'VFD', 'VFD Parameters',
-  'Network Device', 'Hardwired Device',
-  'Power Wiring', 'VFD Wiring', 'Network Device Wiring', 'Hardwired Device Wiring',
-  'Checklist',
+  'PLC', 'PLC Slots', 'HMI',
+  // Current device sheets (v1.17.0+)
+  'Device', 'Device Wiring', 'Device Parameters',
+  // Legacy device sheets (pre-v1.17.0) — accepted for backwards-compat imports
+  'VFD', 'VFD Parameters', 'VFD Wiring',
+  'Network Device', 'Network Device Wiring',
+  'Hardwired Device', 'Hardwired Device Wiring',
+  'Power Wiring', 'Checklist',
 ]);
 
 // Two-phase import strategy:
@@ -130,20 +134,30 @@ const ASSET_CLASS_SHEET_DEFS = [
   { sheetName: 'Network Switch', assetClass: 'Network Switch' },
   { sheetName: 'PLC',            assetClass: 'PLC' },
   { sheetName: 'HMI',            assetClass: 'HMI' },
-  { sheetName: 'VFD',            assetClass: 'VFD' },
-  { sheetName: 'Network Device', assetClass: 'Network Device' },
-  { sheetName: 'Hardwired Device', assetClass: 'Hardwired Device' },
+  { sheetName: 'Device',         assetClass: 'Device' },
 ];
 
-// Sub-array keys managed by sub-data sheets; preserved from existing record
+// Legacy sheet names (pre-v1.17.0) mapped to the unified Device class
+const COMPAT_ASSET_CLASS_SHEET_DEFS = [
+  { sheetName: 'VFD',              assetClass: 'Device' },
+  { sheetName: 'Network Device',   assetClass: 'Device' },
+  { sheetName: 'Hardwired Device', assetClass: 'Device' },
+];
+
+// Sub-array keys managed by sub-data sheets; preserved from existing record during main-sheet import
 const SUBDATA_KEYS_BY_CLASS = {
   'Network Switch': ['switchPorts', 'switchNetworks'],
   'PLC':            ['slots'],
-  'VFD':            ['vfdParameters'],
+  'Device':         ['deviceWiring', 'parameters'],
 };
 
 async function importAssetSheets(wb, nameToId, idExists, stats) {
-  for (const { sheetName, assetClass } of ASSET_CLASS_SHEET_DEFS) {
+  // Use legacy sheet defs only when no modern 'Device' sheet is present (pre-v1.17.0 exports)
+  const sheetDefs = wb.Sheets['Device']
+    ? ASSET_CLASS_SHEET_DEFS
+    : [...ASSET_CLASS_SHEET_DEFS, ...COMPAT_ASSET_CLASS_SHEET_DEFS];
+
+  for (const { sheetName, assetClass } of sheetDefs) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
 
@@ -182,7 +196,7 @@ async function importAssetSheets(wb, nameToId, idExists, stats) {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, VFD Params)
+// Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, Device sub-data)
 // ---------------------------------------------------------------------------
 
 async function importChecklistSheet(wb) {
@@ -206,11 +220,17 @@ async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchNetworksSheet(wb, nameToId, idExists);
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
-  await importVfdParametersSheet(wb, nameToId, idExists);
   await importPowerWiringSheet(wb, nameToId, idExists);
-  await importAssetWiringSheet(wb, 'VFD Wiring',              'deviceWiring',        nameToId, idExists);
-  await importAssetWiringSheet(wb, 'Network Device Wiring',   'networkDeviceWiring', nameToId, idExists);
-  await importAssetWiringSheet(wb, 'Hardwired Device Wiring', 'hardwiredWiring',     nameToId, idExists);
+
+  // Current device sub-sheets (v1.17.0+)
+  await importAssetWiringSheet(wb, 'Device Wiring',     'deviceWiring', nameToId, idExists);
+  await importDeviceParametersSheet(wb, nameToId, idExists);
+
+  // Legacy device sub-sheets (pre-v1.17.0) — all wiring keys map to deviceWiring
+  await importAssetWiringSheet(wb, 'VFD Wiring',              'deviceWiring', nameToId, idExists);
+  await importAssetWiringSheet(wb, 'Network Device Wiring',   'deviceWiring', nameToId, idExists);
+  await importAssetWiringSheet(wb, 'Hardwired Device Wiring', 'deviceWiring', nameToId, idExists);
+  await importLegacyVfdParametersSheet(wb, nameToId, idExists);
 }
 
 async function importSwitchNetworksSheet(wb, nameToId, idExists) {
@@ -292,7 +312,25 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
   }
 }
 
-async function importVfdParametersSheet(wb, nameToId, idExists) {
+async function importDeviceParametersSheet(wb, nameToId, idExists) {
+  const ws = wb.Sheets['Device Parameters'];
+  if (!ws) return;
+
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const grouped = groupByParentAsset(rows, 'Asset ID', 'Asset Name', nameToId, idExists);
+
+  for (const [assetId, assetRows] of grouped) {
+    const asset = await getById('assets', assetId);
+    if (!asset) continue;
+    asset.parameters = assetRows
+      .map(row => ({ parameter: str(row['Parameter']), value: str(row['Value']) }))
+      .filter(p => p.parameter);
+    await upsert('assets', asset);
+  }
+}
+
+// Reads the legacy 'VFD Parameters' sheet (pre-v1.17.0) into asset.parameters
+async function importLegacyVfdParametersSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['VFD Parameters'];
   if (!ws) return;
 
@@ -302,7 +340,7 @@ async function importVfdParametersSheet(wb, nameToId, idExists) {
   for (const [assetId, assetRows] of grouped) {
     const asset = await getById('assets', assetId);
     if (!asset) continue;
-    asset.vfdParameters = assetRows
+    asset.parameters = assetRows
       .map(row => ({ parameter: str(row['Parameter']), value: str(row['Value']) }))
       .filter(p => p.parameter);
     await upsert('assets', asset);
