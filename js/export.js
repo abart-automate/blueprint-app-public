@@ -640,30 +640,22 @@ function getFieldLabel(store, key, item) {
   return fieldDef?.label || prettifyKey(key);
 }
 
+// Delegates to getEffectiveFields() (utils.js) — the same "all field defs that
+// apply to this item" builder used by the form/detail renderers and completion
+// scoring — rather than re-walking ENTITY's field-def sets independently.
+// This used to have its own hand-rolled traversal that (a) duplicated
+// getEffectiveFields' logic and (b) had drifted from it: it looked up an
+// asset's linked-network address fields via `item?.networkType`, but assets
+// never carry a top-level networkType (only `networks` records do — an
+// asset's network association is `item.networkId`, resolved to the linked
+// network's type via state.refs). That branch could never match, silently
+// falling back to prettifyKey() for network-address field labels (IP
+// Address, Subnet Mask, etc.) on exported HMI/VFD/Network Device assets
+// instead of using their declared labels. getEffectiveFields already
+// resolves this correctly via state.refs.networks[item.networkId].
 function findFieldDef(store, key, item) {
-  const entity = ENTITY[store];
-  if (!entity) return null;
-
-  const searchFields = (fields) => fields?.find(f => f.key === key);
-  let fieldDef = searchFields(entity.fields);
-  if (fieldDef) return fieldDef;
-
-  if (store === 'assets') {
-    fieldDef = searchFields(entity.classFields?.[item?.assetClass] || []);
-    if (fieldDef) return fieldDef;
-    fieldDef = searchFields(entity.subclassFields?.[item?.assetSubclass] || []);
-    if (fieldDef) return fieldDef;
-    const networkType = entity.networkTypeFields?.[item?.networkType] ? item.networkType : null;
-    fieldDef = searchFields(entity.networkTypeFields?.[networkType] || []);
-    if (fieldDef) return fieldDef;
-  }
-
-  if (store === 'networks' && item?.networkType) {
-    fieldDef = searchFields(entity.protocolFields?.[item.networkType] || []);
-    if (fieldDef) return fieldDef;
-  }
-
-  return null;
+  if (!ENTITY[store]) return null;
+  return getEffectiveFields(store, item).find(f => f.key === key) || null;
 }
 
 function prettifyKey(key) {
