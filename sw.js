@@ -1,8 +1,12 @@
-// SW_BUILD is auto-stamped with the current git commit hash by a pre-commit
-// hook (scripts/git-hooks/pre-commit -> scripts/stamp-sw-build.js) whenever
-// a commit touches an app-shell file (index.html, manifest.json, css/, js/,
-// icons/) — do not hand-edit this value, it's overwritten on the next
-// relevant commit.
+// SW_BUILD is auto-stamped "<UTC timestamp>-<commit hash>" (e.g.
+// '20260909T1432Z-dbb0ef0') by a pre-commit hook (scripts/git-hooks/
+// pre-commit -> scripts/stamp-sw-build.js) whenever a commit touches an
+// app-shell file (index.html, manifest.json, css/, js/, icons/) — do not
+// hand-edit this value, it's overwritten on the next relevant commit. The
+// timestamp is there so "what build is this install on, and when was it
+// published" can be read straight off this value (e.g. in DevTools ->
+// Application -> Cache Storage, or console-logged) without a git log
+// lookup; the hash is what actually guarantees uniqueness.
 //
 // It exists because the browser's service-worker update check only detects
 // a new version by byte-diffing THIS file's own content against what's
@@ -20,7 +24,7 @@
 // js/version.js's APP_VERSION is unrelated to this — it's the human-facing
 // version shown in the app footer and export metadata, untouched by this
 // mechanism.
-const SW_BUILD = 'dbb0ef0';
+const SW_BUILD = '20260909T1552Z-a24469c';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
