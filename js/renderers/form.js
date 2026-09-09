@@ -309,12 +309,16 @@ async function renderEntityForm() {
       }
     };
 
+    const rerenderAssetNetworkPorts = () => _renderNetworkPortsTable(
+      'asset-network-ports-container', state.formAssetNetworkPorts, rerenderAssetNetworkPorts, null
+    );
+
     const updateAssetNetworkPorts = () => {
       const assetClass = $('f-assetClass')?.value;
       const show = ASSET_CLASS_NETWORK_PORTS.has(assetClass);
       const wrap = $('asset-network-ports-wrap');
       if (wrap) wrap.style.display = show ? '' : 'none';
-      if (show) _renderNetworkPortsTable('asset-network-ports-container', state.formAssetNetworkPorts, null, null);
+      if (show) rerenderAssetNetworkPorts();
     };
 
     const renderSubclassFields = async () => {
