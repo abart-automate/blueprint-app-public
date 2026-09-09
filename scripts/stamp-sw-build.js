@@ -1,12 +1,22 @@
 #!/usr/bin/env node
-// Rewrites sw.js's SW_BUILD constant to "<UTC timestamp>-<commit hash>" (the
-// hash being that of the commit being made's parent) and re-stages sw.js,
-// so every commit carries a build stamp guaranteed to differ from every
-// prior one — that's what makes the browser's service-worker update check
-// (which only diffs sw.js's own bytes) actually fire. See sw.js for the
-// full explanation. The timestamp half exists purely for humans (so "which
-// build is a user on" can be read straight off SW_BUILD without a git log
-// lookup) — the hash half is what actually guarantees uniqueness.
+// Rewrites sw.js's SW_BUILD constant to "<UTC timestamp>-<tree hash>" and
+// re-stages sw.js, so every commit carries a build stamp guaranteed to differ
+// from every prior one — that's what makes the browser's service-worker
+// update check (which only diffs sw.js's own bytes) actually fire. See sw.js
+// for the full explanation. The timestamp half exists purely for humans (so
+// "which build is a user on" can be read straight off SW_BUILD without a git
+// log lookup) — the hash half is what actually guarantees uniqueness.
+//
+// The hash is a git tree hash (`git write-tree`), not a commit hash. A commit
+// hash is derived from its tree, which includes sw.js's own bytes — so a
+// commit can never correctly embed its own hash inside a tracked file:
+// stamping it in changes the tree, which changes the hash you just stamped.
+// (An earlier version of this script used `git rev-parse HEAD`, which is
+// only ever the *parent* commit at pre-commit time — every build was
+// stamped with the hash of the commit before it, permanently one behind.)
+// `git write-tree` sidesteps this: called here, before this script rewrites
+// sw.js, it hashes the tree exactly as staged — i.e. the tree this commit is
+// about to get — with no self-reference involved.
 //
 // Run automatically by scripts/git-hooks/pre-commit; not meant to be run
 // by hand, though doing so is harmless (it just re-stamps sw.js again).
@@ -24,12 +34,12 @@ const path = require('path');
 const repoRoot = execSync('git rev-parse --show-toplevel').toString().trim();
 const swPath = path.join(repoRoot, 'sw.js');
 
-let parentHash = 'initial';
+let treeHash = 'initial';
 try {
-  parentHash = execSync('git rev-parse --short HEAD', { cwd: repoRoot }).toString().trim();
+  treeHash = execSync('git write-tree', { cwd: repoRoot }).toString().trim().slice(0, 7);
 } catch {
-  // No HEAD yet (first commit in a brand-new repo) — 'initial' is fine,
-  // it's unique enough for that one-time case.
+  // Unmerged index (mid-conflict-resolution commit) or similar — 'initial'
+  // is fine, it's unique enough for that one-time case.
 }
 
 // UTC, not local time — this stamp may be read by whoever's debugging a
@@ -42,7 +52,7 @@ function utcStamp(date) {
     `T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}Z`;
 }
 
-const buildStamp = `${utcStamp(new Date())}-${parentHash}`;
+const buildStamp = `${utcStamp(new Date())}-${treeHash}`;
 
 const src = fs.readFileSync(swPath, 'utf8');
 const updated = src.replace(/const SW_BUILD = '[^']*';/, `const SW_BUILD = '${buildStamp}';`);

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Auto-stamps sw.js's SW_BUILD with the current commit hash on every commit.
+# Auto-stamps sw.js's SW_BUILD with a tree hash of this commit on every commit.
 # See sw.js and stamp-sw-build.js (in this same scripts/ directory) for why
 # this needs to happen at all.
 #

@@ -1,11 +1,17 @@
-// SW_BUILD is auto-stamped "<UTC timestamp>-<commit hash>" (e.g.
+// SW_BUILD is auto-stamped "<UTC timestamp>-<tree hash>" (e.g.
 // '20260909T1432Z-dbb0ef0') by a pre-commit hook (scripts/git-hooks/
 // pre-commit -> scripts/stamp-sw-build.js) on every commit — do not
 // hand-edit this value, it's overwritten on the next commit. The
 // timestamp is there so "what build is this install on, and when was it
 // published" can be read straight off this value (e.g. in DevTools ->
 // Application -> Cache Storage, or console-logged) without a git log
-// lookup; the hash is what actually guarantees uniqueness.
+// lookup; the hash is what actually guarantees uniqueness. It's a git
+// tree hash (`git write-tree`), not a commit hash — a commit's hash is
+// derived from its own tree, so a file can never correctly embed its own
+// commit's hash (stamping it in would change the tree, which changes the
+// hash). The tree hash is computed just before this file is rewritten, so
+// it correctly identifies this commit instead of always lagging one behind
+// (see stamp-sw-build.js for the full explanation).
 //
 // It exists because the browser's service-worker update check only detects
 // a new version by byte-diffing THIS file's own content against what's
@@ -31,7 +37,7 @@
 // gated-activation pattern below (waiting worker + SKIP_WAITING message on
 // user consent) is adopted for predictability of *when* control transfers,
 // not because that was an active bug for this app's architecture.
-const SW_BUILD = '20260909T2324Z-034330f';
+const SW_BUILD = '20260909T2331Z-0831158';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
