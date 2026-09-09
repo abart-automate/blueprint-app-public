@@ -552,29 +552,34 @@ async function renderPage() {
 /* ---- HOME ---- */
 
 /**
- * Asks the active service worker for its SW_BUILD stamp, so the home-page
- * footer can show the build actually running instead of the hand-maintained
- * APP_VERSION (which can drift — see sw.js's comment on SW_BUILD). Resolves
- * to null if there's no controlling service worker yet (e.g. first-ever
- * load) or it doesn't answer in time. Cached after the first successful
- * lookup since the controlling worker's build can't change without a reload.
+ * Reads the running SW_BUILD stamp straight out of Cache Storage — shared
+ * between the page and the service worker, so no message round-trip to the
+ * worker is needed. Resolves to null if the Cache Storage API is unavailable
+ * or nothing's been precached yet. Cached after the first lookup since the
+ * controlling build can't change without a reload.
  */
 let _swBuildCache = null;
-function getSwBuild() {
-  if (_swBuildCache) return Promise.resolve(_swBuildCache);
-  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-    return Promise.resolve(null);
-  }
-  return new Promise(resolve => {
-    const channel = new MessageChannel();
-    const timer = setTimeout(() => resolve(null), 1000);
-    channel.port1.onmessage = e => {
-      clearTimeout(timer);
-      _swBuildCache = e.data;
-      resolve(e.data);
-    };
-    navigator.serviceWorker.controller.postMessage('GET_SW_BUILD', [channel.port2]);
-  });
+async function getRunningBuild() {
+  if (_swBuildCache) return _swBuildCache;
+  if (!('caches' in window)) return null;
+  const keys = (await caches.keys()).filter(k => k.startsWith('plant-asset-'));
+  if (keys.length === 0) return null;
+  // SW_BUILD's timestamp-first format makes lexicographic sort == chronological
+  // order. While an update sits unconsumed in the service worker's `waiting`
+  // state, both the old (active) and new (precached) caches can briefly
+  // coexist — the OLDEST entry is always the one actually controlling the
+  // page, so that's what the footer/export metadata must report.
+  keys.sort();
+  _swBuildCache = keys[0].slice('plant-asset-'.length);
+  return _swBuildCache;
+}
+
+/** Renders "20260909T2141Z-0ea8a43" as "2026-09-09 21:41 UTC (0ea8a43)" for display. */
+function formatBuildLabel(build) {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z-(.+)$/.exec(build);
+  if (!m) return build;
+  const [, y, mo, d, h, mi, hash] = m;
+  return `${y}-${mo}-${d} ${h}:${mi} UTC (${hash})`;
 }
 
 /** Renders the plant home page with summary stats, area cards, and checklist overview. */
@@ -590,6 +595,7 @@ async function renderHome() {
 
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
   const showInstall = !isStandalone && !!_deferredInstallPrompt;
+  const runningBuild = await getRunningBuild();
 
   el.main.innerHTML = `
     <div class="home-hero">
@@ -656,7 +662,7 @@ async function renderHome() {
       </div>
     </div>
     <div class="home-footer">
-      <span class="home-version" id="home-version">v${APP_VERSION}</span>
+      <span class="home-version">${runningBuild ? formatBuildLabel(runningBuild) : ''}</span>
     </div>
   `;
 
@@ -687,11 +693,6 @@ async function renderHome() {
       }
     });
   }
-  getSwBuild().then(build => {
-    if (!build) return;
-    const versionEl = el.main.querySelector('#home-version');
-    if (versionEl) versionEl.textContent = build;
-  });
 }
 
 /* ---- CHECKLIST PAGE ---- */

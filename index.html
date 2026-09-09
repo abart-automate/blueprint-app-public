@@ -159,7 +159,6 @@
     <input type="file" id="import-file-input" accept=".json,.xlsx" style="display:none" aria-hidden="true">
 
   </div><!-- /#app -->
-  <script src="js/version.js"></script>
   <script src="js/vendor/jszip.min.js"></script>
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/db.js"></script>
@@ -183,17 +182,44 @@
         // updateViaCache: 'none' makes the browser always re-fetch sw.js itself
         // (bypassing the ordinary HTTP cache) whenever it checks for updates —
         // without it, an HTTP-cached copy of sw.js could mask a real change
-        // even after the byte-diff fix in sw.js's own SW_VERSION comment.
+        // even after the byte-diff fix in sw.js's own SW_BUILD comment.
         navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
           var hadController = !!navigator.serviceWorker.controller;
+
+          // Gated activation: sw.js no longer self-activates a waiting worker,
+          // so a real update parks at 'installed' (not 'activated') until the
+          // user consents via the banner's "Update Now" button.
           reg.addEventListener('updatefound', function () {
             var newWorker = reg.installing;
             newWorker.addEventListener('statechange', function () {
-              if (newWorker.state === 'activated' && hadController) {
-                window.dispatchEvent(new CustomEvent('pwa-updated'));
+              if (newWorker.state === 'installed' && hadController) {
+                window.dispatchEvent(new CustomEvent('pwa-updated', { detail: { registration: reg } }));
               }
             });
           });
+
+          // The actual reload happens here, once, as the direct consequence of
+          // the new worker taking control (which only happens after the user
+          // clicks "Update Now" and it posts SKIP_WAITING to the waiting
+          // worker) — not immediately on the click itself, which would race
+          // the still-in-flight activation.
+          var refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (refreshing) return;
+            refreshing = true;
+            window.location.reload();
+          });
+
+          // A long-open tab never re-checks on its own otherwise (the browser's
+          // own background check can take up to ~24h) — explicitly re-check
+          // whenever the tab regains visibility, plus an hourly backstop for a
+          // tab that stays visible the whole session.
+          document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') reg.update().catch(function () {});
+          });
+          setInterval(function () {
+            if (document.visibilityState === 'visible') reg.update().catch(function () {});
+          }, 60 * 60 * 1000);
         });
       });
     }

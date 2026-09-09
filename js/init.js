@@ -152,7 +152,7 @@ function initOfflineIndicator() {
    PWA UPDATE BANNER
    ============================================================ */
 
-function initUpdateBanner() {
+function initUpdateBanner(e) {
   if (document.getElementById('update-banner')) return;
   const banner = document.createElement('div');
   banner.id = 'update-banner';
@@ -165,7 +165,15 @@ function initUpdateBanner() {
     '</div>';
   document.getElementById('app-header').before(banner);
   document.getElementById('update-now-btn').onclick = function () {
-    window.location.reload();
+    // Send consent to the waiting worker; the actual reload happens via the
+    // 'controllerchange' listener in index.html once it activates. Re-read
+    // reg.waiting at click time (not a captured reference) in case state has
+    // moved on since the banner was shown; fall back to a plain reload if
+    // there's somehow no waiting worker left (e.g. another tab already
+    // updated it).
+    const reg = e.detail.registration;
+    if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    else window.location.reload();
   };
   document.getElementById('update-later-btn').onclick = function () {
     banner.remove();

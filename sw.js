@@ -11,22 +11,28 @@
 // It exists because the browser's service-worker update check only detects
 // a new version by byte-diffing THIS file's own content against what's
 // currently registered — it does not look inside files this script imports.
-// An earlier version of this file computed CACHE_NAME from APP_VERSION via
-// importScripts('./js/version.js'); since that never changed sw.js's own
-// bytes, the browser always concluded "no update" and the "Update Now"
-// banner (wired in index.html's registration script -> init.js's
-// initUpdateBanner) never appeared, no matter how many times APP_VERSION
-// was bumped. Deriving this from the commit hash instead of a manually
-// maintained number means there's nothing to remember to bump, and it can
-// never silently drift out of sync the way a hand-edited value can.
+// An earlier design derived CACHE_NAME from a hand-maintained version string
+// via importScripts(); since that never changed sw.js's own bytes, the
+// browser always concluded "no update" and the "Update Now" banner (wired in
+// index.html's registration script -> init.js's initUpdateBanner) never
+// appeared, no matter how many times that string was bumped. Deriving this
+// from the commit hash instead means there's nothing to remember to bump,
+// and it can never silently drift out of sync the way a hand-edited value
+// can.
 //
 // One-time setup per clone: `git config core.hooksPath scripts/git-hooks`.
-// The home-page footer asks the active worker for this value (see the
-// 'message' handler below / app.js's getSwBuild()) and shows it in place of
-// js/version.js's APP_VERSION whenever a worker is actually controlling the
-// page; APP_VERSION remains the fallback (and still the version tagged in
-// export metadata) since it's unrelated to this mechanism.
-const SW_BUILD = '20260909T2141Z-0ea8a43';
+// This is also the app's only version concept shown to humans: the
+// home-page footer and export metadata both read it straight out of Cache
+// Storage (see js/app.js's getRunningBuild()) rather than duplicating it in
+// a separately maintained constant.
+//
+// The app's shell assets (this list, below) all load once eagerly at
+// initial page load and are never re-fetched at runtime, so a new worker
+// silently taking over mid-session has always been low-risk here. The
+// gated-activation pattern below (waiting worker + SKIP_WAITING message on
+// user consent) is adopted for predictability of *when* control transfers,
+// not because that was an active bug for this app's architecture.
+const SW_BUILD = '20260909T2209Z-db3bb68';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
@@ -38,7 +44,6 @@ const APP_SHELL = [
   './',
   './index.html',
   './css/style.css',
-  './js/version.js',
   './js/db.js',
   './js/entity-config.js',
   './js/state.js',
@@ -61,16 +66,26 @@ const APP_SHELL = [
   './icons/icon-512.png'
 ];
 
-// Pre-cache the full app shell on install
+// Pre-cache the full app shell on install. Deliberately does NOT call
+// self.skipWaiting() here — a new worker parks in the `waiting` state until
+// the page's "Update Now" banner sends it a SKIP_WAITING message (see the
+// 'message' handler below), so activation only happens once the user has
+// actually consented. (A first-ever install, with no existing controller in
+// scope, still activates immediately on its own — skipWaiting() only matters
+// for forcing takeover while an old worker is still controlling open tabs.)
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
   );
 });
 
-// Delete caches from previous SW versions on activate
+// Delete caches from previous SW versions on activate. clients.claim() here
+// is what makes 'controllerchange' fire promptly on an already-open tab once
+// this worker activates — without it the reload-on-consent flow in
+// index.html would have nothing reliable to hook into until the tab's next
+// navigation. Under the gated-activation pattern this only runs after the
+// user has consented (via SKIP_WAITING below) or all old-version tabs have
+// closed, so it's no longer "taking control before consent."
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
@@ -81,12 +96,11 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Lets the page ask "what build are you?" so the home-page footer can show
-// the real running build instead of a hand-maintained version number.
+// The page's "Update Now" button sends this once the user has consented to
+// activating a waiting update (see index.html's registration script and
+// js/init.js's initUpdateBanner).
 self.addEventListener('message', event => {
-  if (event.data === 'GET_SW_BUILD') {
-    event.ports[0]?.postMessage(SW_BUILD);
-  }
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // Cache-first with background revalidation (stale-while-revalidate)

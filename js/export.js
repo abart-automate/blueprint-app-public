@@ -68,8 +68,12 @@ async function exportToZip() {
     // media files are written to Checklist/<item>/ subfolders below.
     const checklistCustom = (await getSetting('checklistItems')) || [];
     const customItemsForJson = checklistCustom.map(({ images: _i, ...rest }) => rest);
+    // Raw SW_BUILD stamp, not a semver string — write-only metadata (never read
+    // back on import), included so a support conversation about an exported
+    // file can be tied to the exact build that produced it.
+    const build = await getRunningBuild();
     zip.file('data.json', JSON.stringify({
-      version: APP_VERSION,
+      build,
       exportedAt: new Date().toISOString(),
       checklist: {
         autoItems: calcChecklistAutoItems(),
