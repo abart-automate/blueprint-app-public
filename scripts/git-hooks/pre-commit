@@ -1,7 +1,7 @@
 #!/bin/sh
-# Auto-stamps sw.js's SW_BUILD with the current commit hash whenever this
-# commit touches an app-shell file. See sw.js and stamp-sw-build.js
-# (in this same scripts/ directory) for why this needs to happen at all.
+# Auto-stamps sw.js's SW_BUILD with the current commit hash on every commit.
+# See sw.js and stamp-sw-build.js (in this same scripts/ directory) for why
+# this needs to happen at all.
 #
 # This hook only runs if this repo's core.hooksPath points here — that's a
 # one-time setup step per clone (git doesn't share hook config via clone/

@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 // Rewrites sw.js's SW_BUILD constant to "<UTC timestamp>-<commit hash>" (the
 // hash being that of the commit being made's parent) and re-stages sw.js,
-// so every commit that touches the app shell carries a build stamp
-// guaranteed to differ from every prior one — that's what makes the
-// browser's service-worker update check (which only diffs sw.js's own
-// bytes) actually fire. See sw.js for the full explanation. The timestamp
-// half exists purely for humans (so "which build is a user on" can be read
-// straight off SW_BUILD without a git log lookup) — the hash half is what
-// actually guarantees uniqueness.
+// so every commit carries a build stamp guaranteed to differ from every
+// prior one — that's what makes the browser's service-worker update check
+// (which only diffs sw.js's own bytes) actually fire. See sw.js for the
+// full explanation. The timestamp half exists purely for humans (so "which
+// build is a user on" can be read straight off SW_BUILD without a git log
+// lookup) — the hash half is what actually guarantees uniqueness.
 //
 // Run automatically by scripts/git-hooks/pre-commit; not meant to be run
 // by hand, though doing so is harmless (it just re-stamps sw.js again).
 //
-// Only touches sw.js when this commit actually changes something in the
-// deployed app shell — a docs-only or plan-file-only commit shouldn't force
-// every installed user through a cache-busting "update available" prompt.
+// Runs unconditionally on every commit — including ones that don't touch
+// any deployed file (docs, scripts, plan files) — by deliberate choice: the
+// alternative (only stamping when a commit touches an app-shell path) meant
+// a change's stamp status was a fact you had to remember or go check,
+// rather than something you could always rely on.
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -22,18 +23,6 @@ const path = require('path');
 
 const repoRoot = execSync('git rev-parse --show-toplevel').toString().trim();
 const swPath = path.join(repoRoot, 'sw.js');
-
-const stagedFiles = execSync('git diff --cached --name-only', { cwd: repoRoot })
-  .toString()
-  .trim()
-  .split('\n')
-  .filter(Boolean);
-
-const SHELL_PATTERNS = [/^index\.html$/, /^manifest\.json$/, /^css\//, /^js\//, /^icons\//];
-const touchesShell = stagedFiles.some(f => SHELL_PATTERNS.some(p => p.test(f)));
-if (!touchesShell) {
-  process.exit(0);
-}
 
 let parentHash = 'initial';
 try {

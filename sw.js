@@ -1,8 +1,7 @@
 // SW_BUILD is auto-stamped "<UTC timestamp>-<commit hash>" (e.g.
 // '20260909T1432Z-dbb0ef0') by a pre-commit hook (scripts/git-hooks/
-// pre-commit -> scripts/stamp-sw-build.js) whenever a commit touches an
-// app-shell file (index.html, manifest.json, css/, js/, icons/) — do not
-// hand-edit this value, it's overwritten on the next relevant commit. The
+// pre-commit -> scripts/stamp-sw-build.js) on every commit — do not
+// hand-edit this value, it's overwritten on the next commit. The
 // timestamp is there so "what build is this install on, and when was it
 // published" can be read straight off this value (e.g. in DevTools ->
 // Application -> Cache Storage, or console-logged) without a git log
@@ -32,14 +31,13 @@
 // gated-activation pattern below (waiting worker + SKIP_WAITING message on
 // user consent) is adopted for predictability of *when* control transfers,
 // not because that was an active bug for this app's architecture.
-const SW_BUILD = '20260909T2230Z-1e25b39';
+const SW_BUILD = '20260909T2238Z-3a3d0e1';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
 // All static files that make up the app shell — must stay in sync with
-// index.html's <script> tags (the stamping script above only fires when a
-// commit touches one of these paths, so this list itself doesn't need a
-// manual version bump — just keep it matching index.html).
+// index.html's <script> tags. Keep this list matching index.html by hand;
+// nothing auto-derives it.
 const APP_SHELL = [
   './',
   './index.html',
