@@ -1,8 +1,66 @@
+// @ts-check
 /* ============================================================
    ENTITY CONFIGURATION
    Single source of truth for all entity schemas, field
    definitions, and shared field/icon constants.
    ============================================================ */
+
+/**
+ * The six entity types that have their own schema, form, and detail view.
+ * Distinct from db.js's StoreName (which also covers the 'settings' and
+ * 'partsLibrary' raw IndexedDB stores that have no ENTITY entry).
+ * @typedef {'areas'|'panels'|'power'|'safety'|'networks'|'assets'} EntityType
+ */
+
+/**
+ * One field's config in the field-schema DSL that drives form rendering,
+ * detail rendering, XLSX export/import column mapping, and completeness
+ * scoring. This is a first-draft JSDoc encoding of the discriminated-union
+ * shape the TypeScript migration plan calls for (see the migration plan's
+ * entity-config.ts typing strategy) — real union-typed field arrays and
+ * entity records are Phase 2 work; this only types the schema-of-schema
+ * itself, ahead of any build tooling, to catch field-def typos now.
+ * @typedef {Object} FieldDefBase
+ * @property {string} key
+ * @property {string} label
+ * @property {boolean} [required]
+ * @property {string} [section]
+ * @property {boolean} [filterChip]
+ */
+/** @typedef {FieldDefBase & { type: 'text'|'textarea' }} ScalarFieldDef */
+/** @typedef {FieldDefBase & { type: 'enum', options: readonly string[], enumFilterChip?: boolean }} EnumFieldDef */
+/** @typedef {FieldDefBase & { type: 'ref', refStore: EntityType }} RefFieldDef */
+/** @typedef {ScalarFieldDef | EnumFieldDef | RefFieldDef} FieldDef */
+
+/** @typedef {{ key: string, label: string, placeholder1?: string, placeholder2?: string }} ItemTableDef */
+
+/**
+ * The per-entity-type config object. `fields` plus the various conditional
+ * lookup tables (protocolFields, classFields, cardTypeFields, etc.) together
+ * form the "schema of schema" the form/detail renderers, XLSX export/import,
+ * and getEffectiveFields() (utils.js) all read generically.
+ * @typedef {Object} EntityConfig
+ * @property {string} label
+ * @property {string} plural
+ * @property {EntityType} store
+ * @property {string} color
+ * @property {string} bgColor
+ * @property {string} badgeClass
+ * @property {boolean} [noImages]
+ * @property {string[]} [requiredPhotoSlots]
+ * @property {ItemTableDef[]} [itemTables]
+ * @property {readonly FieldDef[]} fields
+ * @property {(item: any, refs?: any) => string} getSubtitle
+ * @property {{ label: string, store: EntityType, field: string, countFn?: (all: any[], id: string) => number }[]} getChildren
+ * @property {Record<string, readonly FieldDef[]>} [protocolFields]
+ * @property {Record<string, readonly FieldDef[]>} [networkTypeFields]
+ * @property {Record<string, readonly FieldDef[]>} [cardTypeFields]
+ * @property {Record<string, readonly FieldDef[]>} [classFields]
+ * @property {Record<string, ItemTableDef[]>} [classItemTables]
+ * @property {Record<string, any>} [subclassChildren]
+ * @property {Record<string, string[]>} [classSubclasses]
+ * @property {Record<string, readonly FieldDef[]>} [subclassFields]
+ */
 
 /* ---- FORM TYPE SENTINELS ----
    state.formType / state.detailType hold either one of these sentinel
@@ -27,11 +85,13 @@ const PART_ISOLATION     = ['Non-isolated', 'Isolated', 'Individually-isolated',
 const PART_CARD_TYPES    = ['Controller', 'Analog', 'Digital', 'Communication', 'Specialty', 'Motion'];
 
 /* ---- SHARED FIELD ARRAYS ---- */
+/** @type {readonly FieldDef[]} */
 const PHYS_SIZE_FIELDS = [
   { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
   { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
   { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
 ];
+/** @type {readonly FieldDef[]} */
 const CLEARANCE_FIELDS = [
   { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
   { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
@@ -41,6 +101,7 @@ const CLEARANCE_FIELDS = [
   { key: 'clrRight',  label: 'Right (in)',  type: 'text', section: 'Clearance' },
 ];
 
+/** @type {readonly FieldDef[]} */
 const SERIAL_FIELDS = [
   { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['RS232','RS422','RS485','Modbus RTU','Other'], required: true },
   { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Serial Configuration',
@@ -55,6 +116,7 @@ const SERIAL_FIELDS = [
 // from Object.keys(PLC_CARD_TYPE_FIELDS) rather than its own separate list,
 // so adding a card type here is sufficient to make it selectable; there is
 // no second place that also needs updating.
+/** @type {Record<string, readonly FieldDef[]>} */
 const PLC_CARD_TYPE_FIELDS = {
   // Network connectivity for Controller/Communication is handled per-port via
   // networkPorts[]. Card-level networkId and address fields have been removed.
@@ -94,6 +156,7 @@ const ICON_GRIP      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" heigh
 const ICON_CHEVRON_UP   = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
 const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
+/** @type {Record<EntityType, EntityConfig>} */
 const ENTITY = {
   areas: {
     label: 'Area', plural: 'Areas', store: 'areas',
@@ -387,22 +450,29 @@ const ASSIGN_STORE_MAP = {
    PLC_CARD_TYPE_FIELDS and assets.classFields above for two real gaps this
    check found and fixed while it was being written. */
 function assertEntityConfigComplete() {
+  /** @type {string[]} */
   const problems = [];
-  const assetClasses = ENTITY.assets.fields.find(f => f.key === 'assetClass')?.options || [];
+  const assetClassField = /** @type {EnumFieldDef | undefined} */
+    (ENTITY.assets.fields.find(f => f.key === 'assetClass'));
+  const assetClasses = assetClassField?.options || [];
   const cardTypes     = Object.keys(PLC_CARD_TYPE_FIELDS);
 
+  const classFields      = ENTITY.assets.classFields ?? {};
+  const classSubclasses  = ENTITY.assets.classSubclasses ?? {};
+  const subclassFields   = ENTITY.assets.subclassFields ?? {};
+
   for (const cls of assetClasses) {
-    if (!Object.hasOwn(ENTITY.assets.classFields, cls)) {
+    if (!Object.hasOwn(classFields, cls)) {
       problems.push(`assets.classFields is missing an entry for assetClass "${cls}"`);
     }
-    if (!Object.hasOwn(ENTITY.assets.classSubclasses, cls)) {
+    if (!Object.hasOwn(classSubclasses, cls)) {
       problems.push(`assets.classSubclasses is missing an entry for assetClass "${cls}"`);
     }
   }
 
   for (const cls of assetClasses) {
-    for (const sub of ENTITY.assets.classSubclasses[cls] || []) {
-      if (!Object.hasOwn(ENTITY.assets.subclassFields, sub)) {
+    for (const sub of classSubclasses[cls] || []) {
+      if (!Object.hasOwn(subclassFields, sub)) {
         problems.push(`assets.subclassFields is missing an entry for subclass "${sub}" (assetClass "${cls}")`);
       }
     }
