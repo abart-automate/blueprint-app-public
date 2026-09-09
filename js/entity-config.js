@@ -325,7 +325,7 @@ const ENTITY = {
     requiredPhotoSlots: ['Device Front', 'Part Number'],
     fields: [
       { key: 'name',          label: 'Name',          type: 'text', required: true },
-      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Network Device','Hardwired Device'], required: true, enumFilterChip: true },
+      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Field Device'], required: true, enumFilterChip: true },
       { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
       { key: 'areaId',       label: 'Area',         type: 'ref',  refStore: 'areas' },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
@@ -381,12 +381,13 @@ const ENTITY = {
         { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
         { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
       ],
-      'Network Device': [
+      // Field Device covers both networked and non-networked (hardwired-only)
+      // devices — Network is simply left blank for a device that isn't
+      // networked, rather than having two separate asset classes for the
+      // presence/absence of a network connection.
+      'Field Device': [
         { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
         { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
-      ],
-      'Hardwired Device': [
-        { key: 'safetyId', label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
       ],
     },
     classItemTables: {
@@ -394,11 +395,8 @@ const ENTITY = {
         { key: 'deviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' },
         { key: 'vfdParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' },
       ],
-      'Network Device': [
-        { key: 'networkDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
-      ],
-      'Hardwired Device': [
-        { key: 'hardwiredWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
+      'Field Device': [
+        { key: 'fieldDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
       ],
     },
     subclassChildren: {},
@@ -407,8 +405,7 @@ const ENTITY = {
       'PLC':            [],
       'HMI':            [],
       'VFD':            [],
-      'Network Device': [],
-      'Hardwired Device': [],
+      'Field Device':   [],
     },
     subclassFields: {
       Managed: [

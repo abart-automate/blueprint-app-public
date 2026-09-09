@@ -10,8 +10,8 @@ const KNOWN_SHEET_NAMES = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
   'PLC', 'PLC Slots', 'HMI', 'VFD', 'VFD Parameters',
-  'Network Device', 'Hardwired Device',
-  'Power Wiring', 'VFD Wiring', 'Network Device Wiring', 'Hardwired Device Wiring',
+  'Field Device',
+  'Power Wiring', 'VFD Wiring', 'Field Device Wiring',
   'Checklist',
 ]);
 
@@ -131,8 +131,7 @@ const ASSET_CLASS_SHEET_DEFS = [
   { sheetName: 'PLC',            assetClass: 'PLC' },
   { sheetName: 'HMI',            assetClass: 'HMI' },
   { sheetName: 'VFD',            assetClass: 'VFD' },
-  { sheetName: 'Network Device', assetClass: 'Network Device' },
-  { sheetName: 'Hardwired Device', assetClass: 'Hardwired Device' },
+  { sheetName: 'Field Device', assetClass: 'Field Device' },
 ];
 
 // Sub-array keys managed by sub-data sheets; preserved from existing record
@@ -208,9 +207,8 @@ async function importSubdataSheets(wb, nameToId, idExists) {
   await importPlcSlotsSheet(wb, nameToId, idExists);
   await importVfdParametersSheet(wb, nameToId, idExists);
   await importPowerWiringSheet(wb, nameToId, idExists);
-  await importAssetWiringSheet(wb, 'VFD Wiring',              'deviceWiring',        nameToId, idExists);
-  await importAssetWiringSheet(wb, 'Network Device Wiring',   'networkDeviceWiring', nameToId, idExists);
-  await importAssetWiringSheet(wb, 'Hardwired Device Wiring', 'hardwiredWiring',     nameToId, idExists);
+  await importAssetWiringSheet(wb, 'VFD Wiring',           'deviceWiring',      nameToId, idExists);
+  await importAssetWiringSheet(wb, 'Field Device Wiring',  'fieldDeviceWiring', nameToId, idExists);
 }
 
 async function importSwitchNetworksSheet(wb, nameToId, idExists) {

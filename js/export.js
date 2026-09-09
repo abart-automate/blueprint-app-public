@@ -136,7 +136,7 @@ async function exportExcel() {
     };
 
     // Partition assets by class
-    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'VFD', 'Network Device', 'Hardwired Device'];
+    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'VFD', 'Field Device'];
     const assetsByClass = {};
     for (const cls of assetClasses) {
       assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
@@ -147,7 +147,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 24;
+    const totalSheets = 22;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -178,10 +178,8 @@ async function exportExcel() {
     addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'], 'VFD', refs));
     addSheet('VFD Wiring',     buildVfdWiringSheet(assetsByClass['VFD'], refs));
     addSheet('VFD Parameters', buildVfdParametersSheet(assetsByClass['VFD'], refs));
-    addSheet('Network Device',        buildAssetClassSheet(assetsByClass['Network Device'],   'Network Device',   refs));
-    addSheet('Network Device Wiring', buildNetworkDeviceWiringSheet(assetsByClass['Network Device'], refs));
-    addSheet('Hardwired Device',        buildAssetClassSheet(assetsByClass['Hardwired Device'], 'Hardwired Device', refs));
-    addSheet('Hardwired Device Wiring', buildHardwiredWiringSheet(assetsByClass['Hardwired Device'], refs));
+    addSheet('Field Device',         buildAssetClassSheet(assetsByClass['Field Device'], 'Field Device', refs));
+    addSheet('Field Device Wiring',  buildFieldDeviceWiringSheet(assetsByClass['Field Device'], refs));
 
     const sheetMeta = workbook.SheetNames.map((name, i) => {
       const ws = workbook.Sheets[name];
@@ -228,11 +226,10 @@ function buildChecklistSheet(autoItems, customItems) {
 
 // Keys excluded from each asset class's main sheet (handled by sub-data sheets)
 const ASSET_CLASS_EXCLUDE_KEYS = {
-  'Network Switch':   ['switchPorts', 'switchNetworks'],
-  'PLC':              ['slots'],
-  'VFD':              ['vfdParameters', 'deviceWiring'],
-  'Network Device':   ['networkDeviceWiring'],
-  'Hardwired Device': ['hardwiredWiring'],
+  'Network Switch': ['switchPorts', 'switchNetworks'],
+  'PLC':             ['slots'],
+  'VFD':             ['vfdParameters', 'deviceWiring'],
+  'Field Device':    ['fieldDeviceWiring'],
 };
 
 function buildAssetClassSheet(assets, assetClass, refs) {
@@ -340,22 +337,11 @@ function buildVfdWiringSheet(vfdAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function buildNetworkDeviceWiringSheet(networkDeviceAssets, refs) {
+function buildFieldDeviceWiringSheet(fieldDeviceAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
   const rows = [];
-  for (const asset of networkDeviceAssets) {
-    for (const row of (asset.networkDeviceWiring || [])) {
-      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
-    }
-  }
-  return buildSubDataSheet(headers, rows);
-}
-
-function buildHardwiredWiringSheet(hardwiredAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
-  const rows = [];
-  for (const asset of hardwiredAssets) {
-    for (const row of (asset.hardwiredWiring || [])) {
+  for (const asset of fieldDeviceAssets) {
+    for (const row of (asset.fieldDeviceWiring || [])) {
       rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
     }
   }
@@ -650,7 +636,7 @@ function getFieldLabel(store, key, item) {
 // asset's network association is `item.networkId`, resolved to the linked
 // network's type via state.refs). That branch could never match, silently
 // falling back to prettifyKey() for network-address field labels (IP
-// Address, Subnet Mask, etc.) on exported HMI/VFD/Network Device assets
+// Address, Subnet Mask, etc.) on exported HMI/VFD/Field Device assets
 // instead of using their declared labels. getEffectiveFields already
 // resolves this correctly via state.refs.networks[item.networkId].
 function findFieldDef(store, key, item) {
