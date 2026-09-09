@@ -136,13 +136,11 @@ function buildNetworkAddrFieldsHtml(row, networkId, idx) {
 /* ---- SWITCH NETWORKS TABLE ---- */
 
 /**
- * Renders the editable switch-network-connections table into a DOM container.
- *
- * Supports two calling conventions — backwards-compatible via default parameters:
- *   renderSwitchNetworksTable()
- *     → form mode: uses state.formSwitchNetworks/Ports, container id='switch-networks-container'
- *   renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass)
- *     → detail mode: uses provided arrays, custom container id, and closure for re-rendering both tables
+ * Shared implementation for the editable switch-network-connections table.
+ * Not called directly — use renderSwitchNetworksTableForm() from the entity
+ * form or renderSwitchNetworksTableDetail(...) from the detail panel, which
+ * give the two calling conventions this used to share under one overloaded
+ * signature separate, explicit names instead.
  *
  * @param {string}   containerId   - DOM id of the container element
  * @param {Array}    networks      - Mutable array of network row objects
@@ -151,14 +149,7 @@ function buildNetworkAddrFieldsHtml(row, networkId, idx) {
  * @param {Function} onDirty       - Called whenever data changes; null in form mode
  * @param {string}   assetSubclass - Asset subclass string used for Router-max-2 enforcement
  */
-function renderSwitchNetworksTable(
-  containerId   = 'switch-networks-container',
-  networks      = state.formSwitchNetworks,
-  ports         = state.formSwitchPorts,
-  rerender      = null,
-  onDirty       = null,
-  assetSubclass = null
-) {
+function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass) {
   const container = $(containerId);
   if (!container) return;
   const rows = networks;
@@ -195,7 +186,7 @@ function renderSwitchNetworksTable(
   container.innerHTML = html;
 
   // Helper: trigger a full re-render of both tables (detail mode uses closure; form mode calls directly)
-  const doRerender = rerender ?? (() => (renderSwitchNetworksTable(), renderSwitchPortsTable()));
+  const doRerender = rerender ?? (() => (renderSwitchNetworksTableForm(), renderSwitchPortsTableForm()));
 
   container.querySelectorAll('.sn-network').forEach(sel => {
     sel.addEventListener('change', () => {
@@ -245,20 +236,42 @@ function renderSwitchNetworksTable(
   if (rerender) {
     // In detail mode the rerender closure already handles ports; skip to avoid double render
   } else {
-    renderSwitchPortsTable();
+    renderSwitchPortsTableForm();
   }
+}
+
+/** Form mode: reads/writes state.formSwitchNetworks/Ports into '#switch-networks-container'. */
+function renderSwitchNetworksTableForm() {
+  const assetSubclass = $('f-assetSubclass')?.value ?? null;
+  _renderSwitchNetworksTable(
+    'switch-networks-container',
+    state.formSwitchNetworks,
+    state.formSwitchPorts,
+    null,
+    null,
+    assetSubclass
+  );
+}
+
+/**
+ * Detail mode: reads/writes the caller-supplied arrays into an explicit container.
+ * @param {string}   containerId
+ * @param {Array}    networks
+ * @param {Array}    ports
+ * @param {Function} rerender      - Re-renders both switch tables (required in detail mode)
+ * @param {Function} onDirty       - Called whenever data changes
+ * @param {string}   assetSubclass - Asset subclass string used for Router-max-2 enforcement
+ */
+function renderSwitchNetworksTableDetail(containerId, networks, ports, rerender, onDirty, assetSubclass) {
+  _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass);
 }
 
 /* ---- SWITCH PORTS TABLE ---- */
 
 /**
- * Renders the editable switch-port-assignment table into a DOM container.
- *
- * Supports two calling conventions — backwards-compatible via default parameters:
- *   renderSwitchPortsTable()
- *     → form mode: uses state.formSwitchNetworks/Ports, container id='switch-ports-container'
- *   renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass)
- *     → detail mode: uses provided arrays, custom container, closure for re-render
+ * Shared implementation for the editable switch-port-assignment table.
+ * Not called directly — use renderSwitchPortsTableForm() from the entity
+ * form or renderSwitchPortsTableDetail(...) from the detail panel.
  *
  * Unmanaged switches receive special treatment:
  *   - Ports show no per-row network picker — they are auto-assigned to the single configured VLAN
@@ -273,15 +286,7 @@ function renderSwitchNetworksTable(
  * @param {string}   selfId        - Entity id to exclude from device options (the switch itself)
  * @param {string}   assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
  */
-function renderSwitchPortsTable(
-  containerId   = 'switch-ports-container',
-  networks      = state.formSwitchNetworks,
-  ports         = state.formSwitchPorts,
-  rerender      = null,
-  onDirty       = null,
-  selfId        = null,
-  assetSubclass = null
-) {
+function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass) {
   const container = $(containerId);
   if (!container) return;
   const rows   = ports;
@@ -361,7 +366,7 @@ function renderSwitchPortsTable(
   container.innerHTML = html;
 
   // Helper: re-render ports table (detail mode uses closure; form mode calls directly)
-  const doRerender = rerender ?? (() => renderSwitchPortsTable());
+  const doRerender = rerender ?? (() => renderSwitchPortsTableForm());
 
   container.querySelectorAll('.sp-port').forEach(inp => {
     inp.addEventListener('change', () => {
@@ -437,6 +442,34 @@ function renderSwitchPortsTable(
   });
 }
 
+/** Form mode: reads/writes state.formSwitchNetworks/Ports into '#switch-ports-container'. */
+function renderSwitchPortsTableForm() {
+  const assetSubclass = $('f-assetSubclass')?.value ?? null;
+  _renderSwitchPortsTable(
+    'switch-ports-container',
+    state.formSwitchNetworks,
+    state.formSwitchPorts,
+    null,
+    null,
+    null,
+    assetSubclass
+  );
+}
+
+/**
+ * Detail mode: reads/writes the caller-supplied arrays into an explicit container.
+ * @param {string}   containerId
+ * @param {Array}    networks
+ * @param {Array}    ports
+ * @param {Function} rerender      - Re-render callback (required in detail mode)
+ * @param {Function} onDirty       - Called on any data change
+ * @param {string}   selfId        - Entity id to exclude from device options (the switch itself)
+ * @param {string}   assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
+ */
+function renderSwitchPortsTableDetail(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass) {
+  _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass);
+}
+
 /* ---- IO POINTS TABLE ---- */
 
 const IO_SIGNAL_OPTS = ['1-5V','0-10V','0-20mA','4-20mA','RTD','Other'];
@@ -497,30 +530,23 @@ function renderIoPointsTable() {
 /* ---- POWER BUS TABLE ---- */
 
 /**
- * Renders the power bus editor into a container element.
+ * Shared implementation for the power bus editor.
+ * Not called directly — use renderPowerBusTableForm() from the entity form
+ * or renderPowerBusTableDetail(...) from the detail panel.
  *
- * @param {string}   containerId - DOM id of the target container (default: form's container)
+ * @param {string}   containerId - DOM id of the target container
  * @param {Array}    powerBus    - Mutable array of power-bus entries to read/write
- * @param {Function} rerender    - Called after any mutation to re-render both the table;
- *                                 pass null to default to calling renderPowerBusTable()
+ * @param {Function} rerender    - Called after any mutation to re-render the table; null in form mode
  * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
- *
- * Existing call sites in form.js pass no arguments and continue to work unchanged
- * (defaults point to the form's container and state.formPowerBus).
  */
-function renderPowerBusTable(
-  containerId = 'power-bus-container',
-  powerBus    = state.formPowerBus,
-  rerender    = null,
-  onDirty     = null
-) {
+function _renderPowerBusTable(containerId, powerBus, rerender, onDirty) {
   const container = $(containerId);
   if (!container) return;
   const rmIcon = ICON_RM;
 
   // Re-render closure: if a custom rerender was provided use it, otherwise
-  // fall back to a bare no-arg call (backwards-compat with form usage).
-  const doRerender = rerender ?? (() => renderPowerBusTable(containerId, powerBus, rerender, onDirty));
+  // fall back to the form-mode renderer.
+  const doRerender = rerender ?? (() => renderPowerBusTableForm());
 
   const makeDeviceOpts = (type, selectedId) => {
     const store = type === 'Safety Circuit' ? 'safety' : 'power';
@@ -606,15 +632,28 @@ function renderPowerBusTable(
   });
 }
 
+/** Form mode: reads/writes state.formPowerBus into '#power-bus-container'. */
+function renderPowerBusTableForm() {
+  _renderPowerBusTable('power-bus-container', state.formPowerBus, null, null);
+}
+
+/**
+ * Detail mode: reads/writes the caller-supplied array into an explicit container.
+ * @param {string}   containerId
+ * @param {Array}    powerBus
+ * @param {Function} rerender - Called after any mutation to re-render the table (required)
+ * @param {Function} onDirty  - Called after any mutation so callers can set dirty flags
+ */
+function renderPowerBusTableDetail(containerId, powerBus, rerender, onDirty) {
+  _renderPowerBusTable(containerId, powerBus, rerender, onDirty);
+}
+
 /* ---- NETWORK PORTS TABLE ---- */
 
 /**
- * Renders an editable list of network ports into a container element.
- * Each port has a display-only port number and a network assignment dropdown.
- *
- * User interaction mirrors the Power Bus section: a "+ Add Port" button appends
- * entries and each row has a remove button — the same wiring-add-btn / wiring-rm-btn
- * CSS classes are used so styling is consistent.
+ * Shared implementation for the editable network-ports list.
+ * Not called directly — use renderNetworkPortsTableForm() from the entity
+ * form or renderNetworkPortsTableDetail(...) from the detail panel.
  *
  * Each port shows a stable port-number label, a network dropdown, and dynamic address
  * fields (IP address, node address, protocol, etc.) that match the selected network's
@@ -627,25 +666,17 @@ function renderPowerBusTable(
  * Port data shape: { portNumber, networkId, ...addressFields } — address keys are dynamic
  * and depend on the selected network's protocol. Old saves without address fields remain valid.
  *
- * Form mode (no args): uses 'network-ports-container' and state.formSlotNetworkPorts.
- * Detail mode: pass all four args explicitly.
- *
  * @param {string}   containerId - DOM id of the target container
  * @param {Array}    ports       - Mutable array of { portNumber, networkId, ...addrFields }
- * @param {Function} rerender    - Called after structural changes (add/remove); defaults to self
+ * @param {Function} rerender    - Called after structural changes (add/remove); null in form mode
  * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
  */
-function renderNetworkPortsTable(
-  containerId = 'network-ports-container',
-  ports       = state.formSlotNetworkPorts,
-  rerender    = null,
-  onDirty     = null
-) {
+function _renderNetworkPortsTable(containerId, ports, rerender, onDirty) {
   const container = $(containerId);
   if (!container) return;
 
   // Self-referencing closure so add/remove/network-change can trigger a full re-render
-  const doRerender = rerender ?? (() => renderNetworkPortsTable(containerId, ports, rerender, onDirty));
+  const doRerender = rerender ?? (() => renderNetworkPortsTableForm());
 
   // All network types are offered — Controller/Communication cards can use any protocol
   const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, state.cache.networks || []);
@@ -702,6 +733,22 @@ function renderNetworkPortsTable(
     onDirty?.();
     doRerender();
   });
+}
+
+/** Form mode: reads/writes state.formSlotNetworkPorts into '#network-ports-container'. */
+function renderNetworkPortsTableForm() {
+  _renderNetworkPortsTable('network-ports-container', state.formSlotNetworkPorts, null, null);
+}
+
+/**
+ * Detail mode: reads/writes the caller-supplied array into an explicit container.
+ * @param {string}   containerId
+ * @param {Array}    ports
+ * @param {Function} rerender - Called after structural changes (add/remove) (required)
+ * @param {Function} onDirty  - Called after any mutation so callers can set dirty flags
+ */
+function renderNetworkPortsTableDetail(containerId, ports, rerender, onDirty) {
+  _renderNetworkPortsTable(containerId, ports, rerender, onDirty);
 }
 
 /* ---- CLASS-SPECIFIC ITEM TABLES (wiring, parameters) ---- */

@@ -179,7 +179,7 @@ async function renderSlotDetail(savedScroll) {
      state.detailSlotPowerBus instead of state.formPowerBus.
      ------------------------------------------------------------------ */
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
-    const rerenderPB = () => renderPowerBusTable(
+    const rerenderPB = () => renderPowerBusTableDetail(
       'det-power-bus-container',
       state.detailSlotPowerBus,
       rerenderPB,
@@ -209,7 +209,7 @@ async function renderSlotDetail(savedScroll) {
      trigger a full table re-render (same pattern as rerenderPB above).
      ------------------------------------------------------------------ */
   if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
-    const rerenderNP = () => renderNetworkPortsTable(
+    const rerenderNP = () => renderNetworkPortsTableDetail(
       'det-network-ports-container',
       state.detailSlotNetworkPorts,
       rerenderNP,
@@ -640,7 +640,7 @@ async function renderEntityDetail(savedScroll) {
      ------------------------------------------------------------------ */
   if (showSwitchTables) {
     const rerenderSwitch = () => {
-      renderSwitchNetworksTable(
+      renderSwitchNetworksTableDetail(
         'det-switch-networks-container',
         state.detailSwitchNetworks,
         state.detailSwitchPorts,
@@ -648,7 +648,7 @@ async function renderEntityDetail(savedScroll) {
         () => { state.detailChanges._switchDirty = true; }, // sentinel so hasUnsavedDetailChanges fires
         item.assetSubclass
       );
-      renderSwitchPortsTable(
+      renderSwitchPortsTableDetail(
         'det-switch-ports-container',
         state.detailSwitchNetworks,
         state.detailSwitchPorts,

@@ -6,7 +6,8 @@
                esc, getIpPrefix, getById, refreshAll,
                renderMediaSlot, renderMediaGallery, renderItemTable,
                renderClassItemTables, renderIoPointsTable, syncIoPointCount,
-               renderSwitchNetworksTable, renderSwitchPortsTable, renderPowerBusTable.
+               renderSwitchNetworksTableForm, renderSwitchPortsTableForm,
+               renderPowerBusTableForm, renderNetworkPortsTableForm.
    ============================================================ */
 
 async function renderForm() {
@@ -104,7 +105,7 @@ async function renderSlotForm() {
     if (pbWrap) {
       const isIo = CARD_TYPE_IO_TYPES.has(cardType);
       pbWrap.style.display = isIo ? '' : 'none';
-      if (isIo) renderPowerBusTable();
+      if (isIo) renderPowerBusTableForm();
     }
 
     // Terminal Block Wiring — visible for Analog, Digital, and Specialty cards.
@@ -123,7 +124,7 @@ async function renderSlotForm() {
     if (npWrap) {
       const hasNetPorts = CARD_TYPE_NET_TYPES.has(cardType);
       npWrap.style.display = hasNetPorts ? '' : 'none';
-      if (hasNetPorts) renderNetworkPortsTable();
+      if (hasNetPorts) renderNetworkPortsTableForm();
     }
   };
 
@@ -297,8 +298,8 @@ async function renderEntityForm() {
       if (snWrap) snWrap.style.display = showTables ? '' : 'none';
       if (spWrap) spWrap.style.display = showTables ? '' : 'none';
       if (showTables) {
-        renderSwitchNetworksTable();
-        renderSwitchPortsTable();
+        renderSwitchNetworksTableForm();
+        renderSwitchPortsTableForm();
       }
     };
 
