@@ -608,7 +608,7 @@ function _partCardHtml(p) {
 
 function openPartForm(id = null) {
   const existing = id ? state.cache.partsLibrary.find(p => p.id === id) : null;
-  state.formType = '__parts_lib__';
+  state.formType = FORM_TYPE.PARTS_LIB;
   state.formId   = id || null;
   el.formTitle.textContent = id ? 'Edit Part' : 'Add Part';
   el.formBody.innerHTML = _buildPartFormHtml(existing);

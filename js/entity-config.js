@@ -4,6 +4,21 @@
    definitions, and shared field/icon constants.
    ============================================================ */
 
+/* ---- FORM TYPE SENTINELS ----
+   state.formType / state.detailType hold either one of these sentinel
+   values (for the app's non-entity "special" forms) or an ENTITY store-name
+   key (e.g. 'assets', 'panels') for a normal entity form/detail. Centralizing
+   the sentinels here means every comparison site references the same
+   constant instead of repeating the raw string, so a typo becomes an
+   immediate ReferenceError instead of a silently-mismatched comparison that
+   falls through to the default entity-form/detail path. */
+const FORM_TYPE = {
+  PICKER:    '__picker__',
+  PLC_SLOT:  '__plc_slot__',
+  PLANT:     '__plant__',
+  PARTS_LIB: '__parts_lib__',
+};
+
 /* ---- PARTS LIBRARY CONSTANTS ---- */
 const PART_IO_TYPES      = ['Input', 'Output', 'Combo', 'N/A'];
 const PART_SIGNAL_RANGES = ['4-20mA', '0-20mA', '0-10V', '1-5V', 'RTD', 'Thermocouple', 'Other'];

@@ -10,8 +10,8 @@
    ============================================================ */
 
 async function renderForm() {
-  if (state.formType === '__plant__') return;
-  if (state.formType === '__plc_slot__') return renderSlotForm();
+  if (state.formType === FORM_TYPE.PLANT) return;
+  if (state.formType === FORM_TYPE.PLC_SLOT) return renderSlotForm();
   return renderEntityForm();
 }
 

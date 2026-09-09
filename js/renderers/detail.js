@@ -12,7 +12,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
   // Scroll lives on the inner .det-panel-scroll container, not el.detail itself.
   const scrollEl   = el.detail.querySelector('.det-panel-scroll');
   const savedScroll = preserveScroll ? (scrollEl?.scrollTop ?? 0) : 0;
-  if (type === '__plc_slot__') return renderSlotDetail(savedScroll);
+  if (type === FORM_TYPE.PLC_SLOT) return renderSlotDetail(savedScroll);
   return renderEntityDetail(savedScroll);
 }
 
@@ -259,7 +259,7 @@ async function renderSlotDetail(savedScroll) {
   });
 
   el.detail.querySelector('#det-save-changes')?.addEventListener('click', async () => {
-    const ok = await saveDetailChanges('__plc_slot__', id);
+    const ok = await saveDetailChanges(FORM_TYPE.PLC_SLOT, id);
     if (ok) renderDetail({ preserveScroll: true });
   });
 
@@ -1107,7 +1107,7 @@ async function buildChildSections(type, id, item) {
  */
 async function saveDetailChanges(type, id) {
   // Slot cards are sub-objects of a rack asset — delegate to the slot saver.
-  if (type === '__plc_slot__') {
+  if (type === FORM_TYPE.PLC_SLOT) {
     return saveSlotDetailChanges(id, state.detailSlotNumber);
   }
 

@@ -260,7 +260,7 @@ async function closeDetail() {
     state.detailId         = prev.id;
     state.detailSlotNumber = prev.slotNumber ?? null;
     renderDetail();
-    el.pageTitle.textContent = prev.type === '__plc_slot__'
+    el.pageTitle.textContent = prev.type === FORM_TYPE.PLC_SLOT
       ? `Slot ${prev.slotNumber}`
       : ENTITY[prev.type].label;
     return;
@@ -280,7 +280,7 @@ async function closeDetail() {
 
 /**
  * Opens the bottom-sheet form for creating or editing an entity.
- * @param {string}  type   - Entity store name or '__plant__'
+ * @param {string}  type   - Entity store name or FORM_TYPE.PLANT
  * @param {string}  [id]   - Entity id to edit; null for new
  * @param {object}  [preset] - Pre-fill values: { field, value } or { copyFrom: item }
  */
@@ -350,7 +350,7 @@ function closeSheet() {
 function openSlotForm(rackId, slotNumber) {
   const rack     = state.refs.assets?.[rackId];
   const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
-  state.formType     = '__plc_slot__';
+  state.formType     = FORM_TYPE.PLC_SLOT;
   state.formId       = null;
   state.formPreset   = { rackId, slotNumber };
   state.formImages   = [];
@@ -382,7 +382,7 @@ function openSlotDetail(rackId, slotNumber) {
     state.detailStack.push({ type: state.detailType, id: state.detailId, slotNumber: state.detailSlotNumber });
     _clearDetailEditState(); // reset all edit state when drilling into a slot
   }
-  state.detailType       = '__plc_slot__';
+  state.detailType       = FORM_TYPE.PLC_SLOT;
   state.detailId         = rackId;
   state.detailSlotNumber = slotNumber;
   renderDetail();
@@ -411,7 +411,7 @@ async function openAssignOrCreate(childType, parentField, parentId) {
   }
 
   const selected = new Set();
-  state.formType   = '__picker__';
+  state.formType   = FORM_TYPE.PICKER;
   state.pickerMeta = { childType, parentField, parentId, selected };
   el.formTitle.textContent = `Add ${cfg.label}`;
   el.formSave.textContent  = 'Assign';
@@ -873,7 +873,7 @@ async function bindChecklistEvents(customItems) {
 
 function openPlantForm() {
   el.formTitle.textContent = 'Plant Info';
-  state.formType = '__plant__';
+  state.formType = FORM_TYPE.PLANT;
   state.formImages = [];
   el.formBody.innerHTML = `
     <div class="fg">

@@ -10,10 +10,10 @@ const _getChildren = type => ENTITY[type]?.getChildren ?? [];
 /** Dispatcher: routes to the appropriate save handler based on state.formType. */
 async function saveForm() {
   const type = state.formType;
-  if (type === '__picker__')    return savePickerForm();
-  if (type === '__plc_slot__')  return saveSlotForm();
-  if (type === '__plant__')     return savePlantForm();
-  if (type === '__parts_lib__') return savePartsLibForm();
+  if (type === FORM_TYPE.PICKER)    return savePickerForm();
+  if (type === FORM_TYPE.PLC_SLOT)  return saveSlotForm();
+  if (type === FORM_TYPE.PLANT)     return savePlantForm();
+  if (type === FORM_TYPE.PARTS_LIB) return savePartsLibForm();
   return saveEntityForm();
 }
 
