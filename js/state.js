@@ -48,6 +48,11 @@ const state = {
 
 /* ---- DOM REFERENCES ---- */
 
+// Global shorthand for document.getElementById, used throughout every
+// renderer/operations file (not just here) — must stay a top-level
+// declaration, not scoped inside initEl() below.
+const $ = id => document.getElementById(id);
+
 /**
  * Cache of frequently-used DOM element references, keyed by logical name.
  *
@@ -69,7 +74,6 @@ const state = {
 let el = null;
 
 function initEl() {
-  const $ = id => document.getElementById(id);
   const refs = {
     header:       $('app-header'),
     main:         $('app-main'),
