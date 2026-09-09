@@ -180,7 +180,11 @@
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        // updateViaCache: 'none' makes the browser always re-fetch sw.js itself
+        // (bypassing the ordinary HTTP cache) whenever it checks for updates —
+        // without it, an HTTP-cached copy of sw.js could mask a real change
+        // even after the byte-diff fix in sw.js's own SW_VERSION comment.
+        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
           var hadController = !!navigator.serviceWorker.controller;
           reg.addEventListener('updatefound', function () {
             var newWorker = reg.installing;
