@@ -21,10 +21,12 @@
 // never silently drift out of sync the way a hand-edited value can.
 //
 // One-time setup per clone: `git config core.hooksPath scripts/git-hooks`.
-// js/version.js's APP_VERSION is unrelated to this — it's the human-facing
-// version shown in the app footer and export metadata, untouched by this
-// mechanism.
-const SW_BUILD = '20260909T1552Z-a24469c';
+// The home-page footer asks the active worker for this value (see the
+// 'message' handler below / app.js's getSwBuild()) and shows it in place of
+// js/version.js's APP_VERSION whenever a worker is actually controlling the
+// page; APP_VERSION remains the fallback (and still the version tagged in
+// export metadata) since it's unrelated to this mechanism.
+const SW_BUILD = '20260909T2141Z-0ea8a43';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
@@ -77,6 +79,14 @@ self.addEventListener('activate', event => {
       ))
       .then(() => self.clients.claim())
   );
+});
+
+// Lets the page ask "what build are you?" so the home-page footer can show
+// the real running build instead of a hand-maintained version number.
+self.addEventListener('message', event => {
+  if (event.data === 'GET_SW_BUILD') {
+    event.ports[0]?.postMessage(SW_BUILD);
+  }
 });
 
 // Cache-first with background revalidation (stale-while-revalidate)

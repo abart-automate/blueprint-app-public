@@ -550,6 +550,33 @@ async function renderPage() {
 }
 
 /* ---- HOME ---- */
+
+/**
+ * Asks the active service worker for its SW_BUILD stamp, so the home-page
+ * footer can show the build actually running instead of the hand-maintained
+ * APP_VERSION (which can drift — see sw.js's comment on SW_BUILD). Resolves
+ * to null if there's no controlling service worker yet (e.g. first-ever
+ * load) or it doesn't answer in time. Cached after the first successful
+ * lookup since the controlling worker's build can't change without a reload.
+ */
+let _swBuildCache = null;
+function getSwBuild() {
+  if (_swBuildCache) return Promise.resolve(_swBuildCache);
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+    return Promise.resolve(null);
+  }
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(null), 1000);
+    channel.port1.onmessage = e => {
+      clearTimeout(timer);
+      _swBuildCache = e.data;
+      resolve(e.data);
+    };
+    navigator.serviceWorker.controller.postMessage('GET_SW_BUILD', [channel.port2]);
+  });
+}
+
 /** Renders the plant home page with summary stats, area cards, and checklist overview. */
 async function renderHome() {
   await refreshAll();
@@ -629,7 +656,7 @@ async function renderHome() {
       </div>
     </div>
     <div class="home-footer">
-      <span class="home-version">v${APP_VERSION}</span>
+      <span class="home-version" id="home-version">v${APP_VERSION}</span>
     </div>
   `;
 
@@ -660,6 +687,11 @@ async function renderHome() {
       }
     });
   }
+  getSwBuild().then(build => {
+    if (!build) return;
+    const versionEl = el.main.querySelector('#home-version');
+    if (versionEl) versionEl.textContent = build;
+  });
 }
 
 /* ---- CHECKLIST PAGE ---- */
