@@ -1,0 +1,16 @@
+#!/bin/sh
+# Auto-stamps sw.js's SW_BUILD with the current commit hash whenever this
+# commit touches an app-shell file. See sw.js and stamp-sw-build.js
+# (in this same scripts/ directory) for why this needs to happen at all.
+#
+# This hook only runs if this repo's core.hooksPath points here — that's a
+# one-time setup step per clone (git doesn't share hook config via clone/
+# push), not something a hook can turn on for itself:
+#
+#   git config core.hooksPath scripts/git-hooks
+#
+# Without that, sw.js's build stamp silently goes stale again and the
+# "Update Now" banner stops firing — the exact bug this hook exists to
+# prevent — so if you're setting this repo up on a new machine, run that
+# command once before your first commit.
+exec node "$(git rev-parse --show-toplevel)/scripts/stamp-sw-build.js"

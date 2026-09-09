@@ -1,22 +1,33 @@
-// SW_VERSION must be bumped by hand in lockstep with APP_VERSION in
-// js/version.js — it is NOT read via importScripts() from that file, on
-// purpose. The browser's service-worker update check only detects a new
-// version by byte-diffing THIS file's own content against what's currently
-// registered; it does not look inside files this script imports. If
-// CACHE_NAME depended only on an imported APP_VERSION, sw.js's bytes would
-// never change between releases, the browser would always conclude "no
-// update", updatefound would never fire, and the "Update Now" banner
-// (wired in index.html's registration script -> init.js's
-// initUpdateBanner) would never appear — which is exactly the bug this
-// literal fixes. Bump this string on every release, same as APP_VERSION.
-const SW_VERSION = '1.17.2';
+// SW_BUILD is auto-stamped with the current git commit hash by a pre-commit
+// hook (scripts/git-hooks/pre-commit -> scripts/stamp-sw-build.js) whenever
+// a commit touches an app-shell file (index.html, manifest.json, css/, js/,
+// icons/) — do not hand-edit this value, it's overwritten on the next
+// relevant commit.
+//
+// It exists because the browser's service-worker update check only detects
+// a new version by byte-diffing THIS file's own content against what's
+// currently registered — it does not look inside files this script imports.
+// An earlier version of this file computed CACHE_NAME from APP_VERSION via
+// importScripts('./js/version.js'); since that never changed sw.js's own
+// bytes, the browser always concluded "no update" and the "Update Now"
+// banner (wired in index.html's registration script -> init.js's
+// initUpdateBanner) never appeared, no matter how many times APP_VERSION
+// was bumped. Deriving this from the commit hash instead of a manually
+// maintained number means there's nothing to remember to bump, and it can
+// never silently drift out of sync the way a hand-edited value can.
+//
+// One-time setup per clone: `git config core.hooksPath scripts/git-hooks`.
+// js/version.js's APP_VERSION is unrelated to this — it's the human-facing
+// version shown in the app footer and export metadata, untouched by this
+// mechanism.
+const SW_BUILD = 'dbb0ef0';
 
-const CACHE_NAME = `plant-asset-${SW_VERSION}`;
+const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
-// All static files that make up the app shell.
-// Bump SW_VERSION above (and APP_VERSION in js/version.js) whenever any of
-// these files change — this list must stay in sync with index.html's
-// <script> tags.
+// All static files that make up the app shell — must stay in sync with
+// index.html's <script> tags (the stamping script above only fires when a
+// commit touches one of these paths, so this list itself doesn't need a
+// manual version bump — just keep it matching index.html).
 const APP_SHELL = [
   './',
   './index.html',
