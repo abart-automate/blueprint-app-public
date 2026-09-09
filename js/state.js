@@ -48,36 +48,63 @@ const state = {
 
 /* ---- DOM REFERENCES ---- */
 
-const $ = id => document.getElementById(id);
-const el = {
-  header:       $('app-header'),
-  main:         $('app-main'),
-  backBtn:      $('back-btn'),
-  addBtn:       $('add-btn'),
-  pageTitle:    $('page-title'),
-  detail:       $('detail-panel'),
-  resizeHandle: $('detail-resize-handle'), // drag handle between list and detail panes (desktop)
-  backdrop:     $('sheet-backdrop'),
-  sheet:        $('form-sheet'),
-  formTitle:    $('form-title'),
-  formBody:     $('form-body'),
-  formSave:     $('form-save'),
-  formCancel:   $('form-cancel'),
-  confirmBD:    $('confirm-backdrop'),
-  confirmT:     $('confirm-title'),
-  confirmM:     $('confirm-msg'),
-  confirmNo:    $('confirm-no'),
-  confirmSave:  $('confirm-save'),   // 3rd button used only by confirmUnsaved()
-  confirmYes:   $('confirm-yes'),
-  promptBD:     $('prompt-backdrop'),
-  promptT:      $('prompt-title'),
-  promptM:      $('prompt-msg'),
-  promptField:  $('prompt-input'),
-  promptCancel: $('prompt-cancel'),
-  promptOk:     $('prompt-ok'),
-  toast:        $('toast'),
-  nav:          $('bottom-nav'),
-};
+/**
+ * Cache of frequently-used DOM element references, keyed by logical name.
+ *
+ * Populated by initEl() rather than at script-parse time: building this via
+ * document.getElementById() calls at the top level (the previous approach)
+ * silently depended on <script src="state.js"> running after #app's markup
+ * was already parsed into the DOM. That's true today only because state.js
+ * happens to load near the bottom of index.html's <body> — a fragile,
+ * undeclared ordering constraint that a reordered <script> tag, a renamed
+ * element id, or a future bundler (whose module-evaluation order need not
+ * match <script> tag position) could silently break, leaving every el.*
+ * reference null and every interaction a silent no-op.
+ *
+ * initEl() is called explicitly and synchronously from init() once the DOM
+ * is known to be ready, and throws immediately if any expected id is
+ * missing, converting "silently null forever" into a fail-fast startup
+ * error with the offending id named.
+ */
+let el = null;
+
+function initEl() {
+  const $ = id => document.getElementById(id);
+  const refs = {
+    header:       $('app-header'),
+    main:         $('app-main'),
+    backBtn:      $('back-btn'),
+    addBtn:       $('add-btn'),
+    pageTitle:    $('page-title'),
+    detail:       $('detail-panel'),
+    resizeHandle: $('detail-resize-handle'), // drag handle between list and detail panes (desktop)
+    backdrop:     $('sheet-backdrop'),
+    sheet:        $('form-sheet'),
+    formTitle:    $('form-title'),
+    formBody:     $('form-body'),
+    formSave:     $('form-save'),
+    formCancel:   $('form-cancel'),
+    confirmBD:    $('confirm-backdrop'),
+    confirmT:     $('confirm-title'),
+    confirmM:     $('confirm-msg'),
+    confirmNo:    $('confirm-no'),
+    confirmSave:  $('confirm-save'),   // 3rd button used only by confirmUnsaved()
+    confirmYes:   $('confirm-yes'),
+    promptBD:     $('prompt-backdrop'),
+    promptT:      $('prompt-title'),
+    promptM:      $('prompt-msg'),
+    promptField:  $('prompt-input'),
+    promptCancel: $('prompt-cancel'),
+    promptOk:     $('prompt-ok'),
+    toast:        $('toast'),
+    nav:          $('bottom-nav'),
+  };
+  const missing = Object.entries(refs).filter(([, node]) => !node).map(([name]) => name);
+  if (missing.length) {
+    throw new Error(`initEl: missing expected DOM element(s) for: ${missing.join(', ')}`);
+  }
+  el = refs;
+}
 
 /* ---- TOAST ---- */
 

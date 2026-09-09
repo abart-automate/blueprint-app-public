@@ -6,6 +6,11 @@
 
 async function init() {
   try {
+    /* Populate the el DOM-reference cache first, before anything else touches
+       el.*. See state.js for why this is an explicit call rather than a
+       script-load side effect. */
+    initEl();
+
     await initDB();
 
     /* Detect viewport size and stamp body[data-layout] before any rendering
