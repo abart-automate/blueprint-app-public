@@ -42,6 +42,7 @@ function _clearDetailEditState() {
   state.detailItemTables     = {};
   state.detailSwitchNetworks = [];
   state.detailSwitchPorts    = [];
+  state.detailAssetNetworkPorts = [];
   state.detailSlotIoPoints    = [];
   state.detailSlotPowerBus    = [];
   state.detailSlotNetworkPorts= [];
@@ -305,6 +306,9 @@ function openSheet(type, id = null, preset = null) {
     state.formItemTables[t.key] = existing?.[t.key]?.map(r => ({...r})) ?? [];
   state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map(r => ({...r})) : [];
   state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map(r => ({...r}))    : [];
+  state.formAssetNetworkPorts = existing?.networkPorts?.length
+    ? existing.networkPorts.map(r => ({...r}))
+    : (existing?.networkId ? [buildLegacyNetworkPortRow(existing)] : []);
   state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map(r => ({...r}))       : [];
   const isCopy   = !id && !!preset?.copyFrom;
   const subLabel = isCopy
@@ -341,6 +345,7 @@ function closeSheet() {
   state.formItemTables  = {};
   state.formSwitchNetworks = [];
   state.formSwitchPorts    = [];
+  state.formAssetNetworkPorts = [];
   state.formIoPoints        = [];
   state.formPowerBus        = [];
   state.formSlotNetworkPorts= [];
@@ -1093,19 +1098,23 @@ function _cardLocationLine(type, item, cfg) {
 
 function _cardNetworkLine(type, item, contextNetworkId) {
   if (type !== 'assets') return '';
-  if (item.assetClass === 'PLC') {
-    const parts = (item.slots || [])
-      .filter(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId &&
-        (!contextNetworkId || s.networkId === contextNetworkId))
-      .map(s => {
-        const net = state.refs.networks?.[s.networkId];
-        if (!net) return '';
-        const addr = s.ipAddress || s.nodeAddress || '';
-        return addr ? `${net.name} — ${addr}` : net.name;
-      })
-      .filter(Boolean);
-    return parts.join(', ');
-  }
+  // TODO: dead code — slot.networkId is no longer populated since the PLC
+  // networkPorts[] migration (slots use slot.networkPorts[] now, like this
+  // function's own item.networkPorts branch below). Kept commented out
+  // rather than deleted pending a follow-up cleanup pass.
+  // if (item.assetClass === 'PLC') {
+  //   const parts = (item.slots || [])
+  //     .filter(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId &&
+  //       (!contextNetworkId || s.networkId === contextNetworkId))
+  //     .map(s => {
+  //       const net = state.refs.networks?.[s.networkId];
+  //       if (!net) return '';
+  //       const addr = s.ipAddress || s.nodeAddress || '';
+  //       return addr ? `${net.name} — ${addr}` : net.name;
+  //     })
+  //     .filter(Boolean);
+  //   return parts.join(', ');
+  // }
   if (item.switchNetworks?.length) {
     const relevant = contextNetworkId
       ? item.switchNetworks.filter(sn => sn.networkId === contextNetworkId)
@@ -1114,6 +1123,18 @@ function _cardNetworkLine(type, item, contextNetworkId) {
       const net = state.refs.networks?.[sn.networkId];
       if (!net) return '';
       const addr = sn.ipAddress || sn.nodeAddress || '';
+      return addr ? `${net.name} — ${addr}` : net.name;
+    }).filter(Boolean);
+    if (parts.length) return parts.join(', ');
+  }
+  if (item.networkPorts?.length) {
+    const relevant = contextNetworkId
+      ? item.networkPorts.filter(p => p.networkId === contextNetworkId)
+      : item.networkPorts;
+    const parts = relevant.map(p => {
+      const net = state.refs.networks?.[p.networkId];
+      if (!net) return '';
+      const addr = p.ipAddress || p.nodeAddress || '';
       return addr ? `${net.name} — ${addr}` : net.name;
     }).filter(Boolean);
     if (parts.length) return parts.join(', ');

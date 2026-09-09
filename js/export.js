@@ -151,7 +151,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 20;
+    const totalSheets = 22;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -179,9 +179,11 @@ async function exportExcel() {
     addSheet('PLC Terminal Wiring',  buildPlcTerminalWiringSheet(assetsByClass['PLC'], refs));
     addSheet('PLC Network Ports',    buildPlcNetworkPortsSheet(assetsByClass['PLC'], refs));
     addSheet('HMI', buildAssetClassSheet(assetsByClass['HMI'], 'HMI', refs));
+    addSheet('HMI Network Ports', buildAssetNetworkPortsSheet(assetsByClass['HMI'], refs));
     addSheet('Field Device',            buildAssetClassSheet(assetsByClass['Field Device'], 'Field Device', refs));
     addSheet('Field Device Wiring',     buildFieldDeviceWiringSheet(assetsByClass['Field Device'], refs));
     addSheet('Field Device Parameters', buildFieldDeviceParametersSheet(assetsByClass['Field Device'], refs));
+    addSheet('Field Device Network Ports', buildAssetNetworkPortsSheet(assetsByClass['Field Device'], refs));
 
     const sheetMeta = workbook.SheetNames.map((name, i) => {
       const ws = workbook.Sheets[name];
@@ -230,7 +232,8 @@ function buildChecklistSheet(autoItems, customItems) {
 const ASSET_CLASS_EXCLUDE_KEYS = {
   'Network Switch': ['switchPorts', 'switchNetworks'],
   'PLC':             ['slots'],
-  'Field Device':    ['fieldDeviceWiring', 'fieldDeviceParameters'],
+  'Field Device':    ['fieldDeviceWiring', 'fieldDeviceParameters', 'networkPorts'],
+  'HMI':             ['networkPorts'],
 };
 
 function buildAssetClassSheet(assets, assetClass, refs) {
@@ -262,6 +265,32 @@ function buildSwitchPortsSheet(switchAssets, refs) {
         port.portName || '',
         port.networkId || '', network?.name || '',
         port.assetId || '', connected?.name || '',
+      ]);
+    }
+  }
+  return buildSubDataSheet(headers, rows);
+}
+
+/**
+ * Builds the "Field Device Network Ports" / "HMI Network Ports" worksheets — one
+ * row per network port entry for asset classes with a Network Ports UI (see
+ * ASSET_CLASS_NETWORK_PORTS). No "connected device" columns — unlike a switch
+ * port, a field device/HMI port doesn't reference a connected asset; that
+ * relationship lives on the switch-port side. Unlike buildPlcNetworkPortsSheet
+ * (export-only, full fidelity lives in a JSON blob elsewhere), this sheet is
+ * these assets' actual round-trip source of truth, so it carries every address
+ * column.
+ */
+function buildAssetNetworkPortsSheet(assets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Port #', 'Network ID', 'Network Name', 'Protocol', 'IP Address', 'Subnet Mask', 'Gateway', 'Node Address'];
+  const rows = [];
+  for (const asset of assets) {
+    for (const port of (asset.networkPorts || [])) {
+      const network = refs.networks?.get(port.networkId);
+      rows.push([
+        asset.id, asset.name || '',
+        port.portNumber || '', port.networkId || '', network?.name || '', network?.networkType || '',
+        port.ipAddress || '', port.subnetMask || '', port.gateway || '', port.nodeAddress || '',
       ]);
     }
   }

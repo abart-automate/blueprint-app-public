@@ -102,8 +102,8 @@ async function savePlantForm() {
 }
 
 // Returns an error string if any IP address in item conflicts with another asset,
-// or null if the IP is unique. Checks both the primary ipAddress field and
-// switchNetworks entries — a device can carry IPs in both places.
+// or null if the IP is unique. Checks the primary ipAddress field, switchNetworks
+// entries, and networkPorts entries — a device can carry IPs in any of these.
 function validateUniqueIp(item, allAssets) {
   const assignments = [];
   if (item.ipAddress && item.networkId)
@@ -112,6 +112,10 @@ function validateUniqueIp(item, allAssets) {
     if (sn.ipAddress && sn.networkId)
       assignments.push({ networkId: sn.networkId, ipAddress: sn.ipAddress });
   }
+  for (const p of item.networkPorts || []) {
+    if (p.ipAddress && p.networkId)
+      assignments.push({ networkId: p.networkId, ipAddress: p.ipAddress });
+  }
   for (const { networkId, ipAddress } of assignments) {
     const conflicts = new Set();
     for (const a of allAssets) {
@@ -119,6 +123,9 @@ function validateUniqueIp(item, allAssets) {
       if (a.ipAddress === ipAddress && a.networkId === networkId) conflicts.add(a.name);
       for (const sn of a.switchNetworks || []) {
         if (sn.ipAddress === ipAddress && sn.networkId === networkId) conflicts.add(a.name);
+      }
+      for (const p of a.networkPorts || []) {
+        if (p.ipAddress === ipAddress && p.networkId === networkId) conflicts.add(a.name);
       }
     }
     if (conflicts.size) return `IP ${ipAddress} already used by: ${[...conflicts].join(', ')}`;
@@ -184,6 +191,13 @@ async function saveEntityForm() {
       item.switchNetworks = state.formSwitchNetworks.filter(r => r.networkId);
       item.switchPorts    = state.formSwitchPorts.filter(r => r.portName || r.networkId || r.assetId);
     }
+  }
+
+  // Network ports table is state-driven, not a form field. Persist it and clear
+  // the legacy scalar fields it replaces (mirrors the PLC slot migration).
+  if (type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
+    item.networkPorts = state.formAssetNetworkPorts.map(p => ({ ...p }));
+    ['networkId', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress'].forEach(k => delete item[k]);
   }
 
   if (type === 'assets') {

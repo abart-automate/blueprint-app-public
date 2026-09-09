@@ -430,6 +430,17 @@ async function renderEntityDetail(savedScroll) {
     state.detailSwitchPorts    = (item.switchPorts    || []).map(r => ({ ...r }));
   }
 
+  // Load network ports table state for asset classes with a Network Ports UI
+  // (Field Device, HMI — see ASSET_CLASS_NETWORK_PORTS). Legacy records with
+  // only a scalar networkId get a synthesized "Port 1" row so the value isn't
+  // silently dropped (see buildLegacyNetworkPortRow).
+  const showAssetNetworkPorts = type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass);
+  if (showAssetNetworkPorts) {
+    state.detailAssetNetworkPorts = item.networkPorts?.length
+      ? item.networkPorts.map(r => ({ ...r }))
+      : (item.networkId ? [buildLegacyNetworkPortRow(item)] : []);
+  }
+
   /* ------------------------------------------------------------------
      Build field rows grouped by section.
      Fields are rendered as live editable inputs instead of read-only divs.
@@ -524,6 +535,15 @@ async function renderEntityDetail(savedScroll) {
     );
   }
 
+  let networkPortsCard = '';
+  if (showAssetNetworkPorts) {
+    networkPortsCard = buildCollapsibleCard(
+      'Network Ports',
+      `<div id="det-asset-network-ports-container"></div>`,
+      { expanded: true }
+    );
+  }
+
   // Assignment badge (read-only display — not editable inline)
   let assignBadge = '';
   if (item.assignedToType) {
@@ -607,6 +627,7 @@ async function renderEntityDetail(savedScroll) {
       ${rackSlotsCard}
       ${switchNetworksCard}
       ${switchPortsCard}
+      ${networkPortsCard}
       ${physicalSectionCards}
       ${requiredPhotosCard}
       ${otherPhotosCard}
@@ -659,6 +680,18 @@ async function renderEntityDetail(savedScroll) {
       );
     };
     rerenderSwitch();
+  }
+
+  if (showAssetNetworkPorts) {
+    const rerenderNetPorts = () => {
+      renderNetworkPortsTableDetail(
+        'det-asset-network-ports-container',
+        state.detailAssetNetworkPorts,
+        rerenderNetPorts,
+        () => { state.detailChanges._netPortsDirty = true; } // sentinel so hasUnsavedDetailChanges fires
+      );
+    };
+    rerenderNetPorts();
   }
 
   /* ------------------------------------------------------------------
@@ -1056,6 +1089,12 @@ async function buildChildSections(type, id, item) {
       type === 'networks' && child.store === 'assets'
         ? all.filter(a => a[child.field] !== id && a.switchNetworks?.some(sn => sn.networkId === id))
         : []
+    ).concat(
+      // Also include assets connected to this network via their networkPorts
+      // table (Field Device, HMI — see ASSET_CLASS_NETWORK_PORTS)
+      type === 'networks' && child.store === 'assets'
+        ? all.filter(a => a[child.field] !== id && a.networkPorts?.some(p => p.networkId === id))
+        : []
     ).sort(sortByName);
 
     const slotLinked = (['networks', 'power', 'safety'].includes(type) && child.store === 'assets')
@@ -1118,8 +1157,9 @@ async function saveDetailChanges(type, id) {
   // Merge field-level changes over the saved item
   const updatedItem = { ...item, ...state.detailChanges };
 
-  // Remove the internal sentinel used by switch-table dirty tracking
+  // Remove the internal sentinels used by switch-table / network-ports dirty tracking
   delete updatedItem._switchDirty;
+  delete updatedItem._netPortsDirty;
 
   // Persist current media state. Freshen blobs before writing — IDB-backed blobs retrieved
   // in a previous session cannot be reliably re-stored via structured clone in WebKit/Safari
@@ -1143,6 +1183,13 @@ async function saveDetailChanges(type, id) {
     updatedItem.switchPorts    = state.detailSwitchPorts.filter(
       r => r.portName || r.networkId || r.assetId
     );
+  }
+
+  // Persist network ports for asset classes with a Network Ports UI, and clear
+  // the legacy scalar fields they replace (mirrors the PLC slot migration).
+  if (type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
+    updatedItem.networkPorts = state.detailAssetNetworkPorts.map(p => ({ ...p }));
+    ['networkId', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress'].forEach(k => delete updatedItem[k]);
   }
 
   // Required field validation (applied to merged item so new values are checked)

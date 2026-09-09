@@ -9,8 +9,8 @@
 const KNOWN_SHEET_NAMES = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
-  'PLC', 'PLC Slots', 'HMI',
-  'Field Device', 'Field Device Parameters',
+  'PLC', 'PLC Slots', 'HMI', 'HMI Network Ports',
+  'Field Device', 'Field Device Parameters', 'Field Device Network Ports',
   'Power Wiring', 'Field Device Wiring',
   'Checklist',
 ]);
@@ -137,7 +137,8 @@ const ASSET_CLASS_SHEET_DEFS = [
 const SUBDATA_KEYS_BY_CLASS = {
   'Network Switch': ['switchPorts', 'switchNetworks'],
   'PLC':            ['slots'],
-  'Field Device':   ['fieldDeviceParameters'],
+  'Field Device':   ['fieldDeviceParameters', 'fieldDeviceWiring', 'networkPorts'],
+  'HMI':            ['networkPorts'],
 };
 
 async function importAssetSheets(wb, nameToId, idExists, stats) {
@@ -205,6 +206,8 @@ async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
   await importFieldDeviceParametersSheet(wb, nameToId, idExists);
+  await importAssetNetworkPortsSheet(wb, 'Field Device Network Ports', nameToId, idExists);
+  await importAssetNetworkPortsSheet(wb, 'HMI Network Ports', nameToId, idExists);
   await importPowerWiringSheet(wb, nameToId, idExists);
   await importAssetWiringSheet(wb, 'Field Device Wiring',  'fieldDeviceWiring', nameToId, idExists);
 }
@@ -243,6 +246,36 @@ async function importSwitchPortsSheet(wb, nameToId, idExists) {
       networkId: resolveRefId(str(row['Network ID']), str(row['Network Name']), 'networks', nameToId, idExists) || '',
       assetId:   resolveRefId(str(row['Connected Asset ID']), str(row['Connected Asset Name']), 'assets', nameToId, idExists) || '',
     }));
+    await upsert('assets', asset);
+  }
+}
+
+// Imports the flat "Field Device Network Ports" / "HMI Network Ports" sheets into
+// asset.networkPorts — one row per port, grouped by parent asset. Unlike PLC's
+// slot-nested networkPorts (deserialized from a JSON blob column since slots are
+// nested inside the PLC asset), these ports live directly on the asset, like
+// switchPorts, so a flat sheet is this data's actual round-trip source of truth.
+async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idExists) {
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return;
+
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const grouped = groupByParentAsset(rows, 'Asset ID', 'Asset Name', nameToId, idExists);
+
+  for (const [assetId, assetRows] of grouped) {
+    const asset = await getById('assets', assetId);
+    if (!asset) continue;
+    asset.networkPorts = assetRows.map(row => {
+      const port = {
+        portNumber: row['Port #'] !== '' ? Number(row['Port #']) : undefined,
+        networkId:  resolveRefId(str(row['Network ID']), str(row['Network Name']), 'networks', nameToId, idExists) || '',
+      };
+      if (str(row['IP Address']))  port.ipAddress  = str(row['IP Address']);
+      if (str(row['Subnet Mask'])) port.subnetMask = str(row['Subnet Mask']);
+      if (str(row['Gateway']))     port.gateway    = str(row['Gateway']);
+      if (str(row['Node Address'])) port.nodeAddress = str(row['Node Address']);
+      return port;
+    });
     await upsert('assets', asset);
   }
 }

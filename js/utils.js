@@ -105,6 +105,20 @@ function getNetworkAddrFields(networkId) {
   return ENTITY.assets.networkTypeFields?.[net?.networkType] || [];
 }
 
+// Backward-compat helper: an asset saved before the Network Ports migration
+// (see ASSET_CLASS_NETWORK_PORTS) may still carry a legacy scalar networkId
+// plus address fields. Synthesizes a single "Port 1" row from those legacy
+// fields so the value isn't silently dropped the first time the record is
+// opened — saving then persists it into networkPorts[] and clears the legacy
+// fields (see saveEntityForm / saveDetailChanges).
+function buildLegacyNetworkPortRow(item) {
+  const row = { portNumber: 1, networkId: item.networkId };
+  for (const key of ['ipAddress', 'subnetMask', 'gateway', 'nodeAddress']) {
+    if (item[key]) row[key] = item[key];
+  }
+  return row;
+}
+
 function getIpPrefix(ipRange) {
   if (!ipRange) return '';
   const parts = ipRange.split('/')[0].split('.');

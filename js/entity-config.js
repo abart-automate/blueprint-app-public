@@ -137,6 +137,12 @@ const CARD_TYPE_NET_TYPES      = new Set(['Controller', 'Communication']);
 // has no IO points or power bus of its own.
 const CARD_TYPE_TERMINAL_TYPES = new Set(['Analog', 'Digital', 'Specialty']);
 
+// Asset classes whose network connection is modeled as a multi-port Network Ports
+// table (like PLC Controller/Communication cards) rather than a single Network
+// field. Extend this set — not scattered per-file class checks — to add the UI to
+// another asset class.
+const ASSET_CLASS_NETWORK_PORTS = new Set(['Field Device', 'HMI']);
+
 /* ---- ICON SVG CONSTANTS ---- */
 const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 const ICON_TRASH   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
@@ -315,7 +321,7 @@ const ENTITY = {
     },
     getChildren: [
       { label: 'Assets', store: 'assets', field: 'networkId',
-        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkPorts?.some(p => p.networkId === id)))).length },
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || a.networkPorts?.some(p => p.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkPorts?.some(p => p.networkId === id)))).length },
     ],
   },
 
@@ -374,18 +380,17 @@ const ENTITY = {
       // PLC slots are managed dynamically via the Add Slot / reorder / duplicate controls
       // in the detail panel — no fixed slot count field is needed.
       'PLC': [],
-      'HMI': [
-        { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
-      ],
+      // Network connection is modeled via the Network Ports table (see
+      // ASSET_CLASS_NETWORK_PORTS), not a class field here.
+      'HMI': [],
       // Field Device covers both networked and non-networked (hardwired-only)
-      // devices — Network is simply left blank for a device that isn't
-      // networked, rather than having two separate asset classes for the
-      // presence/absence of a network connection. Also covers what used to
+      // devices — a device that isn't networked simply has no ports in its
+      // Network Ports table, rather than having two separate asset classes for
+      // the presence/absence of a network connection. Also covers what used to
       // be a separate "VFD" class, folded in for the same reason (drives are
       // just another device with optional safety/network wiring).
       'Field Device': [
-        { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
-        { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
+        { key: 'safetyId', label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
       ],
     },
     classItemTables: {

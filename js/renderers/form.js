@@ -3,11 +3,13 @@
    Renders the bottom-sheet form for creating/editing entities,
    PLC slots, and the plant settings form.
    Depends on: state, ENTITY, ASSIGN_STORE_MAP, PLC_CARD_TYPE_FIELDS,
+               ASSET_CLASS_NETWORK_PORTS,
                esc, getIpPrefix, getById, refreshAll,
                renderMediaSlot, renderMediaGallery, renderItemTable,
                renderClassItemTables, renderIoPointsTable, syncIoPointCount,
                renderSwitchNetworksTableForm, renderSwitchPortsTableForm,
-               renderPowerBusTableForm, renderNetworkPortsTableForm.
+               renderPowerBusTableForm, renderNetworkPortsTableForm,
+               _renderNetworkPortsTable.
    ============================================================ */
 
 async function renderForm() {
@@ -188,6 +190,10 @@ async function renderEntityForm() {
         <div class="form-section-hdr">Port Assignments</div>
         <div id="switch-ports-container"></div>
       </div>
+      <div id="asset-network-ports-wrap" style="display:none">
+        <div class="form-section-hdr">Network Ports</div>
+        <div id="asset-network-ports-container"></div>
+      </div>
       <div id="card-type-fields-container"></div>
       <div id="class-item-tables-container"></div>
       <div id="io-points-wrap" style="display:none">
@@ -303,12 +309,20 @@ async function renderEntityForm() {
       }
     };
 
+    const updateAssetNetworkPorts = () => {
+      const assetClass = $('f-assetClass')?.value;
+      const show = ASSET_CLASS_NETWORK_PORTS.has(assetClass);
+      const wrap = $('asset-network-ports-wrap');
+      if (wrap) wrap.style.display = show ? '' : 'none';
+      if (show) _renderNetworkPortsTable('asset-network-ports-container', state.formAssetNetworkPorts, null, null);
+    };
+
     const renderSubclassFields = async () => {
       const subclass  = $('f-assetSubclass')?.value;
       const fields    = ENTITY.assets.subclassFields?.[subclass] || [];
       const container = $('subclass-fields-container');
       if (!container) return;
-      if (!fields.length) { container.innerHTML = ''; updateSwitchTables(); return; }
+      if (!fields.length) { container.innerHTML = ''; updateSwitchTables(); updateAssetNetworkPorts(); return; }
       let ph = '', lastSection;
       for (const f of fields) {
         if (f.section !== lastSection) {
@@ -328,6 +342,7 @@ async function renderEntityForm() {
         await renderCardTypeFields();
       }
       updateSwitchTables();
+      updateAssetNetworkPorts();
     };
 
     const renderCardTypeFields = async () => {
