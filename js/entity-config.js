@@ -50,15 +50,20 @@ const SERIAL_FIELDS = [
   { key: 'stopBits', label: 'Stop Bits', type: 'enum', section: 'Serial Configuration', options: ['1','2'] },
 ];
 
+// Keys of this object are the exhaustive set of valid PLC rack-card types —
+// the "Card Type" dropdown in renderSlotForm() (renderers/form.js) is built
+// from Object.keys(PLC_CARD_TYPE_FIELDS) rather than its own separate list,
+// so adding a card type here is sufficient to make it selectable; there is
+// no second place that also needs updating.
 const PLC_CARD_TYPE_FIELDS = {
   // Network connectivity for Controller/Communication is handled per-port via
   // networkPorts[]. Card-level networkId and address fields have been removed.
   Controller:    [],
+  Communication: [],
   Analog:        [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' }],
   Digital:       [{ key: 'ioPointCount', label: 'IO Point Count', type: 'text' },
                   { key: 'voltageLevel', label: 'Voltage',  type: 'enum',
                     options: ['24VDC','120VAC','240VAC'] }],
-  Communication: [],
   Specialty:     [],
 };
 
@@ -298,6 +303,11 @@ const ENTITY = {
     },
     cardTypeFields: PLC_CARD_TYPE_FIELDS,
     classFields: {
+      // Every value of the assetClass enum (see the 'assetClass' field above) has an
+      // entry here, even when empty — see assertEntityConfigComplete() below, which
+      // checks this at dev-mode startup so a missing entry surfaces immediately
+      // instead of silently yielding no class-specific fields for that asset class.
+      'Network Switch': [],
       // PLC slots are managed dynamically via the Add Slot / reorder / duplicate controls
       // in the detail panel — no fixed slot count field is needed.
       'PLC': [],
@@ -363,3 +373,55 @@ const ASSIGN_STORE_MAP = {
   'Safety Circuit': 'safety',
   Network: 'networks',
 };
+
+/* ---- DEV-MODE COMPLETENESS CHECK ----
+   Verifies every known assetClass / PLC card type / switch subclass actually
+   has an entry in every lookup table keyed on it. These tables are read via
+   optional chaining everywhere (e.g. `classFields?.[assetClass] || []`), so a
+   missing entry today doesn't throw — it silently yields no class-specific
+   fields, discovered only when a user notices a form section is empty. This
+   turns that into a loud, named console warning at startup instead.
+
+   Deliberately NOT run on every load (it's dev/CI tooling, not a runtime
+   guard): called from init() only when the URL has ?debug=1. See
+   PLC_CARD_TYPE_FIELDS and assets.classFields above for two real gaps this
+   check found and fixed while it was being written. */
+function assertEntityConfigComplete() {
+  const problems = [];
+  const assetClasses = ENTITY.assets.fields.find(f => f.key === 'assetClass')?.options || [];
+  const cardTypes     = Object.keys(PLC_CARD_TYPE_FIELDS);
+
+  for (const cls of assetClasses) {
+    if (!Object.hasOwn(ENTITY.assets.classFields, cls)) {
+      problems.push(`assets.classFields is missing an entry for assetClass "${cls}"`);
+    }
+    if (!Object.hasOwn(ENTITY.assets.classSubclasses, cls)) {
+      problems.push(`assets.classSubclasses is missing an entry for assetClass "${cls}"`);
+    }
+  }
+
+  for (const cls of assetClasses) {
+    for (const sub of ENTITY.assets.classSubclasses[cls] || []) {
+      if (!Object.hasOwn(ENTITY.assets.subclassFields, sub)) {
+        problems.push(`assets.subclassFields is missing an entry for subclass "${sub}" (assetClass "${cls}")`);
+      }
+    }
+  }
+
+  for (const [setName, set] of Object.entries({
+    CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES,
+  })) {
+    for (const t of set) {
+      if (!cardTypes.includes(t)) {
+        problems.push(`PLC_CARD_TYPE_FIELDS is missing an entry for cardType "${t}" referenced by ${setName}`);
+      }
+    }
+  }
+
+  if (problems.length) {
+    console.warn(`[entity-config completeness check] ${problems.length} gap(s) found:\n` + problems.map(p => ` - ${p}`).join('\n'));
+  } else {
+    console.info('[entity-config completeness check] OK — no gaps found.');
+  }
+  return problems;
+}

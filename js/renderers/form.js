@@ -43,7 +43,7 @@ async function renderSlotForm() {
   const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
   await refreshAll();
 
-  const cardTypeOpts = ['Controller','Communication','Analog','Digital','Specialty']
+  const cardTypeOpts = Object.keys(PLC_CARD_TYPE_FIELDS)
     .map(t => `<option value="${t}"${existing?.cardType === t ? ' selected' : ''}>${t}</option>`)
     .join('');
   const nameEmptyCls      = !existing?.name          ? ' field-empty' : '';

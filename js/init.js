@@ -11,6 +11,13 @@ async function init() {
        script-load side effect. */
     initEl();
 
+    /* Opt-in dev-mode check for gaps in ENTITY's lookup tables (see
+       assertEntityConfigComplete() in entity-config.js). Not run by default
+       since it's a config-authoring aid, not a user-facing feature. */
+    if (new URLSearchParams(window.location.search).has('debug')) {
+      assertEntityConfigComplete();
+    }
+
     await initDB();
 
     /* Detect viewport size and stamp body[data-layout] before any rendering
