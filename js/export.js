@@ -140,7 +140,7 @@ async function exportExcel() {
     };
 
     // Partition assets by class
-    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'VFD', 'Field Device'];
+    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'Field Device'];
     const assetsByClass = {};
     for (const cls of assetClasses) {
       assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
@@ -151,7 +151,7 @@ async function exportExcel() {
 
     const workbook = XLSX.utils.book_new();
     let processedCount = 0;
-    const totalSheets = 22;
+    const totalSheets = 20;
 
     const addSheet = (name, worksheet) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName(name));
@@ -179,11 +179,9 @@ async function exportExcel() {
     addSheet('PLC Terminal Wiring',  buildPlcTerminalWiringSheet(assetsByClass['PLC'], refs));
     addSheet('PLC Network Ports',    buildPlcNetworkPortsSheet(assetsByClass['PLC'], refs));
     addSheet('HMI', buildAssetClassSheet(assetsByClass['HMI'], 'HMI', refs));
-    addSheet('VFD',            buildAssetClassSheet(assetsByClass['VFD'], 'VFD', refs));
-    addSheet('VFD Wiring',     buildVfdWiringSheet(assetsByClass['VFD'], refs));
-    addSheet('VFD Parameters', buildVfdParametersSheet(assetsByClass['VFD'], refs));
-    addSheet('Field Device',         buildAssetClassSheet(assetsByClass['Field Device'], 'Field Device', refs));
-    addSheet('Field Device Wiring',  buildFieldDeviceWiringSheet(assetsByClass['Field Device'], refs));
+    addSheet('Field Device',            buildAssetClassSheet(assetsByClass['Field Device'], 'Field Device', refs));
+    addSheet('Field Device Wiring',     buildFieldDeviceWiringSheet(assetsByClass['Field Device'], refs));
+    addSheet('Field Device Parameters', buildFieldDeviceParametersSheet(assetsByClass['Field Device'], refs));
 
     const sheetMeta = workbook.SheetNames.map((name, i) => {
       const ws = workbook.Sheets[name];
@@ -232,8 +230,7 @@ function buildChecklistSheet(autoItems, customItems) {
 const ASSET_CLASS_EXCLUDE_KEYS = {
   'Network Switch': ['switchPorts', 'switchNetworks'],
   'PLC':             ['slots'],
-  'VFD':             ['vfdParameters', 'deviceWiring'],
-  'Field Device':    ['fieldDeviceWiring'],
+  'Field Device':    ['fieldDeviceWiring', 'fieldDeviceParameters'],
 };
 
 function buildAssetClassSheet(assets, assetClass, refs) {
@@ -302,12 +299,12 @@ function buildPlcSlotsSheet(plcAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function buildVfdParametersSheet(vfdAssets, refs) {
+function buildFieldDeviceParametersSheet(fieldDeviceAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Section', 'Parameter', 'Value'];
   const rows = [];
-  for (const asset of vfdAssets) {
-    for (const param of (asset.vfdParameters || [])) {
-      rows.push([asset.id, asset.name || '', 'Parameters', param.parameter || '', param.value || '']);
+  for (const asset of fieldDeviceAssets) {
+    for (const row of (asset.fieldDeviceParameters || [])) {
+      rows.push([asset.id, asset.name || '', 'Parameters', row.terminal || '', row.label || '']);
     }
   }
   return buildSubDataSheet(headers, rows);
@@ -325,17 +322,6 @@ function buildPowerWiringSheet(powerItems, refs) {
       for (const row of (item[tbl.key] || [])) {
         rows.push([item.id, item.name || '', tbl.label, row.terminal || '', row.label || '']);
       }
-    }
-  }
-  return buildSubDataSheet(headers, rows);
-}
-
-function buildVfdWiringSheet(vfdAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
-  const rows = [];
-  for (const asset of vfdAssets) {
-    for (const row of (asset.deviceWiring || [])) {
-      rows.push([asset.id, asset.name || '', 'Wiring', row.terminal || '', row.label || '']);
     }
   }
   return buildSubDataSheet(headers, rows);
@@ -640,7 +626,7 @@ function getFieldLabel(store, key, item) {
 // asset's network association is `item.networkId`, resolved to the linked
 // network's type via state.refs). That branch could never match, silently
 // falling back to prettifyKey() for network-address field labels (IP
-// Address, Subnet Mask, etc.) on exported HMI/VFD/Field Device assets
+// Address, Subnet Mask, etc.) on exported HMI/Field Device assets
 // instead of using their declared labels. getEffectiveFields already
 // resolves this correctly via state.refs.networks[item.networkId].
 function findFieldDef(store, key, item) {

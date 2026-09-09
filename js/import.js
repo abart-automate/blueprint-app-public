@@ -9,9 +9,9 @@
 const KNOWN_SHEET_NAMES = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
-  'PLC', 'PLC Slots', 'HMI', 'VFD', 'VFD Parameters',
-  'Field Device',
-  'Power Wiring', 'VFD Wiring', 'Field Device Wiring',
+  'PLC', 'PLC Slots', 'HMI',
+  'Field Device', 'Field Device Parameters',
+  'Power Wiring', 'Field Device Wiring',
   'Checklist',
 ]);
 
@@ -130,7 +130,6 @@ const ASSET_CLASS_SHEET_DEFS = [
   { sheetName: 'Network Switch', assetClass: 'Network Switch' },
   { sheetName: 'PLC',            assetClass: 'PLC' },
   { sheetName: 'HMI',            assetClass: 'HMI' },
-  { sheetName: 'VFD',            assetClass: 'VFD' },
   { sheetName: 'Field Device', assetClass: 'Field Device' },
 ];
 
@@ -138,7 +137,7 @@ const ASSET_CLASS_SHEET_DEFS = [
 const SUBDATA_KEYS_BY_CLASS = {
   'Network Switch': ['switchPorts', 'switchNetworks'],
   'PLC':            ['slots'],
-  'VFD':            ['vfdParameters'],
+  'Field Device':   ['fieldDeviceParameters'],
 };
 
 async function importAssetSheets(wb, nameToId, idExists, stats) {
@@ -181,7 +180,7 @@ async function importAssetSheets(wb, nameToId, idExists, stats) {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, VFD Params)
+// Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, Field Device Parameters)
 // ---------------------------------------------------------------------------
 
 async function importChecklistSheet(wb) {
@@ -205,9 +204,8 @@ async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchNetworksSheet(wb, nameToId, idExists);
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
-  await importVfdParametersSheet(wb, nameToId, idExists);
+  await importFieldDeviceParametersSheet(wb, nameToId, idExists);
   await importPowerWiringSheet(wb, nameToId, idExists);
-  await importAssetWiringSheet(wb, 'VFD Wiring',           'deviceWiring',      nameToId, idExists);
   await importAssetWiringSheet(wb, 'Field Device Wiring',  'fieldDeviceWiring', nameToId, idExists);
 }
 
@@ -290,8 +288,8 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
   }
 }
 
-async function importVfdParametersSheet(wb, nameToId, idExists) {
-  const ws = wb.Sheets['VFD Parameters'];
+async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
+  const ws = wb.Sheets['Field Device Parameters'];
   if (!ws) return;
 
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -300,9 +298,9 @@ async function importVfdParametersSheet(wb, nameToId, idExists) {
   for (const [assetId, assetRows] of grouped) {
     const asset = await getById('assets', assetId);
     if (!asset) continue;
-    asset.vfdParameters = assetRows
-      .map(row => ({ parameter: str(row['Parameter']), value: str(row['Value']) }))
-      .filter(p => p.parameter);
+    asset.fieldDeviceParameters = assetRows
+      .map(row => ({ terminal: str(row['Parameter']), label: str(row['Value']) }))
+      .filter(p => p.terminal);
     await upsert('assets', asset);
   }
 }

@@ -325,7 +325,7 @@ const ENTITY = {
     requiredPhotoSlots: ['Device Front', 'Part Number'],
     fields: [
       { key: 'name',          label: 'Name',          type: 'text', required: true },
-      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','VFD','Field Device'], required: true, enumFilterChip: true },
+      { key: 'assetClass',    label: 'Device Class',  type: 'enum', options: ['Network Switch','PLC','HMI','Field Device'], required: true, enumFilterChip: true },
       { key: 'assetSubclass', label: 'Subtype',       type: 'enum', options: [] },
       { key: 'areaId',       label: 'Area',         type: 'ref',  refStore: 'areas' },
       { key: 'panelId',       label: 'Panel',         type: 'ref',  refStore: 'panels' },
@@ -377,26 +377,21 @@ const ENTITY = {
       'HMI': [
         { key: 'networkId', label: 'Network', type: 'ref', refStore: 'networks' },
       ],
-      'VFD': [
-        { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
-        { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
-      ],
       // Field Device covers both networked and non-networked (hardwired-only)
       // devices — Network is simply left blank for a device that isn't
       // networked, rather than having two separate asset classes for the
-      // presence/absence of a network connection.
+      // presence/absence of a network connection. Also covers what used to
+      // be a separate "VFD" class, folded in for the same reason (drives are
+      // just another device with optional safety/network wiring).
       'Field Device': [
         { key: 'safetyId',  label: 'Safety Circuit', type: 'ref', refStore: 'safety' },
         { key: 'networkId', label: 'Network',         type: 'ref', refStore: 'networks' },
       ],
     },
     classItemTables: {
-      'VFD': [
-        { key: 'deviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' },
-        { key: 'vfdParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' },
-      ],
       'Field Device': [
-        { key: 'fieldDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' }
+        { key: 'fieldDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' },
+        { key: 'fieldDeviceParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' },
       ],
     },
     subclassChildren: {},
@@ -404,7 +399,6 @@ const ENTITY = {
       'Network Switch': ['Managed', 'Unmanaged', 'Router'],
       'PLC':            [],
       'HMI':            [],
-      'VFD':            [],
       'Field Device':   [],
     },
     subclassFields: {
