@@ -460,7 +460,18 @@ function mapRowToItem(row, headerMap, nameToId, idExists) {
       if (!refAccum[key]) refAccum[key] = {};
       refAccum[key].name = str(value);
     } else {
-      item[key] = value === '' ? '' : tryParseJson(value);
+      // Every non-ref field reachable here comes from an ENTITY field def of type
+      // 'text' | 'textarea' | 'enum' (see buildImportHeaderMap) — i.e. always scalar,
+      // never an array/object. Previously this speculatively JSON.parse'd any cell
+      // string that merely looked array/object-like ("[...]"/"{...}"), which could
+      // silently turn ordinary hand-typed text (e.g. a note starting with "[TODO]")
+      // into an unintended array/object if it happened to also be valid JSON. The
+      // structured sub-data fields that genuinely are arrays/objects (slot IO points,
+      // power bus, switch ports/networks, etc.) are excluded from this generic field
+      // set entirely (see SUBDATA_KEYS_BY_CLASS / excludeSet) and parsed explicitly,
+      // with their own try/catch, at their own dedicated call sites — so no field
+      // reaching this branch should ever need re-hydrating from a JSON string.
+      item[key] = value;
     }
   }
 
@@ -502,16 +513,6 @@ async function mergeUpsert(store, item, idSet, stats) {
     await upsert(store, item);
     stats.added++;
   }
-}
-
-// Try to parse JSON arrays/objects that were serialized on export
-function tryParseJson(value) {
-  if (typeof value !== 'string') return value;
-  const t = value.trim();
-  if ((t.startsWith('[') || t.startsWith('{')) && t.length > 2) {
-    try { return JSON.parse(t); } catch {}
-  }
-  return value;
 }
 
 function str(value) {
