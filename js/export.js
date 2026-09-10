@@ -139,8 +139,9 @@ async function exportExcel() {
       assets:   buildMap(assets),
     };
 
-    // Partition assets by class
-    const assetClasses = ['Network Switch', 'PLC', 'HMI', 'Field Device'];
+    // Partition assets by class — derived from the canonical assetClass enum
+    // (ENTITY.assets.fields) rather than a separately hand-maintained list.
+    const assetClasses = ENTITY.assets.fields.find(f => f.key === 'assetClass').options;
     const assetsByClass = {};
     for (const cls of assetClasses) {
       assetsByClass[cls] = assets.filter(a => a.assetClass === cls);
@@ -228,16 +229,10 @@ function buildChecklistSheet(autoItems, customItems) {
   return XLSX.utils.aoa_to_sheet(rows);
 }
 
-// Keys excluded from each asset class's main sheet (handled by sub-data sheets)
-const ASSET_CLASS_EXCLUDE_KEYS = {
-  'Network Switch': ['switchPorts', 'switchNetworks'],
-  'PLC':             ['slots'],
-  'Field Device':    ['fieldDeviceWiring', 'fieldDeviceParameters', 'networkPorts'],
-  'HMI':             ['networkPorts'],
-};
-
 function buildAssetClassSheet(assets, assetClass, refs) {
-  const excludeKeys = ASSET_CLASS_EXCLUDE_KEYS[assetClass] || [];
+  // See ENTITY.assets.classSubdataKeys (entity-config.js) — array-valued keys
+  // handled by a dedicated sub-data sheet are excluded from the main class sheet.
+  const excludeKeys = ENTITY.assets.classSubdataKeys?.[assetClass] || [];
   return buildWorksheet(assets, 'assets', refs, { excludeKeys });
 }
 

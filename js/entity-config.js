@@ -57,6 +57,7 @@
  * @property {Record<string, readonly FieldDef[]>} [cardTypeFields]
  * @property {Record<string, readonly FieldDef[]>} [classFields]
  * @property {Record<string, ItemTableDef[]>} [classItemTables]
+ * @property {Record<string, string[]>} [classSubdataKeys]
  * @property {Record<string, any>} [subclassChildren]
  * @property {Record<string, string[]>} [classSubclasses]
  * @property {Record<string, readonly FieldDef[]>} [subclassFields]
@@ -397,6 +398,19 @@ const ENTITY = {
         { key: 'fieldDeviceWiring', label: 'Wiring', placeholder1: 'Terminal', placeholder2: 'Label' },
         { key: 'fieldDeviceParameters', label: 'Parameters', placeholder1: 'Parameter', placeholder2: 'Value' },
       ],
+    },
+    // Array-valued keys on an asset of each class that are handled by a
+    // dedicated XLSX sub-data sheet rather than the flat per-class sheet.
+    // Single source of truth for export.js (excludes these from the main
+    // class sheet) and import.js (preserves these from the existing record
+    // when re-importing the main class sheet, since that sheet never
+    // carries them) — previously two independently hand-maintained copies
+    // of the same map that had to be kept in sync by hand.
+    classSubdataKeys: {
+      'Network Switch': ['switchPorts', 'switchNetworks'],
+      'PLC':             ['slots'],
+      'Field Device':    ['fieldDeviceWiring', 'fieldDeviceParameters', 'networkPorts'],
+      'HMI':             ['networkPorts'],
     },
     subclassChildren: {},
     classSubclasses: {

@@ -18,6 +18,25 @@ async function renderForm() {
   return renderEntityForm();
 }
 
+/**
+ * Shows/hides one or more wrap elements based on `condition`, and invokes
+ * `renderFns` (zero-arg callbacks) when shown. Shared by every "toggle a
+ * form section based on the current asset class/subclass, then render its
+ * sub-table(s)" pattern in renderEntityForm (the switch VLAN/port tables,
+ * the asset-level Network Ports table) — the DOM-toggle logic was
+ * previously duplicated per section.
+ * @param {string[]} wrapIds
+ * @param {boolean} condition
+ * @param {Array<() => void>} [renderFns]
+ */
+function toggleConditionalSection(wrapIds, condition, renderFns = []) {
+  for (const id of wrapIds) {
+    const wrap = $(id);
+    if (wrap) wrap.style.display = condition ? '' : 'none';
+  }
+  if (condition) renderFns.forEach(fn => fn());
+}
+
 /* ---- PLC SLOT FORM ---- */
 
 async function renderSlotForm() {
@@ -271,15 +290,11 @@ async function renderEntityForm() {
     const updateSwitchTables = () => {
       const assetClass = $('f-assetClass')?.value;
       const subclass   = $('f-assetSubclass')?.value;
-      const showTables = isSwitchAsset(assetClass, subclass);
-      const snWrap = $('switch-networks-wrap');
-      const spWrap = $('switch-ports-wrap');
-      if (snWrap) snWrap.style.display = showTables ? '' : 'none';
-      if (spWrap) spWrap.style.display = showTables ? '' : 'none';
-      if (showTables) {
-        renderSwitchNetworksTableForm();
-        renderSwitchPortsTableForm();
-      }
+      toggleConditionalSection(
+        ['switch-networks-wrap', 'switch-ports-wrap'],
+        isSwitchAsset(assetClass, subclass),
+        [renderSwitchNetworksTableForm, renderSwitchPortsTableForm]
+      );
     };
 
     const rerenderAssetNetworkPorts = () => _renderNetworkPortsTable(
@@ -288,10 +303,11 @@ async function renderEntityForm() {
 
     const updateAssetNetworkPorts = () => {
       const assetClass = $('f-assetClass')?.value;
-      const show = ASSET_CLASS_NETWORK_PORTS.has(assetClass);
-      const wrap = $('asset-network-ports-wrap');
-      if (wrap) wrap.style.display = show ? '' : 'none';
-      if (show) rerenderAssetNetworkPorts();
+      toggleConditionalSection(
+        ['asset-network-ports-wrap'],
+        ASSET_CLASS_NETWORK_PORTS.has(assetClass),
+        [rerenderAssetNetworkPorts]
+      );
     };
 
     const renderSubclassFields = async () => {

@@ -133,20 +133,15 @@ const ASSET_CLASS_SHEET_DEFS = [
   { sheetName: 'Field Device', assetClass: 'Field Device' },
 ];
 
-// Sub-array keys managed by sub-data sheets; preserved from existing record
-const SUBDATA_KEYS_BY_CLASS = {
-  'Network Switch': ['switchPorts', 'switchNetworks'],
-  'PLC':            ['slots'],
-  'Field Device':   ['fieldDeviceParameters', 'fieldDeviceWiring', 'networkPorts'],
-  'HMI':            ['networkPorts'],
-};
-
 async function importAssetSheets(wb, nameToId, idExists, stats) {
   for (const { sheetName, assetClass } of ASSET_CLASS_SHEET_DEFS) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
 
-    const excludeKeys = SUBDATA_KEYS_BY_CLASS[assetClass] || [];
+    // See ENTITY.assets.classSubdataKeys (entity-config.js) — these array-valued
+    // keys are managed by a dedicated sub-data sheet, so preserve them from the
+    // existing record rather than expecting them in this sheet's columns.
+    const excludeKeys = ENTITY.assets.classSubdataKeys?.[assetClass] || [];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
     const headerMap = buildImportHeaderMap('assets', assetClass, excludeKeys);
 
@@ -497,7 +492,7 @@ function mapRowToItem(row, headerMap, nameToId, idExists) {
       // into an unintended array/object if it happened to also be valid JSON. The
       // structured sub-data fields that genuinely are arrays/objects (slot IO points,
       // power bus, switch ports/networks, etc.) are excluded from this generic field
-      // set entirely (see SUBDATA_KEYS_BY_CLASS / excludeSet) and parsed explicitly,
+      // set entirely (see ENTITY.assets.classSubdataKeys / excludeSet) and parsed explicitly,
       // with their own try/catch, at their own dedicated call sites — so no field
       // reaching this branch should ever need re-hydrating from a JSON string.
       item[key] = value;
