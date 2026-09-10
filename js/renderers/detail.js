@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    DETAIL VIEW RENDERERS
    Depends on: entity-config.js, state.js, utils.js, db.js, app.js (openDetail,
@@ -6,6 +7,10 @@
    ============================================================ */
 
 // preserveScroll: re-renders in place after a slot edit; saves/restores scroll to avoid jump.
+/**
+ * @param {{ preserveScroll?: boolean }} [opts]
+ * @returns {Promise<void>}
+ */
 async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
@@ -16,13 +21,14 @@ async function renderDetail({ preserveScroll = false } = {}) {
   return renderEntityDetail(savedScroll);
 }
 
+/** @param {number} savedScroll */
 async function renderSlotDetail(savedScroll) {
-  const { detailId: id } = state;
+  const id = /** @type {string} */ (state.detailId);
   await refreshAll();
   const rack = state.refs.assets?.[id];
   if (!rack) { closeDetail(); return; }
   const slotNumber = state.detailSlotNumber;
-  const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
+  const slot = rack.slots?.find(/** @param {any} s */ s => s.slotNumber === slotNumber);
   if (!slot) { closeDetail(); return; } // empty slot — shouldn't normally reach here
 
   /* ------------------------------------------------------------------
@@ -30,32 +36,38 @@ async function renderSlotDetail(savedScroll) {
      ------------------------------------------------------------------ */
   state.detailChanges      = {};
   state.detailMediaDirty   = false;
-  state.detailSlotIoPoints = (slot.ioPoints  || []).map(r => ({ ...r }));
-  state.detailSlotPowerBus = (slot.powerBus  || []).map(e => ({
+  state.detailSlotIoPoints = (slot.ioPoints  || []).map(/** @param {any} r */ r => ({ ...r }));
+  state.detailSlotPowerBus = (slot.powerBus  || []).map(/** @param {any} e */ e => ({
     type:   e.type   || 'Power',
     refId:  e.refId  || '',
-    wiring: (e.wiring || []).map(w => ({ ...w })),
+    wiring: (e.wiring || []).map(/** @param {any} w */ w => ({ ...w })),
   }));
   // Initialize terminal wiring edit state for Analog/Digital/Specialty cards.
   // detailItemTables is reset to {} by _clearDetailEditState, so set the key here
   // before the HTML build so renderItemTable can hydrate the table with existing rows.
   if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
-    state.detailItemTables.terminalWiring = (slot.terminalWiring || []).map(r => ({ ...r }));
+    state.detailItemTables.terminalWiring = (slot.terminalWiring || []).map(/** @param {any} r */ r => ({ ...r }));
   }
   // Network ports state is always reset (Controller/Communication cards) — safe to do unconditionally.
-  state.detailSlotNetworkPorts = (slot.networkPorts || []).map(p => ({ ...p }));
+  state.detailSlotNetworkPorts = (slot.networkPorts || []).map(/** @param {any} p */ p => ({ ...p }));
 
   /* ------------------------------------------------------------------
      Build editable field rows.
      Base fields (part number, firmware) + card-type-specific + network address.
      Reuses buildEditableFieldHtml so text/enum/ref types all work.
      ------------------------------------------------------------------ */
+  /**
+   * @param {FieldDef} f
+   * @param {any} src
+   * @returns {string}
+   */
   const mkField = (f, src) => `
     <div class="det-field">
       <div class="det-flabel">${esc(f.label)}</div>
       ${buildEditableFieldHtml(f, src)}
     </div>`;
 
+  /** @type {FieldDef[]} */
   const BASE_SLOT_FIELDS = [
     { key: 'partNumber',      label: 'Part Number',      type: 'text' },
     { key: 'firmwareVersion', label: 'Firmware Version', type: 'text' },
@@ -219,8 +231,9 @@ async function renderSlotDetail(savedScroll) {
   /* ------------------------------------------------------------------
      Wire all [data-edit-field] inputs → state.detailChanges
      ------------------------------------------------------------------ */
-  el.detail.querySelectorAll('[data-edit-field]').forEach(control => {
-    const key = control.dataset.editField;
+  el.detail.querySelectorAll('[data-edit-field]').forEach(control0 => {
+    const control = /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement} */ (control0);
+    const key = /** @type {string} */ (control.dataset.editField);
     const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
     control.addEventListener(ev, () => {
       state.detailChanges[key] = control.value;
@@ -232,9 +245,10 @@ async function renderSlotDetail(savedScroll) {
      Use _ioDirty sentinel so hasUnsavedDetailChanges() fires even when
      the user only edits IO points and no standard fields.
      ------------------------------------------------------------------ */
-  el.detail.querySelectorAll('[data-io-idx]').forEach(control => {
-    const idx   = +control.dataset.ioIdx;
-    const field = control.dataset.ioField;
+  el.detail.querySelectorAll('[data-io-idx]').forEach(control0 => {
+    const control = /** @type {HTMLInputElement | HTMLSelectElement} */ (control0);
+    const idx   = Number(control.dataset.ioIdx);
+    const field = /** @type {string} */ (control.dataset.ioField);
     const ev    = control.tagName === 'SELECT' ? 'change' : 'input';
     control.addEventListener(ev, () => {
       if (state.detailSlotIoPoints[idx]) {
@@ -250,7 +264,7 @@ async function renderSlotDetail(savedScroll) {
   /* ------------------------------------------------------------------
      Button wiring
      ------------------------------------------------------------------ */
-  el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+  /** @type {HTMLElement} */ (el.detail.querySelector('#det-back')).addEventListener('click', closeDetail);
 
   el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
     renderDetail();
@@ -262,10 +276,11 @@ async function renderSlotDetail(savedScroll) {
   });
 
   // Collapsible section toggles
-  el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
+  el.detail.querySelectorAll('.det-section-toggle').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
+      const body     = /** @type {HTMLElement} */ (btn.closest('.det-collapsible')?.querySelector('.det-section-body'));
       const expanded = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', String(!expanded));
       body.style.display = expanded ? 'none' : 'block';
@@ -282,10 +297,9 @@ async function renderSlotDetail(savedScroll) {
  *
  * @param {string} rackId     - ID of the parent PLC asset
  * @param {number} slotNumber - Array index (= display number) of this slot
- * @param {object|null} slot  - Slot data object, or null for an empty placeholder
- * @param {object} opts
- * @param {boolean} opts.isFirst - True when this is the first slot (disables up-reorder button)
- * @param {boolean} opts.isLast  - True when this is the last slot (disables down-reorder button)
+ * @param {any} slot          - Slot data object, or null for an empty placeholder
+ * @param {{ isFirst?: boolean, isLast?: boolean }} [opts]
+ * @returns {string}
  */
 function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = false } = {}) {
   // Defensive fallback for data-inconsistency edge cases — normal path never reaches this.
@@ -301,7 +315,7 @@ function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = fals
   let ioTag = '';
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
     const total = parseInt(slot.ioPointCount) || (slot.ioPoints?.length ?? 0);
-    const inUse = (slot.ioPoints || []).filter(p => p.label && p.label !== 'Spare').length;
+    const inUse = (slot.ioPoints || []).filter(/** @param {any} p */ p => p.label && p.label !== 'Spare').length;
     ioTag = `<span class="sn-det-field">IO<strong>${inUse}/${total}</strong></span>`;
   }
   let ipTag = '';
@@ -333,8 +347,8 @@ function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = fals
  * All standard field types (text, textarea, enum, ref) become live inputs;
  * unknown types fall back to a read-only text display.
  *
- * @param {object} f     - Field config from entity-config (key, label, type, options, refStore)
- * @param {object} item  - Current entity data (provides the initial value)
+ * @param {FieldDef} f    - Field config from entity-config (key, label, type, options, refStore)
+ * @param {any} item      - Current entity data (provides the initial value)
  * @returns {string} HTML string for the control, wrapped in .det-fval
  */
 function buildEditableFieldHtml(f, item) {
@@ -382,10 +396,13 @@ function buildEditableFieldHtml(f, item) {
  * Edit state is freshly initialised on every render call (pending field changes are
  * reset; media and wiring state are re-loaded from the saved item).  Navigation away
  * from the panel while changes are pending triggers an unsaved-changes prompt.
+ * @param {number} savedScroll
+ * @returns {Promise<void>}
  */
 async function renderEntityDetail(savedScroll) {
-  const { detailType: type, detailId: id } = state;
-  const cfg  = ENTITY[type];
+  const type = /** @type {EntityType} */ (state.detailType);
+  const id   = /** @type {string} */ (state.detailId);
+  const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
   const item = await getById(type, id);
   if (!item) { state.detailStack = []; closeDetail(); return; }
   await refreshAll();
@@ -410,14 +427,14 @@ async function renderEntityDetail(savedScroll) {
   // Load editable wiring table state from the saved item
   state.detailItemTables = {};
   for (const t of itemTables(type, item)) {
-    state.detailItemTables[t.key] = (item[t.key] || []).map(r => ({ ...r }));
+    state.detailItemTables[t.key] = (item[t.key] || []).map(/** @param {any} r */ r => ({ ...r }));
   }
 
   // Load switch table state for managed switch assets
   const showSwitchTables = type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass);
   if (showSwitchTables) {
-    state.detailSwitchNetworks = (item.switchNetworks || []).map(r => ({ ...r }));
-    state.detailSwitchPorts    = (item.switchPorts    || []).map(r => ({ ...r }));
+    state.detailSwitchNetworks = (item.switchNetworks || []).map(/** @param {any} r */ r => ({ ...r }));
+    state.detailSwitchPorts    = (item.switchPorts    || []).map(/** @param {any} r */ r => ({ ...r }));
   }
 
   // Load network ports table state for asset classes with a Network Ports UI
@@ -427,7 +444,7 @@ async function renderEntityDetail(savedScroll) {
   const showAssetNetworkPorts = type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass);
   if (showAssetNetworkPorts) {
     state.detailAssetNetworkPorts = item.networkPorts?.length
-      ? item.networkPorts.map(r => ({ ...r }))
+      ? item.networkPorts.map(/** @param {any} r */ r => ({ ...r }))
       : (item.networkId ? [buildLegacyNetworkPortRow(item)] : []);
   }
 
@@ -436,10 +453,15 @@ async function renderEntityDetail(savedScroll) {
      Fields are rendered as live editable inputs instead of read-only divs.
      ------------------------------------------------------------------ */
   const skipKeys = new Set(['id','createdAt','updatedAt','images','namedPhotos','assignedToType','assignedToId','name']);
+  /** @type {Map<string | null, string[]>} */
   const sectionMap = new Map();
 
   for (const f of getEffectiveFields(type, item)) {
-    if (skipKeys.has(f.key) || f.type === 'assign-type' || f.type === 'assign-id') continue;
+    // 'assign-type'/'assign-id' aren't part of FieldDef's current discriminated
+    // union — same defensive dead-code pattern as form.js/operations.js; no
+    // current entity-config.js field def produces them.
+    const fType = /** @type {string} */ (f.type);
+    if (skipKeys.has(f.key) || fType === 'assign-type' || fType === 'assign-id') continue;
     if (f.key === 'assetSubclass' && !(ENTITY.assets.classSubclasses?.[item.assetClass]?.length)) continue;
 
     // Each field is a label + an editable control (input, select, or textarea)
@@ -451,7 +473,7 @@ async function renderEntityDetail(savedScroll) {
 
     const sectionKey = f.section || null;
     if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, []);
-    sectionMap.get(sectionKey).push(fieldHtml);
+    /** @type {string[]} */ (sectionMap.get(sectionKey)).push(fieldHtml);
   }
 
   const generalFields = (sectionMap.get(null) || []).join('');
@@ -540,9 +562,9 @@ async function renderEntityDetail(savedScroll) {
     if (item.assignedToType === 'Plant') {
       assignBadge = `<span class="badge badge-plant">Plant-wide</span>`;
     } else {
-      const s   = ASSIGN_STORE_MAP[item.assignedToType];
-      const ref = s ? state.refs[s]?.[item.assignedToId] : null;
-      const bc  = { Area:'badge-area', Panel:'badge-panel', Power:'badge-power', 'Safety Circuit':'badge-safety', Network:'badge-network' }[item.assignedToType] || 'badge-asset';
+      const s   = /** @type {Record<string, string | null>} */ (ASSIGN_STORE_MAP)[item.assignedToType];
+      const ref = s ? /** @type {Record<string, Record<string, DbRecord>>} */ (state.refs)[s]?.[item.assignedToId] : null;
+      const bc  = /** @type {Record<string, string>} */ ({ Area:'badge-area', Panel:'badge-panel', Power:'badge-power', 'Safety Circuit':'badge-safety', Network:'badge-network' })[item.assignedToType] || 'badge-asset';
       assignBadge = `<span class="badge ${bc}">${esc(item.assignedToType)}: ${esc(ref?.name || '—')}</span>`;
     }
   }
@@ -557,7 +579,7 @@ async function renderEntityDetail(savedScroll) {
     const title     = cardCount > 0 ? `Cards (${cardCount})` : 'Cards';
     const slotRows  = slots.length === 0
       ? `<div style="font-size:14px;color:var(--muted)">No slots — use Add Slot to begin.</div>`
-      : slots.map((s, i) => buildSlotRow(item.id, i, s, { isFirst: i === 0, isLast: i === last })).join('');
+      : slots.map((/** @type {any} */ s, /** @type {number} */ i) => buildSlotRow(/** @type {string} */ (item.id), i, s, { isFirst: i === 0, isLast: i === last })).join('');
     const addBtn    = `<button class="wiring-add-btn rack-add-slot-btn" data-rack-id="${item.id}" style="margin-top:8px">+ Add Slot</button>`;
 
     rackSlotsCard = buildCollapsibleCard(
@@ -722,8 +744,9 @@ async function renderEntityDetail(savedScroll) {
      Any change records the value in state.detailChanges.
      The panelId → areaId cascade is handled specially below.
      ------------------------------------------------------------------ */
-  el.detail.querySelectorAll('[data-edit-field]').forEach(control => {
-    const key = control.dataset.editField;
+  el.detail.querySelectorAll('[data-edit-field]').forEach(control0 => {
+    const control = /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement} */ (control0);
+    const key = /** @type {string} */ (control.dataset.editField);
     const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
     control.addEventListener(ev, () => {
       state.detailChanges[key] = control.value;
@@ -735,13 +758,13 @@ async function renderEntityDetail(savedScroll) {
 
   // When the user changes the panel, auto-fill the area to match the panel's area.
   // This mirrors the cascade logic previously in activateInlineEdit.
-  const panelSel = el.detail.querySelector('[data-edit-field="panelId"]');
+  const panelSel = /** @type {HTMLSelectElement | null} */ (el.detail.querySelector('[data-edit-field="panelId"]'));
   if (panelSel) {
     panelSel.addEventListener('change', () => {
       const panel = state.refs.panels?.[panelSel.value];
       if (panel?.areaId) {
         state.detailChanges['areaId'] = panel.areaId;
-        const areaSel = el.detail.querySelector('[data-edit-field="areaId"]');
+        const areaSel = /** @type {HTMLSelectElement | null} */ (el.detail.querySelector('[data-edit-field="areaId"]'));
         if (areaSel) areaSel.value = panel.areaId;
       }
     });
@@ -750,7 +773,7 @@ async function renderEntityDetail(savedScroll) {
   /* ------------------------------------------------------------------
      Button wiring
      ------------------------------------------------------------------ */
-  el.detail.querySelector('#det-back').addEventListener('click', closeDetail);
+  /** @type {HTMLElement} */ (el.detail.querySelector('#det-back')).addEventListener('click', closeDetail);
   el.detail.querySelector('#det-duplicate')?.addEventListener('click', () => duplicateItem(type, id));
 
   // Discard: re-render from saved state (resets all edit state via renderEntityDetail)
@@ -765,15 +788,18 @@ async function renderEntityDetail(savedScroll) {
   });
 
   // Child-entity card clicks / delete buttons
-  el.detail.querySelectorAll('.child-card-list').forEach(list => {
-    const childStore = list.dataset.childStore;
-    list.querySelectorAll('.card').forEach(card => {
-      card.addEventListener('click', () => openDetail(childStore, card.dataset.id));
+  el.detail.querySelectorAll('.child-card-list').forEach(list0 => {
+    const list = /** @type {HTMLElement} */ (list0);
+    const childStore = /** @type {string} */ (list.dataset.childStore);
+    list.querySelectorAll('.card').forEach(card0 => {
+      const card = /** @type {HTMLElement} */ (card0);
+      card.addEventListener('click', () => openDetail(childStore, /** @type {string} */ (card.dataset.id)));
     });
-    list.querySelectorAll('.card-delete-btn').forEach(btn => {
+    list.querySelectorAll('.card-delete-btn').forEach(btn0 => {
+      const btn = /** @type {HTMLElement} */ (btn0);
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        deleteItem(childStore, btn.dataset.id, btn.dataset.name);
+        deleteItem(/** @type {EntityType} */ (childStore), /** @type {string} */ (btn.dataset.id), /** @type {string} */ (btn.dataset.name));
       });
     });
   });
@@ -782,33 +808,36 @@ async function renderEntityDetail(savedScroll) {
 
   // Row click — all rows are populated, so always open the slot detail.
   // Guard against clicks on any of the action buttons inside the row.
-  el.detail.querySelectorAll('.rack-slot-row').forEach(row => {
+  el.detail.querySelectorAll('.rack-slot-row').forEach(row0 => {
+    const row = /** @type {HTMLElement} */ (row0);
     row.addEventListener('click', e => {
-      if (e.target.closest('.slot-action-btn, .wiring-rm-btn, .rack-slot-grip')) return;
-      openSlotDetail(row.dataset.rackId, +row.dataset.slotNum);
+      if (/** @type {Element | null} */ (e.target)?.closest('.slot-action-btn, .wiring-rm-btn, .rack-slot-grip')) return;
+      openSlotDetail(row.dataset.rackId, Number(row.dataset.slotNum));
     });
   });
 
   // Add Slot button — opens the slot card form for a new slot appended at the end.
-  el.detail.querySelectorAll('.rack-add-slot-btn').forEach(btn => {
+  el.detail.querySelectorAll('.rack-add-slot-btn').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', () => {
-      const rack = state.refs.assets?.[btn.dataset.rackId];
+      const rack = state.refs.assets?.[/** @type {string} */ (btn.dataset.rackId)];
       openSlotForm(btn.dataset.rackId, rack?.slots?.length ?? 0);
     });
   });
 
   // Delete slot — remove from array, renumber remaining slots so indices stay sequential.
-  el.detail.querySelectorAll('.rack-slot-clear').forEach(btn => {
+  el.detail.querySelectorAll('.rack-slot-clear').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const rackId  = btn.dataset.rackId;
-      const slotNum = +btn.dataset.slotNum;
-      const rack    = state.refs.assets?.[rackId];
+      const slotNum = Number(btn.dataset.slotNum);
+      const rack    = state.refs.assets?.[/** @type {string} */ (rackId)];
       if (!rack) return;
       const slot = rack.slots?.[slotNum];
       const ok = await confirm('Delete slot?', `Remove "${slot?.name || 'card'}" from Slot ${slotNum}? This cannot be undone.`, { yesLabel: 'Delete' });
       if (!ok) return;
-      const slots = renumberSlots((rack.slots || []).filter((_, i) => i !== slotNum));
+      const slots = renumberSlots((rack.slots || []).filter((/** @type {any} */ _, /** @type {number} */ i) => i !== slotNum));
       await upsert('assets', { ...rack, slots });
       await refreshAll();
       renderDetail({ preserveScroll: true });
@@ -816,12 +845,13 @@ async function renderEntityDetail(savedScroll) {
   });
 
   // Move slot up — swap with predecessor, renumber, persist.
-  el.detail.querySelectorAll('.rack-slot-up').forEach(btn => {
+  el.detail.querySelectorAll('.rack-slot-up').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const rackId  = btn.dataset.rackId;
-      const idx     = +btn.dataset.slotNum;
-      const rack    = state.refs.assets?.[rackId];
+      const idx     = Number(btn.dataset.slotNum);
+      const rack    = state.refs.assets?.[/** @type {string} */ (rackId)];
       if (!rack || idx <= 0) return;
       const slots = [...(rack.slots || [])];
       [slots[idx - 1], slots[idx]] = [slots[idx], slots[idx - 1]];
@@ -832,12 +862,13 @@ async function renderEntityDetail(savedScroll) {
   });
 
   // Move slot down — swap with successor, renumber, persist.
-  el.detail.querySelectorAll('.rack-slot-dn').forEach(btn => {
+  el.detail.querySelectorAll('.rack-slot-dn').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const rackId  = btn.dataset.rackId;
-      const idx     = +btn.dataset.slotNum;
-      const rack    = state.refs.assets?.[rackId];
+      const idx     = Number(btn.dataset.slotNum);
+      const rack    = state.refs.assets?.[/** @type {string} */ (rackId)];
       if (!rack || idx >= (rack.slots?.length ?? 0) - 1) return;
       const slots = [...(rack.slots || [])];
       [slots[idx], slots[idx + 1]] = [slots[idx + 1], slots[idx]];
@@ -849,19 +880,20 @@ async function renderEntityDetail(savedScroll) {
 
   // Duplicate slot — deep-copy the card, clear networkPorts (keep safety/power/terminals),
   // append at the end, renumber, persist.
-  el.detail.querySelectorAll('.rack-slot-dup').forEach(btn => {
+  el.detail.querySelectorAll('.rack-slot-dup').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const rackId  = btn.dataset.rackId;
-      const idx     = +btn.dataset.slotNum;
-      const rack    = state.refs.assets?.[rackId];
+      const idx     = Number(btn.dataset.slotNum);
+      const rack    = state.refs.assets?.[/** @type {string} */ (rackId)];
       const src     = rack?.slots?.[idx];
       if (!src) return;
       const copy = {
         ...src,
-        ioPoints:       (src.ioPoints       || []).map(p => ({ ...p })),
-        powerBus:       (src.powerBus       || []).map(b => ({ ...b, wiring: (b.wiring || []).map(w => ({ ...w })) })),
-        terminalWiring: (src.terminalWiring || []).map(t => ({ ...t })),
+        ioPoints:       (src.ioPoints       || []).map((/** @type {any} */ p) => ({ ...p })),
+        powerBus:       (src.powerBus       || []).map((/** @type {any} */ b) => ({ ...b, wiring: (b.wiring || []).map((/** @type {any} */ w) => ({ ...w })) })),
+        terminalWiring: (src.terminalWiring || []).map((/** @type {any} */ t) => ({ ...t })),
         // Network port assignments are specific to one physical card — clear them on copy.
         networkPorts:   [],
       };
@@ -875,15 +907,16 @@ async function renderEntityDetail(savedScroll) {
   // Drag-to-reorder via Pointer Events API — same approach as the detail-pane resize handle.
   // The grip icon on each slot row acts as the drag handle; setPointerCapture keeps events
   // routing to the grip even when the pointer moves outside it during a fast drag.
-  el.detail.querySelectorAll('.rack-slot-grip').forEach(grip => {
+  el.detail.querySelectorAll('.rack-slot-grip').forEach(grip0 => {
+    const grip = /** @type {HTMLElement} */ (grip0);
     grip.addEventListener('pointerdown', e => {
       e.stopPropagation();
       const rackId      = grip.dataset.rackId;
-      const rack        = state.refs.assets?.[rackId];
+      const rack        = state.refs.assets?.[/** @type {string} */ (rackId)];
       if (!rack?.slots?.length) return;
 
-      const draggedIdx  = +grip.dataset.slotNum;
-      const rows        = [...el.detail.querySelectorAll(`.rack-slot-row[data-rack-id="${rackId}"]`)];
+      const draggedIdx  = Number(grip.dataset.slotNum);
+      const rows        = /** @type {HTMLElement[]} */ ([...el.detail.querySelectorAll(`.rack-slot-row[data-rack-id="${rackId}"]`)]);
       if (rows.length < 2) return; // Nothing to reorder with a single slot.
 
       // Snapshot each row's vertical midpoint at drag-start so we can determine the
@@ -896,7 +929,7 @@ async function renderEntityDetail(savedScroll) {
       // Ghost: a semi-transparent clone that follows the pointer.
       const srcRow   = rows[draggedIdx];
       const srcRect  = srcRow.getBoundingClientRect();
-      const ghost    = srcRow.cloneNode(true);
+      const ghost    = /** @type {HTMLElement} */ (srcRow.cloneNode(true));
       ghost.classList.add('rack-slot-ghost');
       ghost.style.width  = `${srcRect.width}px`;
       ghost.style.height = `${srcRect.height}px`;
@@ -914,6 +947,7 @@ async function renderEntityDetail(savedScroll) {
 
       let currentDropIdx = draggedIdx;
 
+      /** @param {number} clientY */
       function computeDropIdx(clientY) {
         // Find the first row whose midpoint is below the pointer — insert before it.
         const after = rowMids.findIndex(mid => clientY < mid);
@@ -921,6 +955,7 @@ async function renderEntityDetail(savedScroll) {
         return Math.max(0, after > draggedIdx ? after - 1 : after);
       }
 
+      /** @param {number} dropIdx */
       function positionIndicator(dropIdx) {
         // Place the indicator line below row dropIdx (or above row 0 when dropping before it).
         const refRow  = rows[dropIdx];
@@ -932,6 +967,7 @@ async function renderEntityDetail(savedScroll) {
         indicator.style.width = `${refRect.width}px`;
       }
 
+      /** @param {PointerEvent} ev */
       function onMove(ev) {
         ghost.style.top = `${srcRect.top + (ev.clientY - e.clientY)}px`;
         currentDropIdx  = computeDropIdx(ev.clientY);
@@ -946,7 +982,7 @@ async function renderEntityDetail(savedScroll) {
         srcRow.classList.remove('rack-slot-dragging');
 
         if (currentDropIdx !== draggedIdx) {
-          const slots  = [...rack.slots];
+          const slots  = [.../** @type {any} */ (rack).slots];
           const [moved] = slots.splice(draggedIdx, 1);
           // computeDropIdx already adjusts for the index shift caused by removing the
           // dragged element (returns after-1 when dropping past the original position),
@@ -964,7 +1000,8 @@ async function renderEntityDetail(savedScroll) {
   });
 
   // Add-child buttons (shown in child-section headers)
-  el.detail.querySelectorAll('[data-add-child]').forEach(btn => {
+  el.detail.querySelectorAll('[data-add-child]').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', () => {
       const childType    = btn.dataset.addChild;
       const presetField  = btn.dataset.presetField;
@@ -973,16 +1010,17 @@ async function renderEntityDetail(savedScroll) {
       if (childType === 'assets' || childType === 'power' || childType === 'safety' || childType === 'panels') {
         openAssignOrCreate(childType, presetField, presetVal);
       } else {
-        openSheet(childType, null, { field: presetField, value: presetVal, extra: extraPresets });
+        openSheet(/** @type {string} */ (childType), undefined, { field: presetField, value: presetVal, extra: extraPresets });
       }
     });
   });
 
   // Collapsible section toggles
-  el.detail.querySelectorAll('.det-section-toggle').forEach(btn => {
+  el.detail.querySelectorAll('.det-section-toggle').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const body     = btn.closest('.det-collapsible').querySelector('.det-section-body');
+      const body     = /** @type {HTMLElement} */ (btn.closest('.det-collapsible')?.querySelector('.det-section-body'));
       const expanded = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', String(!expanded));
       body.style.display = expanded ? 'none' : 'block';
@@ -994,6 +1032,12 @@ async function renderEntityDetail(savedScroll) {
   if (scrollEl) scrollEl.scrollTop = savedScroll;
 }
 
+/**
+ * @param {string} title
+ * @param {string} bodyHtml
+ * @param {{ expanded?: boolean }} [opts]
+ * @returns {string}
+ */
 function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
   const chevron = ICON_CHEVRON;
   return `
@@ -1009,25 +1053,36 @@ function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
   `;
 }
 
+/**
+ * @param {string} parentType
+ * @param {string} parentId
+ * @returns {Array<{ rack: any, slots: any[] }>}
+ */
 function getSlotLinkedRacks(parentType, parentId) {
   return (state.cache.assets || [])
     .filter(a => a.assetClass === 'PLC' && a.slots?.length)
     .map(rack => {
-      const slots = rack.slots.filter(slot => {
+      const slots = rack.slots.filter(/** @param {any} slot */ slot => {
         if (parentType === 'networks')
           return CARD_TYPE_NET_TYPES.has(slot.cardType) &&
             getEntityNetworkPorts(slot).some(p => p.networkId === parentId);
         if (parentType === 'power')
-          return slot.powerBus?.some(pb => pb.type === 'Power' && pb.refId === parentId);
+          return slot.powerBus?.some(/** @param {any} pb */ pb => pb.type === 'Power' && pb.refId === parentId);
         if (parentType === 'safety')
-          return slot.powerBus?.some(pb => pb.type === 'Safety Circuit' && pb.refId === parentId);
+          return slot.powerBus?.some(/** @param {any} pb */ pb => pb.type === 'Safety Circuit' && pb.refId === parentId);
         return false;
       });
       return slots.length ? { rack, slots } : null;
     })
-    .filter(Boolean);
+    .filter(/** @returns {x is { rack: any, slots: any[] }} */ x => Boolean(x));
 }
 
+/**
+ * @param {any} rack
+ * @param {any[]} slots
+ * @param {string} [contextNetworkId]
+ * @returns {string}
+ */
 function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
   const cfg = ENTITY.assets;
   const firstMedia = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
@@ -1057,8 +1112,14 @@ function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
     </div>`;
 }
 
+/**
+ * @param {EntityType} type
+ * @param {string} id
+ * @param {any} item
+ * @returns {Promise<string>}
+ */
 async function buildChildSections(type, id, item) {
-  const cfg = ENTITY[type];
+  const cfg = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
   const allChildren = [
     ...(cfg.getChildren || []),
     ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
@@ -1070,22 +1131,30 @@ async function buildChildSections(type, id, item) {
 
   let html = '';
   for (const child of allChildren) {
-    const all      = state.cache[child.store] || [];
-    const filtered = (child.filter
-      ? all.filter(i => i[child.field] === id && child.filter(i))
+    const all      = /** @type {Record<string, DbRecord[]>} */ (state.cache)[child.store] || [];
+    // filter/extraPresets aren't part of EntityConfig['getChildren']'s current
+    // typedef — same defensive dead-code pattern as rel.filter in operations.js
+    // and refFilter/readOnly in form.js; no current entity-config.js entry sets
+    // either, but the checks are kept via a cast rather than widening the typedef.
+    const childFilter = /** @type {any} */ (child).filter;
+    const filtered = (childFilter
+      ? all.filter(i => i[child.field] === id && childFilter(i))
       : all.filter(i => i[child.field] === id)
     ).concat(
       // Also include switch assets connected to this network via switchNetworks
       type === 'networks' && child.store === 'assets'
-        ? all.filter(a => a[child.field] !== id && a.switchNetworks?.some(sn => sn.networkId === id))
+        ? all.filter(a => a[child.field] !== id && a.switchNetworks?.some(/** @param {any} sn */ sn => sn.networkId === id))
         : []
     ).concat(
       // Also include assets connected to this network via their networkPorts
       // table (Field Device, HMI — see ASSET_CLASS_NETWORK_PORTS)
       type === 'networks' && child.store === 'assets'
-        ? all.filter(a => a[child.field] !== id && a.networkPorts?.some(p => p.networkId === id))
+        ? all.filter(a => a[child.field] !== id && a.networkPorts?.some(/** @param {any} p */ p => p.networkId === id))
         : []
-    ).sort(sortByName);
+    // sortByName's { name?: string } param triggers TS's weak-type-detection against
+    // DbRecord's index signature ("no properties in common") — a structural quirk, not
+    // a real mismatch (DbRecord[] genuinely has a name field); cast around it.
+    ).sort(/** @type {(a: DbRecord, b: DbRecord) => number} */ (sortByName));
 
     const slotLinked = (['networks', 'power', 'safety'].includes(type) && child.store === 'assets')
       ? getSlotLinkedRacks(type, id).filter(({ rack }) => !filtered.some(f => f.id === rack.id)).sort((a, b) => sortByName(a.rack, b.rack))
@@ -1094,7 +1163,7 @@ async function buildChildSections(type, id, item) {
     const cardOpts = type === 'networks' && child.store === 'assets' ? { contextNetworkId: id } : {};
     const rows = [
       ...filtered.map(ci => cardHTML(child.store, ci, cardOpts)),
-      ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots, cardOpts.contextNetworkId)),
+      ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots, /** @type {any} */ (cardOpts).contextNetworkId)),
     ].join('');
     const count = filtered.length + slotLinked.length;
     const title   = count > 0 ? `${esc(child.label)} (${count})` : esc(child.label);
@@ -1109,7 +1178,7 @@ async function buildChildSections(type, id, item) {
             <span class="section-label" style="margin:0">${title}</span>
             ${chevron}
           </button>
-          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" data-extra-presets="${esc(JSON.stringify(child.extraPresets || {}))}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
+          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" data-extra-presets="${esc(JSON.stringify(/** @type {any} */ (child).extraPresets || {}))}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
         </div>
         <div class="det-section-body" style="display:none">
           ${bodyHtml}
@@ -1133,15 +1202,19 @@ async function buildChildSections(type, id, item) {
  *
  * After a successful save, all detail edit state is reset and the panel re-renders
  * from the freshly saved item so inputs reflect the committed values.
+ * @param {FormType} type
+ * @param {string} id
+ * @returns {Promise<boolean>}
  */
 async function saveDetailChanges(type, id) {
   // Slot cards are sub-objects of a rack asset — delegate to the slot saver.
   if (type === FORM_TYPE.PLC_SLOT) {
-    return saveSlotDetailChanges(id, state.detailSlotNumber);
+    return saveSlotDetailChanges(id, /** @type {number} */ (state.detailSlotNumber));
   }
 
-  const cfg  = ENTITY[type];
-  const item = await getById(type, id);
+  const entityType = /** @type {EntityType} */ (type);
+  const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[entityType];
+  const item = await getById(entityType, id);
   if (!item) return false;
 
   // Merge field-level changes over the saved item
@@ -1156,6 +1229,7 @@ async function saveDetailChanges(type, id) {
   // and come back as zero-byte blobs on the next read. freshenMediaItems() converts each
   // blob to a fresh in-memory copy so the round-trip works correctly.
   updatedItem.images = await freshenMediaItems(state.detailImages);
+  /** @type {Record<string, NormalizedMediaItem[]>} */
   const _freshNamedPhotos = {};
   for (const [_slot, _items] of Object.entries(state.detailNamedPhotos)) {
     _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
@@ -1168,7 +1242,7 @@ async function saveDetailChanges(type, id) {
   }
 
   // Persist switch tables for managed switch assets
-  if (type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
+  if (entityType === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
     updatedItem.switchNetworks = state.detailSwitchNetworks.filter(r => r.networkId);
     updatedItem.switchPorts    = state.detailSwitchPorts.filter(
       r => r.portName || r.networkId || r.assetId
@@ -1177,20 +1251,20 @@ async function saveDetailChanges(type, id) {
 
   // Persist network ports for asset classes with a Network Ports UI, and clear
   // the legacy scalar fields they replace (mirrors the PLC slot migration).
-  if (type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
+  if (entityType === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
     updatedItem.networkPorts = state.detailAssetNetworkPorts.map(p => ({ ...p }));
     ['networkId', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress'].forEach(k => delete updatedItem[k]);
   }
 
   // Required field validation (applied to merged item so new values are checked)
-  for (const f of getEffectiveFields(type, updatedItem)) {
+  for (const f of getEffectiveFields(entityType, updatedItem)) {
     if (f.required && !updatedItem[f.key]) {
       showToast(`${f.label} is required`, 'error');
       return false;
     }
   }
 
-  await upsert(type, updatedItem);
+  await upsert(entityType, updatedItem);
   await refreshAll();
 
   // Clear edit state so hasUnsavedDetailChanges() returns false before any re-render.
@@ -1212,12 +1286,15 @@ async function saveDetailChanges(type, id) {
  *
  * The slot is a sub-object of its parent rack asset; the full rack is re-upserted.
  * Returns true on success, false if the rack/slot cannot be found.
+ * @param {string} rackId
+ * @param {number} slotNumber
+ * @returns {Promise<boolean>}
  */
 async function saveSlotDetailChanges(rackId, slotNumber) {
   const rack = await getById('assets', rackId);
   if (!rack) return false;
 
-  const slotIdx = (rack.slots || []).findIndex(s => s.slotNumber === slotNumber);
+  const slotIdx = (rack.slots || []).findIndex(/** @param {any} s */ s => s.slotNumber === slotNumber);
   if (slotIdx === -1) return false;
 
   const slot        = rack.slots[slotIdx];

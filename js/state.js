@@ -32,13 +32,15 @@
  * @typedef {Object} State
  * @property {string} page
  *
- * @property {EntityType | null} detailType
+ * @property {FormType | null} detailType
  * @property {string | null} detailId
- * @property {Array<{ type: EntityType | null, id: string | null, slotNumber?: number | null }>} detailStack
+ * @property {Array<{ type: FormType | null, id: string | null, slotNumber?: number | null }>} detailStack
  * @property {number | null} detailSlotNumber
  * @property {Record<string, any>} detailChanges - Pending field-level edits (key -> value).
- * @property {EditableMediaItem[]} detailImages - "Other Media" gallery.
- * @property {Record<string, EditableMediaItem[]>} detailNamedPhotos - Keyed by required-photo slot name.
+ * @property {NormalizedMediaItem[]} detailImages - "Other Media" gallery. Unlike formImages,
+ *   not blob-converted at load time (normalizeMediaItems() may leave legacy base64 items
+ *   without a real Blob) — freshenMediaItems() only runs at save time.
+ * @property {Record<string, NormalizedMediaItem[]>} detailNamedPhotos - Keyed by required-photo slot name.
  * @property {boolean} detailMediaDirty - True after any add/remove so the navigation guard fires.
  * @property {Record<string, ItemTableRow[]>} detailItemTables - Keyed by wiring-table key.
  * @property {UntypedTableRow[]} detailSwitchNetworks
