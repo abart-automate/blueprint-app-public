@@ -362,31 +362,42 @@ function buildFieldDeviceWiringSheet(fieldDeviceAssets, refs) {
   return buildSubDataSheet(headers, rows);
 }
 
-function buildPlcDigitalWiringSheet(plcAssets, refs) {
-  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label'];
+/**
+ * Shared shape behind the PLC per-card-type sub-data sheet builders below:
+ * for each PLC asset's slots matching `cardTypes`, flattens one slot
+ * sub-array (`subKey`) into rows, each prefixed with
+ * [Asset ID, Asset Name, Slot #, Slot Name] and suffixed with whatever
+ * `rowFn(item, idx, slot)` returns for that entry.
+ * @param {object[]} plcAssets
+ * @param {string[]} cardTypes - slot.cardType values to include
+ * @param {string} subKey - the slot sub-array key to flatten (e.g. 'ioPoints')
+ * @param {(item: object, idx: number, slot: object) => any[]} rowFn - trailing row columns
+ * @returns {any[][]}
+ */
+function flattenPlcSlotSubTable(plcAssets, cardTypes, subKey, rowFn) {
   const rows = [];
   for (const asset of plcAssets) {
     for (const slot of (asset.slots || [])) {
-      if (slot.cardType !== 'Digital') continue;
-      (slot.ioPoints || []).forEach((pt, idx) => {
-        rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', idx + 1, pt.label || '']);
+      if (!cardTypes.includes(slot.cardType)) continue;
+      (slot[subKey] || []).forEach((item, idx) => {
+        rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', ...rowFn(item, idx, slot)]);
       });
     }
   }
+  return rows;
+}
+
+function buildPlcDigitalWiringSheet(plcAssets, refs) {
+  const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label'];
+  const rows = flattenPlcSlotSubTable(plcAssets, ['Digital'], 'ioPoints',
+    (pt, idx) => [idx + 1, pt.label || '']);
   return buildSubDataSheet(headers, rows);
 }
 
 function buildPlcAnalogWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label', 'Signal Type', 'Wiring Type'];
-  const rows = [];
-  for (const asset of plcAssets) {
-    for (const slot of (asset.slots || [])) {
-      if (slot.cardType !== 'Analog') continue;
-      (slot.ioPoints || []).forEach((pt, idx) => {
-        rows.push([asset.id, asset.name || '', slot.slotNumber ?? '', slot.name || '', idx + 1, pt.label || '', pt.signalType || '', pt.wiringType || '']);
-      });
-    }
-  }
+  const rows = flattenPlcSlotSubTable(plcAssets, ['Analog'], 'ioPoints',
+    (pt, idx) => [idx + 1, pt.label || '', pt.signalType || '', pt.wiringType || '']);
   return buildSubDataSheet(headers, rows);
 }
 
@@ -397,19 +408,8 @@ function buildPlcAnalogWiringSheet(plcAssets, refs) {
  */
 function buildPlcTerminalWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Card Type', 'Terminal', 'Wire Label'];
-  const rows = [];
-  for (const asset of plcAssets) {
-    for (const slot of (asset.slots || [])) {
-      if (!['Analog', 'Digital', 'Specialty'].includes(slot.cardType)) continue;
-      (slot.terminalWiring || []).forEach(row => {
-        rows.push([
-          asset.id, asset.name || '',
-          slot.slotNumber ?? '', slot.name || '', slot.cardType || '',
-          row.terminal || '', row.label || '',
-        ]);
-      });
-    }
-  }
+  const rows = flattenPlcSlotSubTable(plcAssets, ['Analog', 'Digital', 'Specialty'], 'terminalWiring',
+    (row, idx, slot) => [slot.cardType || '', row.terminal || '', row.label || '']);
   return buildSubDataSheet(headers, rows);
 }
 
@@ -422,21 +422,10 @@ function buildPlcNetworkPortsSheet(plcAssets, refs) {
   // Address columns (Protocol, IP Address, Node Address) are included for human readability.
   // Full fidelity (including subnet mask, gateway, etc.) is preserved in the PLC Slots JSON column.
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Port #', 'Network ID', 'Network Name', 'Protocol', 'IP Address', 'Node Address'];
-  const rows = [];
-  for (const asset of plcAssets) {
-    for (const slot of (asset.slots || [])) {
-      if (!['Controller', 'Communication'].includes(slot.cardType)) continue;
-      (slot.networkPorts || []).forEach(port => {
-        const network = refs.networks?.get(port.networkId);
-        rows.push([
-          asset.id, asset.name || '',
-          slot.slotNumber ?? '', slot.name || '',
-          port.portNumber || '', port.networkId || '', network?.name || '',
-          port.protocol || '', port.ipAddress || '', port.nodeAddress || '',
-        ]);
-      });
-    }
-  }
+  const rows = flattenPlcSlotSubTable(plcAssets, ['Controller', 'Communication'], 'networkPorts', (port) => {
+    const network = refs.networks?.get(port.networkId);
+    return [port.portNumber || '', port.networkId || '', network?.name || '', port.protocol || '', port.ipAddress || '', port.nodeAddress || ''];
+  });
   return buildSubDataSheet(headers, rows);
 }
 

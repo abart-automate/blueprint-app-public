@@ -1035,7 +1035,7 @@ function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
   const thumb = thumbSrc
     ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
     : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon('assets', 24)}</div>`;
-  const panelName = rack.panelId ? state.refs.panels?.[rack.panelId]?.name : '';
+  const panelName = resolveRefName('panels', rack.panelId);
   const slotLines = slots.map(s => {
     const label = `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
     const netParts = formatNetworkPortLabels(getEntityNetworkPorts(s), contextNetworkId);

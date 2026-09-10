@@ -1088,8 +1088,8 @@ async function renderList(type, opts = {}) {
 }
 
 function _cardLocationLine(type, item, cfg) {
-  const panel = item.panelId ? state.refs.panels?.[item.panelId]?.name : '';
-  const area  = item.areaId  ? state.refs.areas?.[item.areaId]?.name  : '';
+  const panel = resolveRefName('panels', item.panelId);
+  const area  = resolveRefName('areas', item.areaId);
   if (panel && area) return `${area} / ${panel}`;
   if (panel) return panel;
   if (area) return area;
