@@ -1,4 +1,4 @@
-// @ts-check
+import type { EntityConfig } from './entity-config.js';
 
 import { getSetting, initDB } from './db.js';
 import { ENTITY, assertEntityConfigComplete } from './entity-config.js';
@@ -6,15 +6,13 @@ import { initEl, state } from './state.js';
 import { esc, initLayoutDetection } from './utils.js';
 import { wireEvents } from './events.js';
 import { navigate, renderHome, renderPage } from './app.js';
-/** @import { EntityConfig } from './entity-config.js' */
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
    events.js (wireEvents), app.js (navigate, esc)
    ============================================================ */
 
-/** @returns {Promise<void>} */
-export async function init() {
+export async function init(): Promise<void> {
   try {
     /* Populate the el DOM-reference cache first, before anything else touches
        el.*. See state.js for why this is an explicit call rather than a
@@ -43,13 +41,13 @@ export async function init() {
     initVisibilityRefresh();
 
     const hash = window.location.hash.replace('#', '') || 'home';
-    const startPage = (/** @type {Record<string, EntityConfig>} */ (ENTITY)[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
+    const startPage = ((ENTITY as Record<string, EntityConfig>)[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
     navigate(startPage);
     initInstallPrompt();
     initOfflineIndicator();
   } catch (err) {
     console.error('Init failed:', err);
-    /** @type {HTMLElement} */ (document.querySelector('#app-main')).innerHTML = `
+    (document.querySelector('#app-main') as HTMLElement).innerHTML = `
       <div class="empty">
         <h3>Storage Error</h3>
         <p>Could not open IndexedDB. Please ensure you're using a modern browser and not in private/incognito mode.</p>
@@ -63,9 +61,8 @@ export async function init() {
  * Reads the user's saved list-pane width from IndexedDB settings and
  * applies it as a CSS custom property on :root.  Falls back to the
  * CSS default (--list-pane-w-default: 320px) if nothing is stored yet.
- * @returns {Promise<void>}
  */
-export async function applyPersistedListPaneWidth() {
+export async function applyPersistedListPaneWidth(): Promise<void> {
   const w = await getSetting('listPaneWidth');
   if (w && Number.isFinite(Number(w))) {
     document.documentElement.style.setProperty('--list-pane-w', Number(w) + 'px');
@@ -89,9 +86,8 @@ export async function applyPersistedListPaneWidth() {
  *
  * Both handlers guard against interrupting an open detail panel or bottom-sheet form;
  * the user's in-progress edits must not be discarded by a background refresh.
- * @returns {void}
  */
-export function initVisibilityRefresh() {
+export function initVisibilityRefresh(): void {
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;
     // Don't interrupt an in-progress edit in the detail panel or form sheet.
@@ -112,8 +108,7 @@ export function initVisibilityRefresh() {
    PWA INSTALL PROMPT (Android / Chrome only)
    ============================================================ */
 
-/** @returns {void} */
-export function initInstallPrompt() {
+export function initInstallPrompt(): void {
   if (window.matchMedia('(display-mode: standalone)').matches) return;
 
   window.addEventListener('beforeinstallprompt', e => {
@@ -132,8 +127,7 @@ export function initInstallPrompt() {
    OFFLINE INDICATOR
    ============================================================ */
 
-/** @returns {void} */
-export function initOfflineIndicator() {
+export function initOfflineIndicator(): void {
   const bar = document.createElement('div');
   bar.id = 'offline-bar';
   bar.className = 'offline-bar';
@@ -153,7 +147,7 @@ export function initOfflineIndicator() {
     <span>Offline</span>`;
   /* Insert before #app-header so the bar sits at the top of .app-content
      on all layout modes (mobile, tablet, desktop sidebar). */
-  /** @type {HTMLElement} */ (document.getElementById('app-header')).before(bar);
+  (document.getElementById('app-header') as HTMLElement).before(bar);
   const update = () => { bar.style.display = navigator.onLine ? 'none' : 'flex'; };
   update();
   window.addEventListener('online', update);
@@ -164,8 +158,7 @@ export function initOfflineIndicator() {
    PWA UPDATE BANNER
    ============================================================ */
 
-/** @param {CustomEvent} e */
-export function initUpdateBanner(e) {
+export function initUpdateBanner(e: CustomEvent): void {
   if (document.getElementById('update-banner')) return;
   const banner = document.createElement('div');
   banner.id = 'update-banner';
@@ -176,8 +169,8 @@ export function initUpdateBanner(e) {
     '<button id="update-later-btn">Later</button>' +
     '<button id="update-now-btn">Update Now</button>' +
     '</div>';
-  /** @type {HTMLElement} */ (document.getElementById('app-header')).before(banner);
-  /** @type {HTMLElement} */ (document.getElementById('update-now-btn')).onclick = function () {
+  (document.getElementById('app-header') as HTMLElement).before(banner);
+  (document.getElementById('update-now-btn') as HTMLElement).onclick = function () {
     // Send consent to the waiting worker; the actual reload happens via the
     // 'controllerchange' listener in index.html once it activates. Re-read
     // reg.waiting at click time (not a captured reference) in case state has
@@ -188,9 +181,9 @@ export function initUpdateBanner(e) {
     if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
     else window.location.reload();
   };
-  /** @type {HTMLElement} */ (document.getElementById('update-later-btn')).onclick = function () {
+  (document.getElementById('update-later-btn') as HTMLElement).onclick = function () {
     banner.remove();
   };
 }
 
-window.addEventListener('pwa-updated', /** @type {EventListener} */ (initUpdateBanner));
+window.addEventListener('pwa-updated', initUpdateBanner as EventListener);

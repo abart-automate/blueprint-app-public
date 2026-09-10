@@ -1,4 +1,3 @@
-// @ts-check
 /* ============================================================
    MODULE ENTRY POINT
    The single <script type="module"> Vite/the browser loads. Explicitly
