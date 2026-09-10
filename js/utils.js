@@ -44,6 +44,21 @@ const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/quicktime'];
 const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
 const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
 
+/* ---- EXHAUSTIVENESS CHECK ---- */
+
+/**
+ * Compile-time exhaustiveness check for a closed union: calling this with a
+ * value TS believes is `never` (every union member already handled by a
+ * preceding `case`/`if`) is how a switch's `default` proves nothing was
+ * missed — adding a new union member later without a matching case turns
+ * into a compile error here instead of a silent fallthrough at runtime.
+ * @param {never} value
+ * @returns {never}
+ */
+function assertNever(value) {
+  throw new Error(`Unhandled case: ${JSON.stringify(value)}`);
+}
+
 /* ---- HTML ESCAPING ---- */
 
 /**

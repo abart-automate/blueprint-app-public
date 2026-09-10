@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    DATA OPERATIONS
    Depends on: entity-config.js, state.js, utils.js, db.js,
@@ -5,51 +6,82 @@
    openDetail, renderPage, renderDetail)
    ============================================================ */
 
+/**
+ * Reads a DOM element by id and casts it to a form-control type — a local
+ * shorthand for the `$('f-key')` + cast pattern repeated throughout this
+ * file's DOM-reading save handlers.
+ * @param {string} id
+ * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null}
+ */
+function _field(id) {
+  return /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */ ($(id));
+}
+
+/**
+ * @param {EntityType} type
+ * @returns {EntityConfig['getChildren']}
+ */
 const _getChildren = type => ENTITY[type]?.getChildren ?? [];
 
-/** Dispatcher: routes to the appropriate save handler based on state.formType. */
+/**
+ * Dispatcher: routes to the appropriate save handler based on state.formType.
+ * @returns {Promise<void>}
+ */
 async function saveForm() {
   const type = state.formType;
-  if (type === FORM_TYPE.PICKER)    return savePickerForm();
-  if (type === FORM_TYPE.PLC_SLOT)  return saveSlotForm();
-  if (type === FORM_TYPE.PLANT)     return savePlantForm();
-  if (type === FORM_TYPE.PARTS_LIB) return savePartsLibForm();
-  return saveEntityForm();
+  if (type === null) return saveEntityForm(); // formType is always set while a form is open; matches prior if-chain's fallthrough
+  switch (type) {
+    case FORM_TYPE.PICKER:    return savePickerForm();
+    case FORM_TYPE.PLC_SLOT:  return saveSlotForm();
+    case FORM_TYPE.PLANT:     return savePlantForm();
+    case FORM_TYPE.PARTS_LIB: return savePartsLibForm();
+    case 'areas':
+    case 'panels':
+    case 'power':
+    case 'safety':
+    case 'networks':
+    case 'assets':
+      return saveEntityForm();
+    default:
+      return assertNever(type);
+  }
 }
 
 async function savePickerForm() {
   const { childType, parentField, parentId, selected } = state.pickerMeta || {};
   if (!selected?.size) return;
   for (const id of selected) {
-    const existing = state.refs[childType]?.[id];
+    const existing = /** @type {Record<string, Record<string, DbRecord>>} */ (state.refs)[childType]?.[id];
     if (existing) await upsert(childType, { ...existing, [parentField]: parentId });
   }
   await refreshAll();
   const count = selected.size;
-  const pcfg  = ENTITY[childType];
+  const pcfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[childType];
   closeSheet();
   showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
   renderPage();
   if (state.detailType) renderDetail();
 }
 
+/** @returns {Promise<void>} */
 async function saveSlotForm() {
-    const { rackId, slotNumber } = state.formPreset;
+    const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
     const rack     = state.refs.assets?.[rackId];
     if (!rack) { showToast('Rack not found', 'error'); return; }
-    const cardType = $('f-cardType')?.value || '';
+    const cardType = _field('f-cardType')?.value || '';
     // Card Type must be selected before type-specific sections (IO points, terminal wiring,
     // network ports) can be collected — reject early so the user gets clear feedback.
     if (!cardType) { showToast('Card Type is required', 'error'); return; }
+    /** @type {Record<string, any>} */
     const slotData = {
       slotNumber,
-      name:            $('f-name')?.value.trim()            || '',
+      name:            _field('f-name')?.value.trim()            || '',
       cardType,
-      partNumber:      $('f-partNumber')?.value.trim()      || '',
-      firmwareVersion: $('f-firmwareVersion')?.value.trim() || '',
+      partNumber:      _field('f-partNumber')?.value.trim()      || '',
+      firmwareVersion: _field('f-firmwareVersion')?.value.trim() || '',
     };
     for (const f of PLC_CARD_TYPE_FIELDS[cardType] || []) {
-      const el2 = $(`f-${f.key}`);
+      const el2 = _field(`f-${f.key}`);
       if (el2) slotData[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
     // ioPoints and powerBus only apply to I/O card types (Analog/Digital);
@@ -57,7 +89,7 @@ async function saveSlotForm() {
       slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
       slotData.powerBus = state.formPowerBus
         .filter(e => e.refId)
-        .map(e => ({ type: e.type, refId: e.refId, wiring: e.wiring.filter(w => w.terminal || w.label) }));
+        .map(e => ({ type: e.type, refId: e.refId, wiring: /** @type {any[]} */ (e.wiring).filter(w => w.terminal || w.label) }));
     }
     // Terminal Block Wiring applies to Analog, Digital, and Specialty cards.
     // Blank rows (both fields empty) are filtered out to keep stored data clean.
@@ -91,20 +123,27 @@ async function saveSlotForm() {
     }
 }
 
+/** @returns {Promise<void>} */
 async function savePlantForm() {
-  const name = $('pf-name')?.value.trim();
+  const name = _field('pf-name')?.value.trim();
   if (!name) { showToast('Plant name is required', 'error'); return; }
   await setSetting('plantName', name);
-  await setSetting('plantDesc', $('pf-desc')?.value.trim() || '');
+  await setSetting('plantDesc', _field('pf-desc')?.value.trim() || '');
   closeSheet();
   showToast('Plant info saved', 'success');
   renderPage();
 }
 
-// Returns an error string if any IP address in item conflicts with another asset,
-// or null if the IP is unique. Checks the primary ipAddress field, switchNetworks
-// entries, and networkPorts entries — a device can carry IPs in any of these.
+/**
+ * Returns an error string if any IP address in item conflicts with another asset,
+ * or null if the IP is unique. Checks the primary ipAddress field, switchNetworks
+ * entries, and networkPorts entries — a device can carry IPs in any of these.
+ * @param {Record<string, any>} item
+ * @param {DbRecord[]} allAssets
+ * @returns {string | null}
+ */
 function validateUniqueIp(item, allAssets) {
+  /** @type {Array<{ networkId: string, ipAddress: string }>} */
   const assignments = [];
   if (item.ipAddress && item.networkId)
     assignments.push({ networkId: item.networkId, ipAddress: item.ipAddress });
@@ -133,7 +172,12 @@ function validateUniqueIp(item, allAssets) {
   return null;
 }
 
-// Returns an error string if any other item in the store already has the same name, or null.
+/**
+ * Returns an error string if any other item in the store already has the same name, or null.
+ * @param {EntityType} type
+ * @param {Record<string, any>} item
+ * @returns {string | null}
+ */
 function validateUniqueName(type, item) {
   const nameVal = item.name?.trim();
   if (!nameVal) return null;
@@ -141,7 +185,12 @@ function validateUniqueName(type, item) {
   return conflict ? `Name "${nameVal}" is already in use` : null;
 }
 
-// Returns the first field config that is required but empty, or null if all required fields pass.
+/**
+ * Returns the first field config that is required but empty, or null if all required fields pass.
+ * @param {EntityType} type
+ * @param {Record<string, any>} item
+ * @returns {FieldDef | null}
+ */
 function validateRequiredFields(type, item) {
   for (const f of getEffectiveFields(type, item)) {
     if (f.required && !item[f.key]) return f;
@@ -149,12 +198,16 @@ function validateRequiredFields(type, item) {
   return null;
 }
 
-// Saves the currently-open entity form. Uses getEffectiveFields() for a single-pass
-// field read covering base, protocol, class, subclass, and network-type fields.
-// Switch/Router port and network tables are read from form state, not DOM inputs.
+/**
+ * Saves the currently-open entity form. Uses getEffectiveFields() for a single-pass
+ * field read covering base, protocol, class, subclass, and network-type fields.
+ * Switch/Router port and network tables are read from form state, not DOM inputs.
+ * @returns {Promise<void>}
+ */
 async function saveEntityForm() {
-  const type = state.formType;
+  const type = /** @type {EntityType} */ (state.formType);
   const cfg = ENTITY[type];
+  /** @type {Record<string, any>} */
   const item = state.formId ? (await getById(type, state.formId)) || {} : {};
 
   // Capture areaId before fields are overwritten; undefined means "not a panel edit" (no cascade).
@@ -164,21 +217,26 @@ async function saveEntityForm() {
   // sets (classFields, subclassFields, protocolFields) correctly when item starts empty for
   // new entities. The main loop overwrites these again — no data is lost.
   if (type === 'assets') {
-    if ($('f-assetClass'))    item.assetClass    = $('f-assetClass').value    || '';
-    if ($('f-assetSubclass')) item.assetSubclass = $('f-assetSubclass').value || '';
+    if (_field('f-assetClass'))    item.assetClass    = /** @type {HTMLInputElement} */ (_field('f-assetClass')).value    || '';
+    if (_field('f-assetSubclass')) item.assetSubclass = /** @type {HTMLInputElement} */ (_field('f-assetSubclass')).value || '';
   }
   if (type === 'networks') {
-    if ($('f-networkType'))   item.networkType   = $('f-networkType').value   || '';
+    if (_field('f-networkType'))   item.networkType   = /** @type {HTMLInputElement} */ (_field('f-networkType')).value   || '';
   }
 
   // Single pass over all effective fields (base + protocol/class/subclass/network-type).
   for (const f of getEffectiveFields(type, item)) {
-    if (f.type === 'assign-type') {
-      item.assignedToType = $('f-assign-type')?.value || '';
-    } else if (f.type === 'assign-id') {
-      item.assignedToId = $('f-assign-id')?.value || '';
+    // f.type is widened to string on purpose — see the matching comment in
+    // utils.js's calcCompleteness(): 'assign-type'/'assign-id' aren't
+    // produced by any current entity-config.js field def, but this branch
+    // (along with form.js/detail.js) is kept defensive rather than deleted.
+    const fType = /** @type {string} */ (f.type);
+    if (fType === 'assign-type') {
+      item.assignedToType = _field('f-assign-type')?.value || '';
+    } else if (fType === 'assign-id') {
+      item.assignedToId = _field('f-assign-id')?.value || '';
     } else {
-      const el2 = $(`f-${f.key}`);
+      const el2 = _field(`f-${f.key}`);
       if (el2) item[f.key] = f.type === 'ref' ? (el2.value || '') : el2.value.trim();
     }
   }
@@ -205,13 +263,14 @@ async function saveEntityForm() {
   }
 
   const nameError = validateUniqueName(type, item);
-  if (nameError) { showToast(nameError, 'error'); $('f-name')?.focus(); return; }
+  if (nameError) { showToast(nameError, 'error'); _field('f-name')?.focus(); return; }
 
   const missingField = validateRequiredFields(type, item);
-  if (missingField) { showToast(`${missingField.label} is required`, 'error'); $(`f-${missingField.key}`)?.focus(); return; }
+  if (missingField) { showToast(`${missingField.label} is required`, 'error'); _field(`f-${missingField.key}`)?.focus(); return; }
 
   item.images = await freshenMediaItems(state.formImages);
   if (cfg.requiredPhotoSlots) {
+    /** @type {Record<string, NormalizedMediaItem[]>} */
     const _freshNamedPhotos = {};
     for (const [_slot, _items] of Object.entries(state.formNamedPhotos)) {
       _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
@@ -256,19 +315,26 @@ async function saveEntityForm() {
 
 /**
  * Confirms and deletes an entity, cascading to child records defined in ENTITY[type].getChildren.
- * @param {string} type - Entity store name
+ * @param {EntityType} type - Entity store name
  * @param {string} id   - Entity id
  * @param {string} name - Display name for the confirm dialog
+ * @returns {Promise<void>}
  */
 async function deleteItem(type, id, name) {
   const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`, { yesLabel: 'Delete' });
   if (!ok) return;
 
   // Collect direct children from cache
+  /** @type {Array<{ label: string, store: EntityType, field: string, countFn?: (all: AssetChildLookup[], id: string) => number, items: DbRecord[] }>} */
   const childRels = [];
   for (const rel of _getChildren(type)) {
     let items = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
-    if (rel.filter) items = items.filter(rel.filter);
+    // rel.filter isn't part of EntityConfig['getChildren']'s current typedef — like
+    // the 'assign-type'/'assign-id' field-type check in saveEntityForm(), no current
+    // entity-config.js entry sets it, but the check is kept defensive via a cast
+    // rather than widening the typedef for a field nothing currently uses.
+    const relFilter = /** @type {any} */ (rel).filter;
+    if (relFilter) items = items.filter(relFilter);
     if (items.length > 0) childRels.push({ ...rel, items });
   }
 
@@ -287,7 +353,7 @@ async function deleteItem(type, id, name) {
   if (deleteChildren) {
     for (const rel of childRels) {
       for (const item of rel.items) {
-        await cascadeDeleteItem(rel.store, item.id);
+        await cascadeDeleteItem(rel.store, /** @type {string} */ (item.id));
       }
     }
   } else {
@@ -306,12 +372,18 @@ async function deleteItem(type, id, name) {
   renderPage();
 }
 
+/**
+ * @param {EntityType} type
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
 async function cascadeDeleteItem(type, id) {
   for (const rel of _getChildren(type)) {
     let children = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
-    if (rel.filter) children = children.filter(rel.filter);
+    const relFilter = /** @type {any} */ (rel).filter;
+    if (relFilter) children = children.filter(relFilter);
     for (const child of children) {
-      await cascadeDeleteItem(rel.store, child.id);
+      await cascadeDeleteItem(rel.store, /** @type {string} */ (child.id));
     }
   }
   await remove(type, id);
@@ -321,6 +393,7 @@ async function cascadeDeleteItem(type, id) {
    CLEAR ALL DATA
    ============================================================ */
 
+/** @returns {Promise<void>} */
 async function clearAllData() {
   const ok = await confirm(
     'Clear All Data',
@@ -328,7 +401,7 @@ async function clearAllData() {
     { yesLabel: 'Clear All' }
   );
   if (!ok) return;
-  for (const name of ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings']) {
+  for (const name of /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'])) {
     await clearStore(name);
   }
   revokeAllMediaUrls();
@@ -341,17 +414,27 @@ async function clearAllData() {
    DUPLICATE
    ============================================================ */
 
-// Strips system-generated and media fields before duplication.
-// upsert() then assigns a fresh id, createdAt, and updatedAt.
+/**
+ * Strips system-generated and media fields before duplication.
+ * upsert() then assigns a fresh id, createdAt, and updatedAt.
+ * @param {Record<string, any>} entity
+ * @param {Record<string, any>} [overrides]
+ * @returns {Record<string, any>}
+ */
 function _stripMediaAndSystemFields(entity, overrides = {}) {
   const { id: _id, createdAt: _c, updatedAt: _u, images: _img, namedPhotos: _np, ...rest } = entity;
   return { ...rest, ...overrides };
 }
 
-// Shows a scrollable checklist of panel children for the user to select.
-// Appended to #app (position:relative) so the absolute overlay covers the full viewport.
-// Resolves with the selected subset array, or null if the user cancels.
+/**
+ * Shows a scrollable checklist of panel children for the user to select.
+ * Appended to #app (position:relative) so the absolute overlay covers the full viewport.
+ * Resolves with the selected subset array, or null if the user cancels.
+ * @param {Record<string, any>[]} children
+ * @returns {Promise<Record<string, any>[] | null>}
+ */
 function showChildSelector(children) {
+  /** @type {Record<string, string>} */
   const BADGE = { power: 'badge-power', safety: 'badge-safety', assets: 'badge-asset' };
   return new Promise(resolve => {
     const backdrop = document.createElement('div');
@@ -374,18 +457,24 @@ function showChildSelector(children) {
           <button class="btn btn-primary"  data-action="ok">Continue</button>
         </div>
       </div>`;
-    $('app').appendChild(backdrop);
+    /** @type {HTMLElement} */ ($('app')).appendChild(backdrop);
 
-    const cleanup = () => $('app').removeChild(backdrop);
-    backdrop.querySelector('[data-action=cancel]').addEventListener('click', () => { cleanup(); resolve(null); });
-    backdrop.querySelector('[data-action=ok]').addEventListener('click', () => {
+    const cleanup = () => /** @type {HTMLElement} */ ($('app')).removeChild(backdrop);
+    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=cancel]')).addEventListener('click', () => { cleanup(); resolve(null); });
+    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=ok]')).addEventListener('click', () => {
       const selected = [...backdrop.querySelectorAll('input[type=checkbox]:checked')]
-        .map(cb => children[parseInt(cb.value)]);
+        .map(cb => children[parseInt(/** @type {HTMLInputElement} */ (cb).value)]);
       cleanup(); resolve(selected);
     });
   });
 }
 
+/**
+ * @param {EntityType} store
+ * @param {string} baseName
+ * @param {string} [suffix]
+ * @returns {string}
+ */
 function uniqueCopyName(store, baseName, suffix = 'copy') {
   const existing = new Set((state.cache[store] || []).map(i => i.name));
   const candidate = `${baseName} (${suffix})`;
@@ -395,6 +484,11 @@ function uniqueCopyName(store, baseName, suffix = 'copy') {
   return `${baseName} (${suffix} ${n})`;
 }
 
+/**
+ * @param {EntityType} type
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
 async function duplicateItem(type, id) {
   await refreshAll();
   const original = state.refs[type]?.[id];
@@ -411,13 +505,14 @@ async function duplicateItem(type, id) {
   if (newName === null) return;
 
   // Step 2: for panels, let the user select which children to include
+  /** @type {Record<string, any>[]} */
   let selectedChildren = [];
   if (type === 'panels') {
-    const childDefs = [
+    const childDefs = /** @type {const} */ ([
       { store: 'power',  field: 'panelId', typeLabel: 'Power'  },
       { store: 'safety', field: 'panelId', typeLabel: 'Safety' },
       { store: 'assets', field: 'panelId', typeLabel: 'Asset'  },
-    ];
+    ]);
     const allChildren = childDefs.flatMap(def =>
       (state.cache[def.store] || [])
         .filter(item => item[def.field] === id)
@@ -451,13 +546,14 @@ async function duplicateItem(type, id) {
   await refreshAll();
   showToast(`${cfg.label} duplicated`, 'success');
   renderPage();
-  openDetail(type, saved.id);
+  openDetail(type, /** @type {string} */ (saved.id));
 }
 
 /* ============================================================
    EXPORT OPTIONS DIALOG
    ============================================================ */
 
+/** @returns {Promise<void>} */
 async function showExportOptions() {
   const modal = document.createElement('div');
   modal.className = 'export-options-modal';
@@ -505,9 +601,10 @@ async function showExportOptions() {
   document.body.appendChild(modal);
 
   modal.addEventListener('click', async (e) => {
-    const option = e.target.closest('.export-option');
-    const cancelBtn = e.target.closest('#export-cancel');
-    const backdrop = e.target.classList.contains('export-options-backdrop');
+    const target = /** @type {HTMLElement} */ (e.target);
+    const option = /** @type {HTMLButtonElement | null} */ (target.closest('.export-option'));
+    const cancelBtn = target.closest('#export-cancel');
+    const backdrop = target.classList.contains('export-options-backdrop');
 
     if (option && !option.disabled) {
       const format = option.dataset.format;
@@ -530,26 +627,40 @@ async function showExportOptions() {
    IMPORT / EXPORT WRAPPERS
    ============================================================ */
 
+/**
+ * @template T
+ * @param {T | T[] | undefined | null} v
+ * @returns {T[]}
+ */
 const _toArr = v => Array.isArray(v) ? v : (v ? [v] : []);
 
+/**
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
 async function _blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(/** @type {string} */ (reader.result));
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
 }
 
+/**
+ * @param {Record<string, any>} entity
+ * @returns {Promise<Record<string, any>>}
+ */
 async function _serializeEntityMedia(entity) {
   const out = { ...entity };
   if (out.images?.length) {
-    out.images = await Promise.all(out.images.map(async item => {
+    out.images = await Promise.all(/** @type {any[]} */ (out.images).map(async item => {
       if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
       return item;
     }));
   }
   if (out.namedPhotos) {
+    /** @type {Record<string, any>} */
     const slots = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
       slots[slot] = await Promise.all(_toArr(value).map(async item => {
@@ -562,14 +673,19 @@ async function _serializeEntityMedia(entity) {
   return out;
 }
 
+/**
+ * @param {Record<string, any>} entity
+ * @returns {Record<string, any>}
+ */
 function _deserializeEntityMedia(entity) {
   const out = { ...entity };
   if (out.images) {
-    out.images = out.images
+    out.images = /** @type {any[]} */ (out.images)
       .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
       .filter(item => item?.blob instanceof Blob || typeof item === 'string');
   }
   if (out.namedPhotos) {
+    /** @type {Record<string, any>} */
     const slots = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
       slots[slot] = _toArr(value)
@@ -581,15 +697,18 @@ function _deserializeEntityMedia(entity) {
   return out;
 }
 
-/** Exports all plant data to ZIP (with media) or XLSX. Prompts user to choose format. */
+/**
+ * Exports all plant data to ZIP (with media) or XLSX. Prompts user to choose format.
+ * @returns {Promise<void>}
+ */
 async function exportData() {
   try {
-    const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
+    const stores = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
     const payload = {
       appName:    'blueprint',
       version:    1,
       exportedAt: new Date().toISOString(),
-      data:       {}
+      data:       /** @type {Record<string, any>} */ ({}),
     };
     for (const name of stores) {
       const items = await getAll(name);
@@ -599,7 +718,7 @@ async function exportData() {
     const settings = await getAll('settings');
     payload.data.settings = await Promise.all(settings.map(async s =>
       s.id === 'checklistItems'
-        ? { ...s, value: await Promise.all((s.value || []).map(_serializeEntityMedia)) }
+        ? { ...s, value: await Promise.all(/** @type {any[]} */ (s.value || []).map(_serializeEntityMedia)) }
         : s
     ));
 
@@ -622,9 +741,13 @@ async function exportData() {
 }
 
 function importData() {
-  $('import-file-input').click();
+  /** @type {HTMLElement} */ ($('import-file-input')).click();
 }
 
+/**
+ * @param {File} file
+ * @returns {Promise<void>}
+ */
 async function processImportFile(file) {
   // Route .xlsx files to the Excel merge importer
   if (file.name.toLowerCase().endsWith('.xlsx')) {
@@ -664,7 +787,7 @@ async function processImportFile(file) {
       return;
     }
 
-    const allStores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'];
+    const allStores = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings']);
     for (const name of allStores) {
       await clearStore(name);
     }
@@ -689,6 +812,6 @@ async function processImportFile(file) {
     renderPage();
   } catch (err) {
     console.error('Import failed:', err);
-    showToast('Import failed: ' + err.message, 'error');
+    showToast('Import failed: ' + (err instanceof Error ? err.message : String(err)), 'error');
   }
 }
