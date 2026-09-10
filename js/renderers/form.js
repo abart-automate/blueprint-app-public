@@ -117,7 +117,7 @@ async function renderSlotForm() {
     if (twWrap) {
       const hasTerminal = CARD_TYPE_TERMINAL_TYPES.has(cardType);
       twWrap.style.display = hasTerminal ? '' : 'none';
-      if (hasTerminal) renderItemTable('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label');
+      if (hasTerminal) renderItemTableForm('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label');
     }
 
     // Network Ports — visible for Controller and Communication cards.
@@ -227,7 +227,7 @@ async function renderEntityForm() {
   attachFieldEmptyToggle(el.formBody, '.f-input, .f-textarea', '.f-select');
 
   if (cfg.itemTables) {
-    for (const t of cfg.itemTables) renderItemTable(t.key, t.label);
+    for (const t of cfg.itemTables) renderItemTableForm(t.key, t.label);
   }
 
   if (type === 'assets') {

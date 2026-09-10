@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    TABLE & MEDIA RENDERERS
    All dynamic table UIs rendered into the form sheet.
@@ -9,18 +10,23 @@
 
 const _CAMERA_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 
-// Returns a .img-thumb DOM element for one media item.
-// onRemove: called when ✕ clicked; onClick: called when media clicked.
+/**
+ * Returns a .img-thumb DOM element for one media item.
+ * @param {NormalizedMediaItem} mediaItem
+ * @param {{ onRemove?: (() => void) | null, onClick?: () => void }} [opts]
+ * @returns {HTMLElement}
+ */
 function renderMediaThumb(mediaItem, { onRemove, onClick } = {}) {
   const div = document.createElement('div');
   div.className = 'img-thumb';
   const src = createMediaUrl(mediaItem);
   const isVideo = mediaItem.mimeType?.startsWith('video/');
-  const media = document.createElement(isVideo ? 'video' : 'img');
+  const media = /** @type {HTMLVideoElement | HTMLImageElement} */ (document.createElement(isVideo ? 'video' : 'img'));
   if (isVideo) {
-    media.muted = true;
-    media.preload = 'metadata';
-    media.addEventListener('loadedmetadata', () => { media.currentTime = 0.001; });
+    const video = /** @type {HTMLVideoElement} */ (media);
+    video.muted = true;
+    video.preload = 'metadata';
+    video.addEventListener('loadedmetadata', () => { video.currentTime = 0.001; });
   }
   media.src = src;
   if (onClick) media.addEventListener('click', onClick);
@@ -36,51 +42,67 @@ function renderMediaThumb(mediaItem, { onRemove, onClick } = {}) {
   return div;
 }
 
-// Private: creates a file input label that validates files via processMediaFile.
-// multiple: allow multiple file selection. onFiles: called with Array<{blob,mimeType}>.
+/**
+ * Private: creates a file input label that validates files via processMediaFile.
+ * @param {boolean} multiple - Allow multiple file selection.
+ * @param {(items: BlobMediaItem[]) => void} onFiles
+ * @returns {HTMLLabelElement}
+ */
 function _makeUploadInput(multiple, onFiles) {
   const label = document.createElement('label');
   label.className = 'named-photo-upload';
   label.innerHTML = `<input type="file" accept="${ACCEPTED_MEDIA_ACCEPT}"${multiple ? ' multiple' : ''}>${_CAMERA_ICON}<span>Tap to add</span>`;
-  const input = label.querySelector('input');
+  const input = /** @type {HTMLInputElement} */ (label.querySelector('input'));
   input.addEventListener('change', async () => {
-    const files = Array.from(input.files);
+    const files = Array.from(input.files ?? []);
     input.value = '';
+    /** @type {BlobMediaItem[]} */
     const results = [];
     for (const file of files) {
       try { results.push(await processMediaFile(file)); }
-      catch (err) { showToast(err.message, 'error'); }
+      catch (err) { showToast(err instanceof Error ? err.message : String(err), 'error'); }
     }
     if (results.length) onFiles(results);
   });
   return label;
 }
 
-// Shared core: renders media thumbs into containerEl.
-// emptyHtml: markup shown when readonly and no items. uploadLabel: upload button text.
+/**
+ * Shared core: renders media thumbs into containerEl.
+ * @param {HTMLElement} containerEl
+ * @param {NormalizedMediaItem[]} mediaItems
+ * @param {{ onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean, emptyHtml?: string, uploadLabel?: string }} [opts]
+ */
 function _renderMediaItems(containerEl, mediaItems, { onAdd, onRemove, readonly, emptyHtml, uploadLabel } = {}) {
   // Revoke outgoing blob URLs before clearing — see revokeBlobUrlsInContainer() in utils.js.
   revokeBlobUrlsInContainer(containerEl);
   containerEl.innerHTML = '';
   if (!mediaItems.length && readonly) {
-    containerEl.innerHTML = emptyHtml;
+    containerEl.innerHTML = emptyHtml ?? '';
     return;
   }
   mediaItems.forEach((item, i) => {
     containerEl.appendChild(renderMediaThumb(item, {
-      onRemove: readonly ? null : () => onRemove(i),
+      onRemove: readonly ? null : () => onRemove?.(i),
       onClick:  () => openMediaLightbox(item),
     }));
   });
   if (!readonly) {
-    const upload = _makeUploadInput(true, onAdd);
-    if (uploadLabel) upload.querySelector('span').textContent = uploadLabel;
+    const upload = _makeUploadInput(true, items => onAdd?.(items));
+    if (uploadLabel) {
+      const span = upload.querySelector('span');
+      if (span) span.textContent = uploadLabel;
+    }
     containerEl.appendChild(upload);
   }
 }
 
-// Renders a scrollable grid of media thumbs into containerEl.
-// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
+/**
+ * Renders a scrollable grid of media thumbs into containerEl.
+ * @param {HTMLElement} containerEl
+ * @param {NormalizedMediaItem[]} mediaItems
+ * @param {{ onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean }} [opts]
+ */
 function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly } = {}) {
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,
@@ -89,8 +111,13 @@ function renderMediaGallery(containerEl, mediaItems, { onAdd, onRemove, readonly
   });
 }
 
-// Renders media items for one named slot into containerEl.
-// readonly: hides upload button; onAdd(items)/onRemove(index): mutation callbacks.
+/**
+ * Renders media items for one named slot into containerEl.
+ * @param {HTMLElement} containerEl
+ * @param {string} slotName
+ * @param {NormalizedMediaItem[]} mediaItems
+ * @param {{ onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean }} [opts]
+ */
 function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, readonly } = {}) {
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,
@@ -111,13 +138,13 @@ function renderMediaSlot(containerEl, slotName, mediaItems, { onAdd, onRemove, r
  * This helper is shared between renderSwitchNetworksTable and renderNetworkPortsTable
  * so field definitions and rendering logic live in exactly one place (DRY).
  *
- * @param {Object} row       - Data row; existing field values are read as row[f.key]
- * @param {string} networkId - ID of the currently selected network
+ * @param {Record<string, any>} row - Data row; existing field values are read as row[f.key]
+ * @param {string | undefined} networkId - ID of the currently selected network
  * @param {number} idx       - Row index; embedded as data-idx on every generated element
  * @returns {string} HTML fragment; empty string when no address fields apply to this network type
  */
 function buildNetworkAddrFieldsHtml(row, networkId, idx) {
-  const net    = state.refs.networks?.[networkId];
+  const net    = state.refs.networks?.[networkId ?? ''];
   const fields = getNetworkAddrFields(networkId); // utils.js — resolves network type → field defs
   return fields.map(f => {
     let val = row[f.key] || '';
@@ -143,18 +170,18 @@ function buildNetworkAddrFieldsHtml(row, networkId, idx) {
  * signature separate, explicit names instead.
  *
  * @param {string}   containerId   - DOM id of the container element
- * @param {Array}    networks      - Mutable array of network row objects
- * @param {Array}    ports         - Mutable array of port row objects (cross-referenced)
- * @param {Function} rerender      - Callback that re-renders both switch tables; null in form mode
- * @param {Function} onDirty       - Called whenever data changes; null in form mode
- * @param {string}   assetSubclass - Asset subclass string used for Router-max-2 enforcement
+ * @param {UntypedTableRow[]} networks - Mutable array of network row objects
+ * @param {UntypedTableRow[]} ports    - Mutable array of port row objects (cross-referenced)
+ * @param {(() => void) | null} rerender - Callback that re-renders both switch tables; null in form mode
+ * @param {(() => void) | null} onDirty  - Called whenever data changes; null in form mode
+ * @param {string | null | undefined} assetSubclass - Asset subclass string used for Router-max-2 enforcement
  */
 function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass) {
   const container = $(containerId);
   if (!container) return;
   const rows = networks;
   const takenNetIds = new Set(rows.map(r => r.networkId).filter(Boolean));
-  const makeNetOpts = (selectedId) => buildNetworkOptions(
+  const makeNetOpts = (/** @type {string} */ selectedId) => buildNetworkOptions(
     selectedId,
     (state.cache.networks || []).filter(n => n.networkType === 'Ethernet' && (!takenNetIds.has(n.id) || n.id === selectedId))
   );
@@ -164,7 +191,7 @@ function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDi
   //   Router    → max 2 VLANs (WAN + LAN)
   //   Unmanaged → max 1 VLAN  (single network assignment only)
   //   Managed   → unlimited
-  const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
+  const resolvedSubclass = assetSubclass ?? /** @type {HTMLInputElement | null} */ ($('f-assetSubclass'))?.value;
   const isRouter       = resolvedSubclass === 'Router';
   const isUnmanaged    = resolvedSubclass === 'Unmanaged';
   const atRouterMax    = isRouter    && rows.length >= 2;
@@ -188,9 +215,10 @@ function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDi
   // Helper: trigger a full re-render of both tables (detail mode uses closure; form mode calls directly)
   const doRerender = rerender ?? (() => (renderSwitchNetworksTableForm(), renderSwitchPortsTableForm()));
 
-  container.querySelectorAll('.sn-network').forEach(sel => {
+  container.querySelectorAll('.sn-network').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      const idx  = +sel.dataset.idx;
+      const idx  = Number(sel.dataset.idx);
       // Clear address fields when network changes — they are network-specific
       const keys = Object.keys(networks[idx]).filter(k => k !== 'networkId');
       keys.forEach(k => delete networks[idx][k]);
@@ -204,19 +232,21 @@ function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDi
     });
   });
 
-  container.querySelectorAll('.sn-addr').forEach(addrEl => {
+  container.querySelectorAll('.sn-addr').forEach(addrEl0 => {
+    const addrEl = /** @type {HTMLInputElement | HTMLSelectElement} */ (addrEl0);
     const ev = addrEl.tagName === 'SELECT' ? 'change' : 'input';
     addrEl.addEventListener(ev, () => {
-      networks[+addrEl.dataset.idx][addrEl.dataset.key] = addrEl.value;
+      networks[Number(addrEl.dataset.idx)][/** @type {string} */ (addrEl.dataset.key)] = addrEl.value;
       onDirty?.();
     });
   });
 
-  container.querySelectorAll('.sn-rm').forEach(btn => {
+  container.querySelectorAll('.sn-rm').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const removedNetId = networks[+btn.dataset.idx].networkId;
-      networks.splice(+btn.dataset.idx, 1);
+      const removedNetId = networks[Number(btn.dataset.idx)].networkId;
+      networks.splice(Number(btn.dataset.idx), 1);
       // Clear ports that referenced the removed network
       if (removedNetId) {
         ports.forEach(p => { if (p.networkId === removedNetId) p.networkId = ''; });
@@ -242,7 +272,7 @@ function _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDi
 
 /** Form mode: reads/writes state.formSwitchNetworks/Ports into '#switch-networks-container'. */
 function renderSwitchNetworksTableForm() {
-  const assetSubclass = $('f-assetSubclass')?.value ?? null;
+  const assetSubclass = /** @type {HTMLInputElement | null} */ ($('f-assetSubclass'))?.value ?? null;
   _renderSwitchNetworksTable(
     'switch-networks-container',
     state.formSwitchNetworks,
@@ -256,11 +286,11 @@ function renderSwitchNetworksTableForm() {
 /**
  * Detail mode: reads/writes the caller-supplied arrays into an explicit container.
  * @param {string}   containerId
- * @param {Array}    networks
- * @param {Array}    ports
- * @param {Function} rerender      - Re-renders both switch tables (required in detail mode)
- * @param {Function} onDirty       - Called whenever data changes
- * @param {string}   assetSubclass - Asset subclass string used for Router-max-2 enforcement
+ * @param {UntypedTableRow[]} networks
+ * @param {UntypedTableRow[]} ports
+ * @param {() => void} rerender      - Re-renders both switch tables (required in detail mode)
+ * @param {() => void} onDirty       - Called whenever data changes
+ * @param {string | null | undefined} assetSubclass - Asset subclass string used for Router-max-2 enforcement
  */
 function renderSwitchNetworksTableDetail(containerId, networks, ports, rerender, onDirty, assetSubclass) {
   _renderSwitchNetworksTable(containerId, networks, ports, rerender, onDirty, assetSubclass);
@@ -279,12 +309,12 @@ function renderSwitchNetworksTableDetail(containerId, networks, ports, rerender,
  *   - Existing port rows are silently normalised to the single VLAN before render
  *
  * @param {string}   containerId   - DOM id of the container element
- * @param {Array}    networks      - Network rows (read-only reference for VLAN option lists)
- * @param {Array}    ports         - Mutable array of port row objects
- * @param {Function} rerender      - Re-render callback (detail mode); null in form mode
- * @param {Function} onDirty       - Called on any data change; null in form mode
- * @param {string}   selfId        - Entity id to exclude from device options (the switch itself)
- * @param {string}   assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
+ * @param {UntypedTableRow[]} networks - Network rows (read-only reference for VLAN option lists)
+ * @param {UntypedTableRow[]} ports    - Mutable array of port row objects
+ * @param {(() => void) | null} rerender - Re-render callback (detail mode); null in form mode
+ * @param {(() => void) | null} onDirty  - Called on any data change; null in form mode
+ * @param {string | null | undefined} selfId        - Entity id to exclude from device options (the switch itself)
+ * @param {string | null | undefined} assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
  */
 function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass) {
   const container = $(containerId);
@@ -296,7 +326,7 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
   const excludeId = selfId ?? state.formId;
 
   // For Unmanaged: resolve the single auto-assigned VLAN id so ports can omit the network picker
-  const resolvedSubclass = assetSubclass ?? $('f-assetSubclass')?.value;
+  const resolvedSubclass = assetSubclass ?? /** @type {HTMLInputElement | null} */ ($('f-assetSubclass'))?.value;
   const isUnmanaged      = resolvedSubclass === 'Unmanaged';
   const autoNetId        = isUnmanaged
     ? (networks.find(n => n.networkId)?.networkId || '')
@@ -311,19 +341,28 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
   const assignedNetIds = new Set(networks.map(r => r.networkId).filter(Boolean));
   const assignedNets   = (state.cache.networks || []).filter(n => assignedNetIds.has(n.id));
 
-  const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, assignedNets);
+  const makeNetOpts = (/** @type {string} */ selectedId) => buildNetworkOptions(selectedId, assignedNets);
 
+  /**
+   * @param {NetworkPortEntry[]} ports
+   * @param {string | null} networkId
+   */
   const isEthernetMatch = (ports, networkId) => ports.some(p =>
     state.refs.networks?.[p.networkId]?.networkType === 'Ethernet' &&
     (!networkId || p.networkId === networkId)
   );
 
+  /**
+   * @param {string | null} networkId
+   * @param {string | undefined} selectedId
+   */
   const makeDeviceOpts = (networkId, selectedId) => {
+    /** @type {string[]} */
     const opts = [];
     for (const a of (state.cache.assets || [])) {
       if (a.id === excludeId) continue;
       if (a.assetClass === 'PLC') {
-        const matchingSlots = (a.slots || []).filter(s =>
+        const matchingSlots = /** @type {any[]} */ (a.slots || []).filter(s =>
           CARD_TYPE_NET_TYPES.has(s.cardType) && isEthernetMatch(getEntityNetworkPorts(s), networkId)
         );
         for (const s of matchingSlots) {
@@ -369,17 +408,19 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
   // Helper: re-render ports table (detail mode uses closure; form mode calls directly)
   const doRerender = rerender ?? (() => renderSwitchPortsTableForm());
 
-  container.querySelectorAll('.sp-port').forEach(inp => {
+  container.querySelectorAll('.sp-port').forEach(inp0 => {
+    const inp = /** @type {HTMLInputElement} */ (inp0);
     inp.addEventListener('change', () => {
-      ports[+inp.dataset.idx].portName = inp.value;
+      ports[Number(inp.dataset.idx)].portName = inp.value;
       onDirty?.();
     });
   });
 
   // Managed/Router only: per-port network picker — not rendered for Unmanaged
-  container.querySelectorAll('.sp-network').forEach(sel => {
+  container.querySelectorAll('.sp-network').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      const idx      = +sel.dataset.idx;
+      const idx      = Number(sel.dataset.idx);
       const newNetId = sel.value;
       const p        = ports[idx];
       // Clear the device selection when network changes and it no longer matches.
@@ -389,7 +430,7 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
       if (p.assetId) {
         const asset = state.refs.assets?.[p.assetId];
         if (asset?.assetClass === 'PLC') {
-          const slot = asset.slots?.find(s => s.slotNumber === p.slotNumber);
+          const slot = /** @type {any[]} */ (asset.slots || []).find(s => s.slotNumber === p.slotNumber);
           const slotPorts = slot ? getEntityNetworkPorts(slot) : [];
           if (slotPorts.length && !slotPorts.some(sp => sp.networkId === newNetId)) {
             p.assetId    = '';
@@ -414,9 +455,10 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
     });
   });
 
-  container.querySelectorAll('.sp-device').forEach(sel => {
+  container.querySelectorAll('.sp-device').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      const idx = +sel.dataset.idx;
+      const idx = Number(sel.dataset.idx);
       const val = sel.value;
       const sep = val.indexOf('|');
       if (sep !== -1) {
@@ -430,10 +472,11 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
     });
   });
 
-  container.querySelectorAll('.sp-rm').forEach(btn => {
+  container.querySelectorAll('.sp-rm').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      ports.splice(+btn.dataset.idx, 1);
+      ports.splice(Number(btn.dataset.idx), 1);
       onDirty?.();
       doRerender();
     });
@@ -445,14 +488,14 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
     ports.push({ portName: `Port ${num}`, networkId: autoNetId || '', assetId: '', slotNumber: null });
     onDirty?.();
     doRerender();
-    const inputs = container.querySelectorAll('.sp-port');
+    const inputs = /** @type {NodeListOf<HTMLInputElement>} */ (container.querySelectorAll('.sp-port'));
     inputs[inputs.length - 1]?.select();
   });
 }
 
 /** Form mode: reads/writes state.formSwitchNetworks/Ports into '#switch-ports-container'. */
 function renderSwitchPortsTableForm() {
-  const assetSubclass = $('f-assetSubclass')?.value ?? null;
+  const assetSubclass = /** @type {HTMLInputElement | null} */ ($('f-assetSubclass'))?.value ?? null;
   _renderSwitchPortsTable(
     'switch-ports-container',
     state.formSwitchNetworks,
@@ -467,12 +510,12 @@ function renderSwitchPortsTableForm() {
 /**
  * Detail mode: reads/writes the caller-supplied arrays into an explicit container.
  * @param {string}   containerId
- * @param {Array}    networks
- * @param {Array}    ports
- * @param {Function} rerender      - Re-render callback (required in detail mode)
- * @param {Function} onDirty       - Called on any data change
- * @param {string}   selfId        - Entity id to exclude from device options (the switch itself)
- * @param {string}   assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
+ * @param {UntypedTableRow[]} networks
+ * @param {UntypedTableRow[]} ports
+ * @param {() => void} rerender      - Re-render callback (required in detail mode)
+ * @param {() => void} onDirty       - Called on any data change
+ * @param {string | null | undefined} selfId        - Entity id to exclude from device options (the switch itself)
+ * @param {string | null | undefined} assetSubclass - Asset subclass; drives Unmanaged auto-assignment logic
  */
 function renderSwitchPortsTableDetail(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass) {
   _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty, selfId, assetSubclass);
@@ -480,12 +523,13 @@ function renderSwitchPortsTableDetail(containerId, networks, ports, rerender, on
 
 /* ---- IO POINTS TABLE ---- */
 
-const IO_SIGNAL_OPTS = ['1-5V','0-10V','0-20mA','4-20mA','RTD','Other'];
-const IO_WIRING_OPTS = ['2-Wire','3-Wire','4-Wire'];
+const IO_SIGNAL_OPTS = /** @type {const} */ (['1-5V','0-10V','0-20mA','4-20mA','RTD','Other']);
+const IO_WIRING_OPTS = /** @type {const} */ (['2-Wire','3-Wire','4-Wire']);
 
+/** Reads f-ioPointCount, resizes state.formIoPoints to match, then re-renders. */
 function syncIoPointCount() {
-  const count    = parseInt($('f-ioPointCount')?.value) || 0;
-  const cardType = $('f-cardType')?.value;
+  const count    = parseInt(/** @type {HTMLInputElement | null} */ ($('f-ioPointCount'))?.value ?? '') || 0;
+  const cardType = /** @type {HTMLInputElement | null} */ ($('f-cardType'))?.value;
   while (state.formIoPoints.length < count)
     state.formIoPoints.push(cardType === 'Analog'
       ? { label: 'Spare', signalType: '', wiringType: '' }
@@ -498,7 +542,7 @@ function renderIoPointsTable() {
   const container = $('io-points-container');
   if (!container) return;
   const rows     = state.formIoPoints;
-  const isAnalog = $('f-cardType')?.value === 'Analog';
+  const isAnalog = /** @type {HTMLInputElement | null} */ ($('f-cardType'))?.value === 'Analog';
   container.classList.toggle('io-analog', isAnalog);
 
   const rowsHtml = rows.map((r, i) => {
@@ -528,9 +572,10 @@ function renderIoPointsTable() {
        </div>${rowsHtml}`
     : '<div style="font-size:14px;color:var(--muted);padding:8px 0">Set IO Point Count to populate rows.</div>';
 
-  container.querySelectorAll('.io-point-row input, .io-point-row select').forEach(el => {
+  container.querySelectorAll('.io-point-row input, .io-point-row select').forEach(el0 => {
+    const el = /** @type {HTMLInputElement | HTMLSelectElement} */ (el0);
     el.addEventListener('change', () => {
-      state.formIoPoints[Number(el.dataset.idx)][el.dataset.field] = el.value;
+      state.formIoPoints[Number(el.dataset.idx)][/** @type {string} */ (el.dataset.field)] = el.value;
     });
   });
 }
@@ -543,9 +588,9 @@ function renderIoPointsTable() {
  * or renderPowerBusTableDetail(...) from the detail panel.
  *
  * @param {string}   containerId - DOM id of the target container
- * @param {Array}    powerBus    - Mutable array of power-bus entries to read/write
- * @param {Function} rerender    - Called after any mutation to re-render the table; null in form mode
- * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
+ * @param {UntypedTableRow[]} powerBus - Mutable array of power-bus entries to read/write
+ * @param {(() => void) | null} rerender - Called after any mutation to re-render the table; null in form mode
+ * @param {(() => void) | null} onDirty  - Called after any mutation so callers can set dirty flags
  */
 function _renderPowerBusTable(containerId, powerBus, rerender, onDirty) {
   const container = $(containerId);
@@ -556,6 +601,10 @@ function _renderPowerBusTable(containerId, powerBus, rerender, onDirty) {
   // fall back to the form-mode renderer.
   const doRerender = rerender ?? (() => renderPowerBusTableForm());
 
+  /**
+   * @param {string} type
+   * @param {string | undefined} selectedId
+   */
   const makeDeviceOpts = (type, selectedId) => {
     const store = type === 'Safety Circuit' ? 'safety' : 'power';
     return (state.cache[store] || [])
@@ -563,6 +612,10 @@ function _renderPowerBusTable(containerId, powerBus, rerender, onDirty) {
       .join('');
   };
 
+  /**
+   * @param {number} ei
+   * @param {any[]} wiring
+   */
   const makeWiringRows = (ei, wiring) => wiring.map((w, wi) => `
     <div class="wiring-form-row pb-wiring-row">
       <input class="f-input wiring-terminal" type="text" placeholder="Terminal" value="${esc(w.terminal || '')}" data-entry="${ei}" data-widx="${wi}" data-field="terminal">
@@ -590,45 +643,51 @@ function _renderPowerBusTable(containerId, powerBus, rerender, onDirty) {
     </div>`).join('') +
     `<button type="button" class="wiring-add-btn pb-add">+ Add Power Bus</button>`;
 
-  container.querySelectorAll('.pb-type').forEach(sel => {
+  container.querySelectorAll('.pb-type').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      powerBus[+sel.dataset.idx].type  = sel.value;
-      powerBus[+sel.dataset.idx].refId = '';
+      powerBus[Number(sel.dataset.idx)].type  = sel.value;
+      powerBus[Number(sel.dataset.idx)].refId = '';
       onDirty?.();
       doRerender();
     });
   });
-  container.querySelectorAll('.pb-device').forEach(sel => {
+  container.querySelectorAll('.pb-device').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      powerBus[+sel.dataset.idx].refId = sel.value;
+      powerBus[Number(sel.dataset.idx)].refId = sel.value;
       onDirty?.();
     });
   });
-  container.querySelectorAll('.pb-wiring-row input').forEach(input => {
+  container.querySelectorAll('.pb-wiring-row input').forEach(input0 => {
+    const input = /** @type {HTMLInputElement} */ (input0);
     input.addEventListener('change', () => {
-      powerBus[+input.dataset.entry].wiring[+input.dataset.widx][input.dataset.field] = input.value;
+      powerBus[Number(input.dataset.entry)].wiring[Number(input.dataset.widx)][/** @type {string} */ (input.dataset.field)] = input.value;
       onDirty?.();
     });
   });
-  container.querySelectorAll('.wiring-rm-btn[data-widx]').forEach(btn => {
+  container.querySelectorAll('.wiring-rm-btn[data-widx]').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      powerBus[+btn.dataset.entry].wiring.splice(+btn.dataset.widx, 1);
+      powerBus[Number(btn.dataset.entry)].wiring.splice(Number(btn.dataset.widx), 1);
       onDirty?.();
       doRerender();
     });
   });
-  container.querySelectorAll('.pb-wrow-add').forEach(btn => {
+  container.querySelectorAll('.pb-wrow-add').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', () => {
-      powerBus[+btn.dataset.entry].wiring.push({ terminal: '', label: '' });
+      powerBus[Number(btn.dataset.entry)].wiring.push({ terminal: '', label: '' });
       onDirty?.();
       doRerender();
     });
   });
-  container.querySelectorAll('.pb-entry-rm').forEach(btn => {
+  container.querySelectorAll('.pb-entry-rm').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      powerBus.splice(+btn.dataset.idx, 1);
+      powerBus.splice(Number(btn.dataset.idx), 1);
       onDirty?.();
       doRerender();
     });
@@ -648,9 +707,9 @@ function renderPowerBusTableForm() {
 /**
  * Detail mode: reads/writes the caller-supplied array into an explicit container.
  * @param {string}   containerId
- * @param {Array}    powerBus
- * @param {Function} rerender - Called after any mutation to re-render the table (required)
- * @param {Function} onDirty  - Called after any mutation so callers can set dirty flags
+ * @param {UntypedTableRow[]} powerBus
+ * @param {() => void} rerender - Called after any mutation to re-render the table (required)
+ * @param {() => void} onDirty  - Called after any mutation so callers can set dirty flags
  */
 function renderPowerBusTableDetail(containerId, powerBus, rerender, onDirty) {
   _renderPowerBusTable(containerId, powerBus, rerender, onDirty);
@@ -675,9 +734,9 @@ function renderPowerBusTableDetail(containerId, powerBus, rerender, onDirty) {
  * and depend on the selected network's protocol. Old saves without address fields remain valid.
  *
  * @param {string}   containerId - DOM id of the target container
- * @param {Array}    ports       - Mutable array of { portNumber, networkId, ...addrFields }
- * @param {Function} rerender    - Called after structural changes (add/remove); null in form mode
- * @param {Function} onDirty     - Called after any mutation so callers can set dirty flags
+ * @param {NetworkPortRow[]} ports - Mutable array of { portNumber, networkId, ...addrFields }
+ * @param {(() => void) | null} rerender - Called after structural changes (add/remove); null in form mode
+ * @param {(() => void) | null} onDirty  - Called after any mutation so callers can set dirty flags
  */
 function _renderNetworkPortsTable(containerId, ports, rerender, onDirty) {
   const container = $(containerId);
@@ -687,7 +746,7 @@ function _renderNetworkPortsTable(containerId, ports, rerender, onDirty) {
   const doRerender = rerender ?? (() => renderNetworkPortsTableForm());
 
   // All network types are offered — Controller/Communication cards can use any protocol
-  const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, state.cache.networks || []);
+  const makeNetOpts = (/** @type {string} */ selectedId) => buildNetworkOptions(selectedId, state.cache.networks || []);
 
   container.innerHTML = ports.map((port, i) => `
     <div class="sn-network-row np-port-row" data-np-idx="${i}">
@@ -705,30 +764,34 @@ function _renderNetworkPortsTable(containerId, ports, rerender, onDirty) {
 
   // Network change — clear protocol-specific address fields then update networkId and re-render
   // so the correct address fields for the newly selected network are shown
-  container.querySelectorAll('.np-network').forEach(sel => {
+  container.querySelectorAll('.np-network').forEach(sel0 => {
+    const sel = /** @type {HTMLSelectElement} */ (sel0);
     sel.addEventListener('change', () => {
-      const idx = +sel.dataset.idx;
-      Object.keys(ports[idx]).filter(k => k !== 'networkId' && k !== 'portNumber')
-            .forEach(k => delete ports[idx][k]);
-      ports[idx].networkId = sel.value;
+      const idx = Number(sel.dataset.idx);
+      const row = /** @type {Record<string, any>} */ (ports[idx]);
+      Object.keys(row).filter(k => k !== 'networkId' && k !== 'portNumber')
+            .forEach(k => delete row[k]);
+      row.networkId = sel.value;
       onDirty?.();
       doRerender();
     });
   });
 
   // Address field input — write the keyed value directly into the port object (no re-render needed)
-  container.querySelectorAll('.sn-addr').forEach(el => {
+  container.querySelectorAll('.sn-addr').forEach(el0 => {
+    const el = /** @type {HTMLInputElement | HTMLSelectElement} */ (el0);
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
-      ports[+el.dataset.idx][el.dataset.key] = el.value;
+      /** @type {Record<string, any>} */ (ports[Number(el.dataset.idx)])[/** @type {string} */ (el.dataset.key)] = el.value;
       onDirty?.();
     });
   });
 
   // Remove port — splice entry, notify dirty, re-render
-  container.querySelectorAll('.np-port-rm').forEach(btn => {
+  container.querySelectorAll('.np-port-rm').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      ports.splice(+btn.dataset.idx, 1);
+      ports.splice(Number(btn.dataset.idx), 1);
       onDirty?.();
       doRerender();
     });
@@ -751,9 +814,9 @@ function renderNetworkPortsTableForm() {
 /**
  * Detail mode: reads/writes the caller-supplied array into an explicit container.
  * @param {string}   containerId
- * @param {Array}    ports
- * @param {Function} rerender - Called after structural changes (add/remove) (required)
- * @param {Function} onDirty  - Called after any mutation so callers can set dirty flags
+ * @param {NetworkPortRow[]} ports
+ * @param {() => void} rerender - Called after structural changes (add/remove) (required)
+ * @param {() => void} onDirty  - Called after any mutation so callers can set dirty flags
  */
 function renderNetworkPortsTableDetail(containerId, ports, rerender, onDirty) {
   _renderNetworkPortsTable(containerId, ports, rerender, onDirty);
@@ -761,6 +824,7 @@ function renderNetworkPortsTableDetail(containerId, ports, rerender, onDirty) {
 
 /* ---- CLASS-SPECIFIC ITEM TABLES (wiring, parameters) ---- */
 
+/** @param {string} assetClass */
 function renderClassItemTables(assetClass) {
   const tables = ENTITY.assets.classItemTables?.[assetClass] || [];
   const container = $('class-item-tables-container');
@@ -778,31 +842,27 @@ function renderClassItemTables(assetClass) {
     `;
   }
   container.innerHTML = html;
-  // Form mode — no opts needed; defaults pick state.formItemTables and wiring-table-{key}
-  for (const t of tables) renderItemTable(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label');
+  for (const t of tables) renderItemTableForm(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label');
 }
 
 /**
- * Renders an editable terminal/label wiring table.
- *
- * Supports two calling conventions — backwards-compatible via default opts:
- *   renderItemTable(key, label, p1, p2)
- *     → form mode: uses state.formItemTables, container id='wiring-table-{key}'
- *   renderItemTable(key, label, p1, p2, { containerId, tablesState })
- *     → detail mode: uses provided state object, custom container id
+ * Shared implementation for the editable terminal/label wiring table.
+ * Not called directly — use renderItemTableForm() from the entity form or
+ * renderItemTableDetail(...) from the detail panel, which give the two
+ * calling conventions this used to share under one overloaded signature
+ * (positional args + a defaults-filled opts object) separate, explicit
+ * names instead — matching the split already done for the other table
+ * renderers in this file (switch networks/ports, power bus, network ports).
  *
  * @param {string} key          - Table key (e.g. 'inputWiring')
  * @param {string} label        - Human-readable table label (used internally for re-renders)
- * @param {string} placeholder1 - Column 1 placeholder text (default 'Terminal')
- * @param {string} placeholder2 - Column 2 placeholder text (default 'Label')
- * @param {object} opts
- * @param {string}   opts.containerId  - DOM element id; defaults to wiring-table-{key}
- * @param {object}   opts.tablesState  - Object with rows at [key]; defaults to state.formItemTables
- * @param {Function} opts.onDirty      - Called after any mutation (add/remove/edit) so callers
- *                                       can set dirty flags; only used in detail mode — defaults to null
+ * @param {string} placeholder1 - Column 1 placeholder text
+ * @param {string} placeholder2 - Column 2 placeholder text
+ * @param {string} containerId  - DOM element id
+ * @param {Record<string, ItemTableRow[]>} tablesState - Object with rows at [key]
+ * @param {(() => void) | null} onDirty - Called after any mutation; null in form mode
  */
-function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label', opts = {}) {
-  const { containerId = `wiring-table-${key}`, tablesState = state.formItemTables, onDirty = null } = opts;
+function _renderItemTable(key, label, placeholder1, placeholder2, containerId, tablesState, onDirty) {
   const container = $(containerId);
   if (!container) return;
   if (!tablesState[key]) tablesState[key] = [];
@@ -819,29 +879,58 @@ function renderItemTable(key, label, placeholder1 = 'Terminal', placeholder2 = '
     ${rowsHtml}
     <button class="wiring-add-btn" data-wkey="${key}" type="button">+ Add Row</button>
   `;
-  container.querySelectorAll('.wiring-form-row input').forEach(input => {
+  container.querySelectorAll('.wiring-form-row input').forEach(input0 => {
+    const input = /** @type {HTMLInputElement} */ (input0);
     input.addEventListener('change', () => {
-      const { wkey, idx, field } = input.dataset;
-      tablesState[wkey][Number(idx)][field] = input.value;
+      const wkey  = /** @type {string} */ (input.dataset.wkey);
+      const field = /** @type {string} */ (input.dataset.field);
+      /** @type {Record<string, any>} */ (tablesState[wkey][Number(input.dataset.idx)])[field] = input.value;
       // Notify caller so the detail panel navigation guard fires on cell edits.
       // In form mode onDirty is null and this is a no-op.
       onDirty?.();
     });
   });
-  container.querySelectorAll('.wiring-rm-btn').forEach(btn => {
+  container.querySelectorAll('.wiring-rm-btn').forEach(btn0 => {
+    const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      tablesState[btn.dataset.wkey].splice(Number(btn.dataset.idx), 1);
+      const wkey = /** @type {string} */ (btn.dataset.wkey);
+      tablesState[wkey].splice(Number(btn.dataset.idx), 1);
       onDirty?.();
-      // Pass opts through so detail mode keeps its container id, data source, and onDirty callback
-      renderItemTable(btn.dataset.wkey, label, placeholder1, placeholder2, opts);
+      // Re-render with the same containerId/tablesState/onDirty this call was made with
+      _renderItemTable(wkey, label, placeholder1, placeholder2, containerId, tablesState, onDirty);
     });
   });
-  container.querySelector('.wiring-add-btn').addEventListener('click', () => {
+  /** @type {HTMLElement} */ (container.querySelector('.wiring-add-btn')).addEventListener('click', () => {
     tablesState[key].push({ terminal: '', label: '' });
     onDirty?.();
-    renderItemTable(key, label, placeholder1, placeholder2, opts);
-    const inputs = container.querySelectorAll('.wiring-terminal');
+    _renderItemTable(key, label, placeholder1, placeholder2, containerId, tablesState, onDirty);
+    const inputs = /** @type {NodeListOf<HTMLInputElement>} */ (container.querySelectorAll('.wiring-terminal'));
     inputs[inputs.length - 1]?.focus();
   });
+}
+
+/**
+ * Form mode: reads/writes state.formItemTables into '#wiring-table-{key}'.
+ * @param {string} key
+ * @param {string} label
+ * @param {string} [placeholder1]
+ * @param {string} [placeholder2]
+ */
+function renderItemTableForm(key, label, placeholder1 = 'Terminal', placeholder2 = 'Label') {
+  _renderItemTable(key, label, placeholder1, placeholder2, `wiring-table-${key}`, state.formItemTables, null);
+}
+
+/**
+ * Detail mode: reads/writes the caller-supplied state object into an explicit container.
+ * @param {string} key
+ * @param {string} label
+ * @param {string} placeholder1
+ * @param {string} placeholder2
+ * @param {string} containerId
+ * @param {Record<string, ItemTableRow[]>} tablesState
+ * @param {() => void} [onDirty]
+ */
+function renderItemTableDetail(key, label, placeholder1, placeholder2, containerId, tablesState, onDirty) {
+  _renderItemTable(key, label, placeholder1, placeholder2, containerId, tablesState, onDirty ?? null);
 }

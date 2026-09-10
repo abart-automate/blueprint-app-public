@@ -193,11 +193,11 @@ async function renderSlotDetail(savedScroll) {
      the user edits terminal wiring without touching any standard fields.
      ------------------------------------------------------------------ */
   if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
-    renderItemTable('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label', {
-      containerId: 'det-terminal-wiring-container',
-      tablesState: state.detailItemTables,
-      onDirty:     () => { state.detailChanges._termWiringDirty = true; },
-    });
+    renderItemTableDetail('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label',
+      'det-terminal-wiring-container',
+      state.detailItemTables,
+      () => { state.detailChanges._termWiringDirty = true; },
+    );
   }
 
   /* ------------------------------------------------------------------
@@ -637,10 +637,10 @@ async function renderEntityDetail(savedScroll) {
   for (const t of itemTables(type, item)) {
     const containerId = `det-wiring-table-${t.key}`;
     if (document.getElementById(containerId)) {
-      renderItemTable(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label', {
+      renderItemTableDetail(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label',
         containerId,
-        tablesState: state.detailItemTables,
-      });
+        state.detailItemTables,
+      );
     }
   }
 
