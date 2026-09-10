@@ -1,9 +1,73 @@
+// @ts-check
 /* ============================================================
    APPLICATION STATE & DOM REFERENCES
    Central state object, DOM element cache, toast/confirm UI,
    and cache/refs helpers. Loaded before app.js.
    ============================================================ */
 
+/**
+ * A media item as held in state's *editable* image/photo arrays (already
+ * normalized — see utils.js's normalizeMediaItems() for the raw stored-value
+ * shapes this gets built from).
+ * @typedef {{ blob: Blob, mimeType: string }} EditableMediaItem
+ */
+
+/** @typedef {{ terminal?: string, label?: string }} ItemTableRow */
+
+/**
+ * A single network-port entry, as used by both PLC slot Controller/
+ * Communication cards (state.*SlotNetworkPorts) and HMI/Field Device assets
+ * (state.*AssetNetworkPorts) — see utils.js's getEntityNetworkPorts().
+ * @typedef {{ portNumber?: number, networkId: string, ipAddress?: string, nodeAddress?: string }} NetworkPortRow
+ */
+
+/**
+ * Row shapes for the switch-network/switch-port/IO-point/power-bus tables are
+ * still owned by renderers/tables.js (not yet typed) — kept as an honest
+ * `Record<string, any>` placeholder here rather than guessed at.
+ * @typedef {Record<string, any>} UntypedTableRow
+ */
+
+/**
+ * @typedef {Object} State
+ * @property {string} page
+ *
+ * @property {EntityType | null} detailType
+ * @property {string | null} detailId
+ * @property {Array<{ type: EntityType | null, id: string | null, slotNumber?: number | null }>} detailStack
+ * @property {number | null} detailSlotNumber
+ * @property {Record<string, any>} detailChanges - Pending field-level edits (key -> value).
+ * @property {EditableMediaItem[]} detailImages - "Other Media" gallery.
+ * @property {Record<string, EditableMediaItem[]>} detailNamedPhotos - Keyed by required-photo slot name.
+ * @property {boolean} detailMediaDirty - True after any add/remove so the navigation guard fires.
+ * @property {Record<string, ItemTableRow[]>} detailItemTables - Keyed by wiring-table key.
+ * @property {UntypedTableRow[]} detailSwitchNetworks
+ * @property {UntypedTableRow[]} detailSwitchPorts
+ * @property {UntypedTableRow[]} detailSlotIoPoints
+ * @property {UntypedTableRow[]} detailSlotPowerBus
+ * @property {NetworkPortRow[]} detailSlotNetworkPorts - In-edit Controller/Communication card.
+ * @property {NetworkPortRow[]} detailAssetNetworkPorts - In-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS).
+ *
+ * @property {FormType | null} formType
+ * @property {string | null} formId
+ * @property {Record<string, any> | null} formPreset - Polymorphic: {rackId,slotNumber} for a PLC slot form, or {field,value,extra,copyFrom} for an entity form preset.
+ * @property {EditableMediaItem[]} formImages
+ * @property {Record<string, EditableMediaItem[]>} formNamedPhotos
+ * @property {Record<string, ItemTableRow[]>} formItemTables
+ * @property {UntypedTableRow[]} formSwitchNetworks
+ * @property {UntypedTableRow[]} formSwitchPorts
+ * @property {UntypedTableRow[]} formIoPoints
+ * @property {UntypedTableRow[]} formPowerBus
+ * @property {NetworkPortRow[]} formSlotNetworkPorts - In-edit Controller/Communication slot form.
+ * @property {NetworkPortRow[]} formAssetNetworkPorts - In-edit HMI/Field Device asset form.
+ *
+ * @property {Partial<Record<StoreName, DbRecord[]>>} cache - Populated by refreshAll/loadCache.
+ * @property {Partial<Record<StoreName, Record<string, DbRecord>>>} refs
+ *
+ * @property {any} pickerMeta
+ */
+
+/** @type {State} */
 const state = {
   // --- Navigation ---
   page: 'home',
@@ -54,7 +118,24 @@ const state = {
 // Global shorthand for document.getElementById, used throughout every
 // renderer/operations file (not just here) — must stay a top-level
 // declaration, not scoped inside initEl() below.
+/**
+ * @param {string} id
+ * @returns {HTMLElement | null}
+ */
 const $ = id => document.getElementById(id);
+
+/**
+ * @typedef {{
+ *   header: HTMLElement, main: HTMLElement, backBtn: HTMLElement, addBtn: HTMLElement,
+ *   pageTitle: HTMLElement, detail: HTMLElement, resizeHandle: HTMLElement,
+ *   backdrop: HTMLElement, sheet: HTMLElement, formTitle: HTMLElement, formBody: HTMLElement,
+ *   formSave: HTMLElement, formCancel: HTMLElement, confirmBD: HTMLElement, confirmT: HTMLElement,
+ *   confirmM: HTMLElement, confirmNo: HTMLElement, confirmSave: HTMLElement, confirmYes: HTMLElement,
+ *   promptBD: HTMLElement, promptT: HTMLElement, promptM: HTMLElement,
+ *   promptField: HTMLInputElement, promptCancel: HTMLElement, promptOk: HTMLElement,
+ *   toast: HTMLElement, nav: HTMLElement,
+ * }} ElRefs
+ */
 
 /**
  * Cache of frequently-used DOM element references, keyed by logical name.
@@ -74,7 +155,7 @@ const $ = id => document.getElementById(id);
  * missing, converting "silently null forever" into a fail-fast startup
  * error with the offending id named.
  */
-let el = null;
+let el = /** @type {ElRefs} */ (/** @type {unknown} */ (null));
 
 function initEl() {
   const refs = {
@@ -100,7 +181,7 @@ function initEl() {
     promptBD:     $('prompt-backdrop'),
     promptT:      $('prompt-title'),
     promptM:      $('prompt-msg'),
-    promptField:  $('prompt-input'),
+    promptField:  /** @type {HTMLInputElement | null} */ ($('prompt-input')),
     promptCancel: $('prompt-cancel'),
     promptOk:     $('prompt-ok'),
     toast:        $('toast'),
@@ -110,12 +191,18 @@ function initEl() {
   if (missing.length) {
     throw new Error(`initEl: missing expected DOM element(s) for: ${missing.join(', ')}`);
   }
-  el = refs;
+  el = /** @type {ElRefs} */ (refs);
 }
 
 /* ---- TOAST ---- */
 
-let toastTimer = null;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let toastTimer;
+
+/**
+ * @param {string} msg
+ * @param {string} [type]
+ */
 function showToast(msg, type = '') {
   el.toast.textContent = msg;
   el.toast.className = 'toast show' + (type ? ' ' + type : '');
@@ -130,6 +217,13 @@ function showToast(msg, type = '') {
  * Labels/class are set on open and restored to the HTML defaults on cleanup, so
  * callers never need to mutate el.confirmYes/el.confirmNo directly — every dialog
  * declares its own button text instead of inheriting whatever a previous caller left.
+ *
+ * Deliberately named `confirm`, shadowing the built-in `window.confirm` for
+ * every caller in this app (same as the original plain-JS behavior).
+ * @param {string} title
+ * @param {string} msg
+ * @param {{ yesLabel?: string, noLabel?: string, yesClass?: string }} [opts]
+ * @returns {Promise<boolean>}
  */
 function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' } = {}) {
   return new Promise(resolve => {
@@ -156,8 +250,11 @@ function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass
 
 /**
  * Shows a 3-button dialog laid out left-to-right.
- * Returns: 'cancel' | 'mid' | 'yes'
  * Button classes are restored to their HTML defaults on cleanup.
+ * @param {string} title
+ * @param {string} msg
+ * @param {{ cancelLabel: string, midLabel: string, midClass: string, yesLabel: string, yesClass: string }} opts
+ * @returns {Promise<'cancel' | 'mid' | 'yes'>}
  */
 function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel, yesClass }) {
   return new Promise(resolve => {
@@ -194,7 +291,9 @@ function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel
 
 /**
  * Shows a 3-button "unsaved changes" dialog (left-to-right).
- * Resolves with: 'save' | 'discard' | null (cancel)
+ * @param {string} title
+ * @param {string} msg
+ * @returns {Promise<'save' | 'discard' | null>}
  */
 function confirmUnsaved(title, msg) {
   return confirmThreeWay(title, msg, {
@@ -206,8 +305,11 @@ function confirmUnsaved(title, msg) {
 
 /**
  * Shows a text-input prompt dialog.
- * Resolves with the trimmed string the user entered, or null if cancelled.
  * Requires a non-empty value — blank submission shakes the input and re-focuses.
+ * @param {string} title
+ * @param {string} msg
+ * @param {string} [defaultValue]
+ * @returns {Promise<string | null>}
  */
 function promptInput(title, msg, defaultValue = '') {
   return new Promise(resolve => {
@@ -228,6 +330,7 @@ function promptInput(title, msg, defaultValue = '') {
       cleanup(); resolve(val);
     };
     const cancel = () => { cleanup(); resolve(null); };
+    /** @param {KeyboardEvent} e */
     const onKey  = e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') cancel(); };
 
     const cleanup = () => {
@@ -244,10 +347,12 @@ function promptInput(title, msg, defaultValue = '') {
 
 /* ---- CACHE & REFS ---- */
 
+/** @param {StoreName[]} storeNames */
 async function loadCache(storeNames) {
   await Promise.all(storeNames.map(async name => {
-    state.cache[name] = await getAll(name);
-    state.refs[name]  = Object.fromEntries(state.cache[name].map(i => [i.id, i]));
+    const records = await getAll(name);
+    state.cache[name] = records;
+    state.refs[name]  = Object.fromEntries(records.map(i => [i.id, i]));
   }));
 }
 

@@ -93,12 +93,14 @@
    constant instead of repeating the raw string, so a typo becomes an
    immediate ReferenceError instead of a silently-mismatched comparison that
    falls through to the default entity-form/detail path. */
-const FORM_TYPE = {
+const FORM_TYPE = /** @type {const} */ ({
   PICKER:    '__picker__',
   PLC_SLOT:  '__plc_slot__',
   PLANT:     '__plant__',
   PARTS_LIB: '__parts_lib__',
-};
+});
+
+/** @typedef {EntityType | typeof FORM_TYPE[keyof typeof FORM_TYPE]} FormType */
 
 /* ---- PARTS LIBRARY CONSTANTS ---- */
 const PART_IO_TYPES      = ['Input', 'Output', 'Combo', 'N/A'];
