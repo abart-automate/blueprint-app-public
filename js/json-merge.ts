@@ -1,4 +1,5 @@
-// @ts-check
+import type { DbRecord } from './db.js';
+import type { EntityType } from './entity-config.js';
 
 import { getAll, getById, setSetting, upsert } from './db.js';
 import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
@@ -6,8 +7,6 @@ import { $, confirm, refreshAll, showToast, state } from './state.js';
 import { _deserializeEntityMedia, _serializeEntityMedia, uniqueCopyName } from './operations.js';
 import { renderPage } from './app.js';
 import { REF_FIELD_MAP } from './export.js';
-/** @import { DbRecord } from './db.js' */
-/** @import { EntityType } from './entity-config.js' */
 // JSON Merge Import Module
 // Non-destructive alternative to the "Replace All" JSON import in operations.js.
 // Detects name/ID matches between the imported file and existing data, lets the
@@ -20,62 +19,48 @@ import { REF_FIELD_MAP } from './export.js';
 //               operations.js (uniqueCopyName, _serializeEntityMedia, _deserializeEntityMedia),
 //               app.js (refreshAll, renderPage)
 
-/** @type {readonly EntityType[]} */
-export const MERGE_STORE_ORDER = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
+export const MERGE_STORE_ORDER: readonly EntityType[] = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
 
 // Ref-field keys whose values are entity ids, mapped to the store they point into.
 // REF_FIELD_MAP (export.js) already covers areaId/panelId/powerId/safetyId/networkId;
 // assetId is added here for cross-asset references (e.g. switchPorts[].assetId).
-/** @type {Record<string, string>} */
-export const MERGE_REF_STORE_KEYS = { ...REF_FIELD_MAP, assetId: 'assets' };
+export const MERGE_REF_STORE_KEYS: Record<string, string> = { ...REF_FIELD_MAP, assetId: 'assets' };
 
-/**
- * @typedef {Object} MergeConflict
- * @property {EntityType} store
- * @property {Record<string, any>} importedItem
- * @property {DbRecord} existingItem
- * @property {'keep' | 'overwrite' | 'new'} resolution
- * @property {string} newName
- */
+export interface MergeConflict {
+  store: EntityType;
+  importedItem: Record<string, any>;
+  existingItem: DbRecord;
+  resolution: 'keep' | 'overwrite' | 'new';
+  newName: string;
+}
 
-/**
- * @typedef {Object} MergeEntry
- * @property {Record<string, any>} importedItem
- * @property {DbRecord | null} existing
- * @property {'new' | 'same' | 'conflict'} status
- * @property {MergeConflict} [conflict]
- */
+export interface MergeEntry {
+  importedItem: Record<string, any>;
+  existing: DbRecord | null;
+  status: 'new' | 'same' | 'conflict';
+  conflict?: MergeConflict;
+}
 
-/**
- * @typedef {Object} MergePlan
- * @property {Partial<Record<EntityType, MergeConflict[]>>} conflictsByStore
- * @property {Partial<Record<EntityType, number>>} newCounts
- * @property {Partial<Record<EntityType, MergeEntry[]>>} allItems
- */
+export interface MergePlan {
+  conflictsByStore: Partial<Record<EntityType, MergeConflict[]>>;
+  newCounts: Partial<Record<EntityType, number>>;
+  allItems: Partial<Record<EntityType, MergeEntry[]>>;
+}
 
-/** @typedef {{ data: Record<string, any[]> }} MergePayload */
+export type MergePayload = { data: Record<string, any[]> };
 
 /* ============================================================
    STEP A: DETECT
    ============================================================ */
 
-/**
- * @param {EntityType} store
- * @param {Record<string, any>} importedItem
- * @returns {DbRecord | null}
- */
-export function _findExistingMatch(store, importedItem) {
+export function _findExistingMatch(store: EntityType, importedItem: Record<string, any>): DbRecord | null {
   if (importedItem.id && state.refs[store]?.[importedItem.id]) return state.refs[store][importedItem.id];
   const name = importedItem.name?.trim().toLowerCase();
   if (!name) return null;
   return (state.cache[store] || []).find(i => i.name?.trim().toLowerCase() === name) || null;
 }
 
-/**
- * @param {Record<string, any>} entity
- * @returns {Record<string, any>}
- */
-export function _diffableFields(entity) {
+export function _diffableFields(entity: Record<string, any>): Record<string, any> {
   const { id, createdAt, updatedAt, ...rest } = entity;
   return rest;
 }
@@ -83,36 +68,26 @@ export function _diffableFields(entity) {
 /**
  * Imported items carry media as base64 strings (the export format); serialize the
  * existing entity's media the same way before comparing so the two are apples-to-apples.
- * @param {Record<string, any>} importedItem
- * @param {DbRecord} existing
- * @returns {Promise<boolean>}
  */
-export async function _isSameAsExisting(importedItem, existing) {
+export async function _isSameAsExisting(importedItem: Record<string, any>, existing: DbRecord): Promise<boolean> {
   const serializedExisting = await _serializeEntityMedia(existing);
   return JSON.stringify(_diffableFields(importedItem)) === JSON.stringify(_diffableFields(serializedExisting));
 }
 
 /**
  * Builds a per-store list of resolutions (new / same / conflict) without writing anything.
- * @param {MergePayload} payload
- * @returns {Promise<MergePlan>}
  */
-export async function detectJsonMergePlan(payload) {
+export async function detectJsonMergePlan(payload: MergePayload): Promise<MergePlan> {
   await refreshAll();
-  /** @type {Partial<Record<EntityType, MergeConflict[]>>} */
-  const conflictsByStore = {};
-  /** @type {Partial<Record<EntityType, number>>} */
-  const newCounts = {};
-  /** @type {Partial<Record<EntityType, MergeEntry[]>>} */
-  const allItems = {};
+  const conflictsByStore: Partial<Record<EntityType, MergeConflict[]>> = {};
+  const newCounts: Partial<Record<EntityType, number>> = {};
+  const allItems: Partial<Record<EntityType, MergeEntry[]>> = {};
 
   for (const store of MERGE_STORE_ORDER) {
     const items = Array.isArray(payload.data[store]) ? payload.data[store] : [];
-    /** @type {MergeConflict[]} */
-    const conflicts = [];
+    const conflicts: MergeConflict[] = [];
     let newCount = 0;
-    /** @type {MergeEntry[]} */
-    const resolved = [];
+    const resolved: MergeEntry[] = [];
 
     for (const importedItem of items) {
       const existing = _findExistingMatch(store, importedItem);
@@ -125,8 +100,7 @@ export async function detectJsonMergePlan(payload) {
       if (same) {
         resolved.push({ importedItem, existing, status: 'same' });
       } else {
-        /** @type {MergeConflict} */
-        const conflict = {
+        const conflict: MergeConflict = {
           store,
           importedItem,
           existingItem: existing,
@@ -153,15 +127,13 @@ export async function detectJsonMergePlan(payload) {
 /**
  * Scrollable conflict-review dialog, modeled on showChildSelector() in operations.js.
  * Resolves with the (mutated) plan, or null if the user cancels.
- * @param {MergePlan} plan
- * @returns {Promise<MergePlan | null>}
  */
-export function showJsonMergeReview(plan) {
+export function showJsonMergeReview(plan: MergePlan): Promise<MergePlan | null> {
   const groups = MERGE_STORE_ORDER
     .filter(store => plan.conflictsByStore[store]?.length)
-    .map(store => ({ store, conflicts: /** @type {MergeConflict[]} */ (plan.conflictsByStore[store]) }));
+    .map(store => ({ store, conflicts: plan.conflictsByStore[store] as MergeConflict[] }));
 
-  const totalNew = Object.values(plan.newCounts).reduce((a, b) => a + b, 0);
+  const totalNew = Object.values(plan.newCounts).reduce((a: number, b) => a + (b ?? 0), 0);
   const totalConflicts = groups.reduce((a, g) => a + g.conflicts.length, 0);
 
   return new Promise(resolve => {
@@ -203,52 +175,42 @@ export function showJsonMergeReview(plan) {
           <button class="btn btn-primary"  data-action="ok">Continue</button>
         </div>
       </div>`;
-    /** @type {HTMLElement} */ ($('app')).appendChild(backdrop);
+    ($('app') as HTMLElement).appendChild(backdrop);
 
-    /**
-     * @param {EntityType} store
-     * @param {number} index
-     * @returns {MergeConflict}
-     */
-    const getConflict = (store, index) => /** @type {MergeConflict[]} */ (plan.conflictsByStore[store])[index];
+    const getConflict = (store: EntityType, index: number): MergeConflict => (plan.conflictsByStore[store] as MergeConflict[])[index];
 
-    /**
-     * @param {EntityType} store
-     * @param {number} index
-     * @param {string | undefined} resolution
-     */
-    const setResolution = (store, index, resolution) => {
+    const setResolution = (store: EntityType, index: number, resolution: string | undefined) => {
       const conflict = getConflict(store, index);
-      conflict.resolution = /** @type {'keep' | 'overwrite' | 'new'} */ (resolution);
-      const row = /** @type {HTMLElement} */ (backdrop.querySelector(`.merge-review-row[data-store="${store}"][data-index="${index}"]`));
-      /** @type {HTMLInputElement} */ (row.querySelector(`input[value="${resolution}"]`)).checked = true;
-      /** @type {HTMLElement} */ (row.querySelector('.merge-review-rename')).style.display = resolution === 'new' ? '' : 'none';
+      conflict.resolution = resolution as 'keep' | 'overwrite' | 'new';
+      const row = backdrop.querySelector(`.merge-review-row[data-store="${store}"][data-index="${index}"]`) as HTMLElement;
+      (row.querySelector(`input[value="${resolution}"]`) as HTMLInputElement).checked = true;
+      (row.querySelector('.merge-review-rename') as HTMLElement).style.display = resolution === 'new' ? '' : 'none';
     };
 
     backdrop.querySelectorAll('input[type=radio]').forEach(input => {
       input.addEventListener('change', () => {
-        const row = /** @type {HTMLElement} */ (input.closest('.merge-review-row'));
-        setResolution(/** @type {EntityType} */ (row.dataset.store), Number(row.dataset.index), /** @type {HTMLInputElement} */ (input).value);
+        const row = input.closest('.merge-review-row') as HTMLElement;
+        setResolution(row.dataset.store as EntityType, Number(row.dataset.index), (input as HTMLInputElement).value);
       });
     });
     backdrop.querySelectorAll('.merge-review-rename').forEach(input => {
       input.addEventListener('input', () => {
-        const el = /** @type {HTMLInputElement} */ (input);
-        getConflict(/** @type {EntityType} */ (el.dataset.store), Number(el.dataset.index)).newName = el.value;
+        const el = input as HTMLInputElement;
+        getConflict(el.dataset.store as EntityType, Number(el.dataset.index)).newName = el.value;
       });
     });
     backdrop.querySelectorAll('[data-bulk]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const bulk = /** @type {HTMLElement} */ (btn).dataset.bulk;
+        const bulk = (btn as HTMLElement).dataset.bulk;
         for (const g of groups) {
           g.conflicts.forEach((_, i) => setResolution(g.store, i, bulk));
         }
       });
     });
 
-    const cleanup = () => /** @type {HTMLElement} */ ($('app')).removeChild(backdrop);
-    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=cancel]')).addEventListener('click', () => { cleanup(); resolve(null); });
-    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=ok]')).addEventListener('click', () => {
+    const cleanup = () => ($('app') as HTMLElement).removeChild(backdrop);
+    (backdrop.querySelector('[data-action=cancel]') as HTMLElement).addEventListener('click', () => { cleanup(); resolve(null); });
+    (backdrop.querySelector('[data-action=ok]') as HTMLElement).addEventListener('click', () => {
       for (const g of groups) {
         for (const c of g.conflicts) {
           if (c.resolution === 'new' && !c.newName?.trim()) {
@@ -277,21 +239,17 @@ export function showJsonMergeReview(plan) {
  * EntityRecord union would be actively wrong and require unsafe casts. The
  * recursive walk itself is done through `any`, relying on the runtime shape
  * checks below (Array.isArray, typeof, instanceof Blob) as the real safety net.
- * @template T
- * @param {T} value
- * @param {Record<string, Record<string, string>>} remapTables - storeName -> (oldId -> newId)
- * @returns {T}
+ * @param remapTables - storeName -> (oldId -> newId)
  */
-export function remapRefsDeep(value, remapTables) {
-  if (Array.isArray(value)) return /** @type {T} */ (value.map(v => remapRefsDeep(v, remapTables)));
+export function remapRefsDeep<T>(value: T, remapTables: Record<string, Record<string, string>>): T {
+  if (Array.isArray(value)) return value.map(v => remapRefsDeep(v, remapTables)) as T;
   if (value === null || typeof value !== 'object' || value instanceof Blob) return value;
 
-  const src = /** @type {Record<string, any>} */ (value);
-  /** @type {Record<string, any>} */
-  const out = {};
+  const src = value as Record<string, any>;
+  const out: Record<string, any> = {};
   for (const [key, val] of Object.entries(src)) {
     if (key === 'assignedToId') {
-      const refStore = /** @type {Record<string, string | null>} */ (ASSIGN_STORE_MAP)[src.assignedToType || ''] || null;
+      const refStore = (ASSIGN_STORE_MAP as Record<string, string | null>)[src.assignedToType || ''] || null;
       out[key] = (refStore && val && remapTables[refStore]?.[val]) || val;
       continue;
     }
@@ -302,14 +260,10 @@ export function remapRefsDeep(value, remapTables) {
       out[key] = remapRefsDeep(val, remapTables);
     }
   }
-  return /** @type {T} */ (out);
+  return out as T;
 }
 
-/**
- * @param {Record<string, any>} entity
- * @returns {Record<string, any>}
- */
-export function _stripSystemFields(entity) {
+export function _stripSystemFields(entity: Record<string, any>): Record<string, any> {
   const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = entity;
   return rest;
 }
@@ -318,10 +272,8 @@ export function _stripSystemFields(entity) {
  * Settings have no name/id concept to conflict on: add keys that don't exist locally
  * yet, leave existing keys untouched. checklistItems is the one list-shaped setting,
  * so its custom entries are appended (de-duped by label) instead of being skipped outright.
- * @param {MergePayload} payload
- * @returns {Promise<void>}
  */
-export async function _mergeSettings(payload) {
+export async function _mergeSettings(payload: MergePayload): Promise<void> {
   const importedSettings = Array.isArray(payload.data.settings) ? payload.data.settings : [];
   if (!importedSettings.length) return;
   const existingSettings = await getAll('settings');
@@ -330,8 +282,8 @@ export async function _mergeSettings(payload) {
   for (const item of importedSettings) {
     if (item.id === 'checklistItems') {
       const existingChecklist = existingSettings.find(s => s.id === 'checklistItems');
-      const existingLabels = new Set(/** @type {any[]} */ (existingChecklist?.value || []).map(c => c.label));
-      const newItems = /** @type {any[]} */ (item.value || [])
+      const existingLabels = new Set(((existingChecklist?.value || []) as any[]).map(c => c.label));
+      const newItems = ((item.value || []) as any[])
         .map(_deserializeEntityMedia)
         .filter(c => c.label && !existingLabels.has(c.label));
       if (newItems.length) {
@@ -343,51 +295,43 @@ export async function _mergeSettings(payload) {
   }
 }
 
-/**
- * @param {MergePayload} payload
- * @param {MergePlan} plan
- * @returns {Promise<void>}
- */
-export async function applyJsonMergePlan(payload, plan) {
-  /** @type {Record<string, Record<string, string>>} */
-  const remap = {};
+export async function applyJsonMergePlan(payload: MergePayload, plan: MergePlan): Promise<void> {
+  const remap: Record<string, Record<string, string>> = {};
   for (const store of MERGE_STORE_ORDER) remap[store] = {};
   const stats = { added: 0, kept: 0, overwritten: 0, renamed: 0 };
-  /** @type {string[]} */
-  const savedAssets = [];
+  const savedAssets: string[] = [];
 
   for (const store of MERGE_STORE_ORDER) {
     for (const entry of plan.allItems[store] || []) {
       const oldId = entry.importedItem.id;
 
       if (entry.status === 'same') {
-        if (oldId) remap[store][oldId] = /** @type {string} */ (entry.existing?.id);
+        if (oldId) remap[store][oldId] = entry.existing?.id as string;
         continue;
       }
 
       if (entry.status === 'new') {
         const deserialized = _deserializeEntityMedia(entry.importedItem);
         const saved = await upsert(store, remapRefsDeep(_stripSystemFields(deserialized), remap));
-        if (oldId) remap[store][oldId] = /** @type {string} */ (saved.id);
+        if (oldId) remap[store][oldId] = saved.id as string;
         stats.added++;
-        if (store === 'assets') savedAssets.push(/** @type {string} */ (saved.id));
+        if (store === 'assets') savedAssets.push(saved.id as string);
         continue;
       }
 
       // status === 'conflict'
-      const conflict = /** @type {MergeConflict} */ (entry.conflict);
+      const conflict = entry.conflict as MergeConflict;
       if (conflict.resolution === 'keep') {
-        if (oldId) remap[store][oldId] = /** @type {string} */ (entry.existing?.id);
+        if (oldId) remap[store][oldId] = entry.existing?.id as string;
         stats.kept++;
         continue;
       }
 
       const deserialized = _deserializeEntityMedia(entry.importedItem);
-      /** @type {Record<string, any>} */
-      let toSave;
+      let toSave: Record<string, any>;
       if (conflict.resolution === 'overwrite') {
         // Full replace using imported data, but keep the existing record's identity.
-        const existing = /** @type {DbRecord} */ (entry.existing);
+        const existing = entry.existing as DbRecord;
         toSave = { ...deserialized, id: existing.id, createdAt: existing.createdAt };
         stats.overwritten++;
       } else {
@@ -396,8 +340,8 @@ export async function applyJsonMergePlan(payload, plan) {
         stats.renamed++;
       }
       const saved = await upsert(store, remapRefsDeep(toSave, remap));
-      if (oldId) remap[store][oldId] = /** @type {string} */ (saved.id);
-      if (store === 'assets') savedAssets.push(/** @type {string} */ (saved.id));
+      if (oldId) remap[store][oldId] = saved.id as string;
+      if (store === 'assets') savedAssets.push(saved.id as string);
     }
   }
 
@@ -415,8 +359,7 @@ export async function applyJsonMergePlan(payload, plan) {
   await refreshAll();
   renderPage();
 
-  /** @type {string[]} */
-  const parts = [];
+  const parts: string[] = [];
   if (stats.added)       parts.push(`${stats.added} added`);
   if (stats.overwritten) parts.push(`${stats.overwritten} overwritten`);
   if (stats.renamed)     parts.push(`${stats.renamed} imported as new`);
@@ -428,14 +371,13 @@ export async function applyJsonMergePlan(payload, plan) {
    ORCHESTRATOR
    ============================================================ */
 
-/** @param {MergePayload} payload */
-export async function mergeJsonImport(payload) {
+export async function mergeJsonImport(payload: MergePayload): Promise<void> {
   try {
     const plan = await detectJsonMergePlan(payload);
     const hasConflicts = Object.keys(plan.conflictsByStore).length > 0;
 
     if (!hasConflicts) {
-      const totalNew = Object.values(plan.newCounts).reduce((a, b) => a + b, 0);
+      const totalNew = Object.values(plan.newCounts).reduce((a: number, b) => a + (b ?? 0), 0);
       if (!totalNew) {
         showToast('Nothing new to import — data already matches', 'success');
         return;
