@@ -1,4 +1,5 @@
-// @ts-check
+import type { DbRecord } from './db.js';
+import type { EntityType } from './entity-config.js';
 
 import { getAll, getById, setSetting, upsert } from './db.js';
 import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
@@ -6,8 +7,6 @@ import { confirm, refreshAll, showToast } from './state.js';
 import { renumberSlots } from './utils.js';
 import { renderPage } from './app.js';
 import { REF_FIELD_MAP, prettifyKey } from './export.js';
-/** @import { DbRecord } from './db.js' */
-/** @import { EntityType } from './entity-config.js' */
 // XLSX Import Module for Blueprint App
 // Merges data from an exported Excel file back into the database.
 // Records not present in the file are left untouched (merge, not replace).
@@ -16,14 +15,11 @@ import { REF_FIELD_MAP, prettifyKey } from './export.js';
 //               getFieldLabel, findFieldDef), db.js, app.js (el, confirm,
 //               refreshAll, renderPage, showToast, ASSIGN_STORE_MAP)
 
-/**
- * @typedef {Record<EntityType, Map<string, string>>} NameToIdMaps
- * @typedef {Record<EntityType, Set<string>>} IdExistsSets
- * @typedef {{ updated: number, added: number, errors: number }} ImportStats
- */
+export type NameToIdMaps = Record<EntityType, Map<string, string>>;
+export type IdExistsSets = Record<EntityType, Set<string>>;
+export type ImportStats = { updated: number, added: number, errors: number };
 
-/** @type {Set<string>} */
-export const KNOWN_SHEET_NAMES = new Set([
+export const KNOWN_SHEET_NAMES: Set<string> = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
   'PLC', 'PLC Slots', 'HMI', 'HMI Network Ports',
@@ -36,11 +32,7 @@ export const KNOWN_SHEET_NAMES = new Set([
 // 1. Load current data and build nameToId resolution maps (area/panel/network names → ids).
 // 2. Merge sheets in dependency order: areas → panels → networks → assets → sub-data.
 //    Records are matched by name; missing records are created, existing ones are updated.
-/**
- * @param {File} file
- * @returns {Promise<void>}
- */
-export async function processXlsxImport(file) {
+export async function processXlsxImport(file: File): Promise<void> {
   try {
     if (typeof XLSX === 'undefined') {
       throw new Error('XLSX library is not loaded');
@@ -49,7 +41,7 @@ export async function processXlsxImport(file) {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
 
-    if (!wb.SheetNames.some((/** @type {string} */ n) => KNOWN_SHEET_NAMES.has(n))) {
+    if (!wb.SheetNames.some((n: string) => KNOWN_SHEET_NAMES.has(n))) {
       showToast('Invalid file: no recognisable Blueprint sheets found', 'error');
       return;
     }
@@ -67,8 +59,7 @@ export async function processXlsxImport(file) {
       getAll('safety'), getAll('networks'), getAll('assets'),
     ]);
 
-    /** @type {NameToIdMaps} */
-    const nameToId = {
+    const nameToId: NameToIdMaps = {
       areas:    buildNameMap(areas),
       panels:   buildNameMap(panels),
       power:    buildNameMap(power),
@@ -76,18 +67,16 @@ export async function processXlsxImport(file) {
       networks: buildNameMap(networks),
       assets:   buildNameMap(assets),
     };
-    /** @type {IdExistsSets} */
-    const idExists = {
-      areas:    /** @type {Set<string>} */ (new Set(areas.map(a => a.id))),
-      panels:   /** @type {Set<string>} */ (new Set(panels.map(p => p.id))),
-      power:    /** @type {Set<string>} */ (new Set(power.map(p => p.id))),
-      safety:   /** @type {Set<string>} */ (new Set(safety.map(s => s.id))),
-      networks: /** @type {Set<string>} */ (new Set(networks.map(n => n.id))),
-      assets:   /** @type {Set<string>} */ (new Set(assets.map(a => a.id))),
+    const idExists: IdExistsSets = {
+      areas:    new Set(areas.map(a => a.id)) as Set<string>,
+      panels:   new Set(panels.map(p => p.id)) as Set<string>,
+      power:    new Set(power.map(p => p.id)) as Set<string>,
+      safety:   new Set(safety.map(s => s.id)) as Set<string>,
+      networks: new Set(networks.map(n => n.id)) as Set<string>,
+      assets:   new Set(assets.map(a => a.id)) as Set<string>,
     };
 
-    /** @type {ImportStats} */
-    const stats = { updated: 0, added: 0, errors: 0 };
+    const stats: ImportStats = { updated: 0, added: 0, errors: 0 };
 
     await importEntitySheets(wb, nameToId, idExists, stats);
     await importAssetSheets(wb, nameToId, idExists, stats);
@@ -111,8 +100,7 @@ export async function processXlsxImport(file) {
 // Entity sheet import (Areas, Panels, Power, Safety, Networks)
 // ---------------------------------------------------------------------------
 
-/** @type {{ sheetName: string, store: EntityType }[]} */
-export const ENTITY_SHEET_DEFS = [
+export const ENTITY_SHEET_DEFS: { sheetName: string, store: EntityType }[] = [
   { sheetName: 'Areas',    store: 'areas' },
   { sheetName: 'Panels',   store: 'panels' },
   { sheetName: 'Power',    store: 'power' },
@@ -120,14 +108,7 @@ export const ENTITY_SHEET_DEFS = [
   { sheetName: 'Networks', store: 'networks' },
 ];
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @param {ImportStats} stats
- * @returns {Promise<void>}
- */
-export async function importEntitySheets(wb, nameToId, idExists, stats) {
+export async function importEntitySheets(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets, stats: ImportStats): Promise<void> {
   for (const { sheetName, store } of ENTITY_SHEET_DEFS) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
@@ -150,7 +131,7 @@ export async function importEntitySheets(wb, nameToId, idExists, stats) {
     // Refresh maps so downstream sheets can resolve refs added in this pass
     const refreshed = await getAll(store);
     nameToId[store] = buildNameMap(refreshed);
-    idExists[store] = /** @type {Set<string>} */ (new Set(refreshed.map(i => i.id)));
+    idExists[store] = new Set(refreshed.map(i => i.id)) as Set<string>;
   }
 }
 
@@ -158,22 +139,14 @@ export async function importEntitySheets(wb, nameToId, idExists, stats) {
 // Asset class sheet import (one sheet per asset class)
 // ---------------------------------------------------------------------------
 
-/** @type {{ sheetName: string, assetClass: string }[]} */
-export const ASSET_CLASS_SHEET_DEFS = [
+export const ASSET_CLASS_SHEET_DEFS: { sheetName: string, assetClass: string }[] = [
   { sheetName: 'Network Switch', assetClass: 'Network Switch' },
   { sheetName: 'PLC',            assetClass: 'PLC' },
   { sheetName: 'HMI',            assetClass: 'HMI' },
   { sheetName: 'Field Device', assetClass: 'Field Device' },
 ];
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @param {ImportStats} stats
- * @returns {Promise<void>}
- */
-export async function importAssetSheets(wb, nameToId, idExists, stats) {
+export async function importAssetSheets(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets, stats: ImportStats): Promise<void> {
   for (const { sheetName, assetClass } of ASSET_CLASS_SHEET_DEFS) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
@@ -212,42 +185,32 @@ export async function importAssetSheets(wb, nameToId, idExists, stats) {
   // Refresh asset maps so sub-data sheets can resolve newly-added asset names/IDs
   const refreshed = await getAll('assets');
   nameToId.assets = buildNameMap(refreshed);
-  idExists.assets = /** @type {Set<string>} */ (new Set(refreshed.map(i => i.id)));
+  idExists.assets = new Set(refreshed.map(i => i.id)) as Set<string>;
 }
 
 // ---------------------------------------------------------------------------
 // Sub-data sheet import (Switch Networks, Switch Ports, PLC Slots, Field Device Parameters)
 // ---------------------------------------------------------------------------
 
-/**
- * @param {any} wb
- * @returns {Promise<void>}
- */
-export async function importChecklistSheet(wb) {
+export async function importChecklistSheet(wb: any): Promise<void> {
   const ws = wb.Sheets['Checklist'];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
   const customItems = rows
-    .filter((/** @type {any} */ r) => r[1] === 'Custom')
-    .map((/** @type {any} */ r) => {
-      /** @type {{ id: string, label: string, completed: boolean, notes?: string }} */
-      const item = { id: crypto.randomUUID(), label: String(r[0] ?? '').trim(), completed: r[2] === 'Complete' };
+    .filter((r: any) => r[1] === 'Custom')
+    .map((r: any) => {
+      const item: { id: string, label: string, completed: boolean, notes?: string } =
+        { id: crypto.randomUUID(), label: String(r[0] ?? '').trim(), completed: r[2] === 'Complete' };
       // Column 6 (index 6) is Notes — absent in older exports, so guard with nullish coalesce
       const notes = String(r[6] ?? '').trim();
       if (notes) item.notes = notes;
       return item;
     })
-    .filter((/** @type {any} */ i) => i.label);
+    .filter((i: any) => i.label);
   if (customItems.length) await setSetting('checklistItems', customItems);
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importSubdataSheets(wb, nameToId, idExists) {
+export async function importSubdataSheets(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   await importSwitchNetworksSheet(wb, nameToId, idExists);
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
@@ -258,13 +221,7 @@ export async function importSubdataSheets(wb, nameToId, idExists) {
   await importAssetWiringSheet(wb, 'Field Device Wiring',  'fieldDeviceWiring', nameToId, idExists);
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importSwitchNetworksSheet(wb, nameToId, idExists) {
+export async function importSwitchNetworksSheet(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets['Switch Networks'];
   if (!ws) return;
 
@@ -283,13 +240,7 @@ export async function importSwitchNetworksSheet(wb, nameToId, idExists) {
   }
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importSwitchPortsSheet(wb, nameToId, idExists) {
+export async function importSwitchPortsSheet(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets['Switch Ports'];
   if (!ws) return;
 
@@ -313,14 +264,7 @@ export async function importSwitchPortsSheet(wb, nameToId, idExists) {
 // slot-nested networkPorts (deserialized from a JSON blob column since slots are
 // nested inside the PLC asset), these ports live directly on the asset, like
 // switchPorts, so a flat sheet is this data's actual round-trip source of truth.
-/**
- * @param {any} wb
- * @param {string} sheetName
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idExists) {
+export async function importAssetNetworkPortsSheet(wb: any, sheetName: string, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets[sheetName];
   if (!ws) return;
 
@@ -331,8 +275,7 @@ export async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idEx
     const asset = await getById('assets', assetId);
     if (!asset) continue;
     asset.networkPorts = assetRows.map(row => {
-      /** @type {{ portNumber?: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string }} */
-      const port = {
+      const port: { portNumber?: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string } = {
         portNumber: row['Port #'] !== '' ? Number(row['Port #']) : undefined,
         networkId:  resolveRefId(str(row['Network ID']), str(row['Network Name']), 'networks', nameToId, idExists) || '',
       };
@@ -346,13 +289,7 @@ export async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idEx
   }
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importPlcSlotsSheet(wb, nameToId, idExists) {
+export async function importPlcSlotsSheet(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets['PLC Slots'];
   if (!ws) return;
 
@@ -365,14 +302,10 @@ export async function importPlcSlotsSheet(wb, nameToId, idExists) {
     // Rows are read in sheet order (= original slot order). Renumber after mapping
     // so slotNumber always equals array index, filling any gaps from pre-change exports.
     asset.slots = renumberSlots(assetRows.map(row => {
-      /** @type {any[]} */
-      let ioPoints       = [];
-      /** @type {any[]} */
-      let powerBus       = [];
-      /** @type {any[]} */
-      let terminalWiring = [];
-      /** @type {any[]} */
-      let networkPorts   = [];
+      let ioPoints: any[]       = [];
+      let powerBus: any[]       = [];
+      let terminalWiring: any[] = [];
+      let networkPorts: any[]   = [];
       try { ioPoints       = row['IO Points']            ? JSON.parse(row['IO Points'])            : []; } catch {}
       try { powerBus       = row['Power Bus']            ? JSON.parse(row['Power Bus'])            : []; } catch {}
       try { terminalWiring = row['Terminal Block Wiring'] ? JSON.parse(row['Terminal Block Wiring']) : []; } catch {}
@@ -397,13 +330,7 @@ export async function importPlcSlotsSheet(wb, nameToId, idExists) {
   }
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
+export async function importFieldDeviceParametersSheet(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets['Field Device Parameters'];
   if (!ws) return;
 
@@ -420,13 +347,7 @@ export async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
   }
 }
 
-/**
- * @param {any} wb
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importPowerWiringSheet(wb, nameToId, idExists) {
+export async function importPowerWiringSheet(wb: any, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets['Power Wiring'];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -446,15 +367,7 @@ export async function importPowerWiringSheet(wb, nameToId, idExists) {
   }
 }
 
-/**
- * @param {any} wb
- * @param {string} sheetName
- * @param {string} wiringKey
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Promise<void>}
- */
-export async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId, idExists) {
+export async function importAssetWiringSheet(wb: any, sheetName: string, wiringKey: string, nameToId: NameToIdMaps, idExists: IdExistsSets): Promise<void> {
   const ws = wb.Sheets[sheetName];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -473,27 +386,15 @@ export async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId,
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * @param {DbRecord[]} items
- * @returns {Map<string, string>}
- */
-export function buildNameMap(items) {
+export function buildNameMap(items: DbRecord[]): Map<string, string> {
   const map = new Map();
   for (const item of items) {
-    if (item.name) map.set(item.name.trim().toLowerCase(), /** @type {string} */ (item.id));
+    if (item.name) map.set(item.name.trim().toLowerCase(), item.id as string);
   }
   return map;
 }
 
-/**
- * @param {string} rawId
- * @param {string} name
- * @param {EntityType} store
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {string | null}
- */
-export function resolveRefId(rawId, name, store, nameToId, idExists) {
+export function resolveRefId(rawId: string, name: string, store: EntityType, nameToId: NameToIdMaps, idExists: IdExistsSets): string | null {
   if (rawId && idExists[store]?.has(rawId)) return rawId;
   if (name) {
     const found = nameToId[store]?.get(name.trim().toLowerCase());
@@ -502,33 +403,19 @@ export function resolveRefId(rawId, name, store, nameToId, idExists) {
   return null;
 }
 
-/**
- * @param {any[]} rows
- * @param {string} idCol
- * @param {string} nameCol
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @param {EntityType} [store]
- * @returns {Map<string, any[]>}
- */
-export function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists, store = 'assets') {
-  /** @type {Map<string, any[]>} */
-  const grouped = new Map();
+export function groupByParentAsset(rows: any[], idCol: string, nameCol: string, nameToId: NameToIdMaps, idExists: IdExistsSets, store: EntityType = 'assets'): Map<string, any[]> {
+  const grouped = new Map<string, any[]>();
   for (const row of rows) {
     if (isPlaceholderRow(row)) continue;
     const id = resolveRefId(str(row[idCol]), str(row[nameCol]), store, nameToId, idExists);
     if (!id) continue;
     if (!grouped.has(id)) grouped.set(id, []);
-    /** @type {any[]} */ (grouped.get(id)).push(row);
+    (grouped.get(id) as any[]).push(row);
   }
   return grouped;
 }
 
-/**
- * @param {Record<string, any>} row
- * @returns {boolean}
- */
-export function isPlaceholderRow(row) {
+export function isPlaceholderRow(row: Record<string, any>): boolean {
   const vals = Object.values(row);
   if (!vals.length) return true;
   if (vals.every(v => v === '' || v == null)) return true;
@@ -540,19 +427,12 @@ export function isPlaceholderRow(row) {
 // Build a header-label → { key, isRawId } map for a given store/class.
 // Uses the same ENTITY field definitions and prettifyKey as the exporter so
 // the mapping stays in sync automatically.
-/**
- * @param {EntityType} store
- * @param {string | null} [assetClass]
- * @param {string[]} [excludeKeys]
- * @returns {Record<string, { key: string, isRawId?: boolean }>}
- */
-export function buildImportHeaderMap(store, assetClass = null, excludeKeys = []) {
+export function buildImportHeaderMap(store: EntityType, assetClass: string | null = null, excludeKeys: string[] = []): Record<string, { key: string, isRawId?: boolean }> {
   const excludeSet = new Set(excludeKeys);
   const entity = ENTITY[store];
   if (!entity) return {};
 
-  /** @type {Record<string, { key: string, isRawId?: boolean }>} */
-  const map = {};
+  const map: Record<string, { key: string, isRawId?: boolean }> = {};
 
   // Common auto-fields not in ENTITY.fields
   for (const key of ['id', 'createdAt', 'updatedAt']) {
@@ -602,18 +482,9 @@ export function buildImportHeaderMap(store, assetClass = null, excludeKeys = [])
 
 // Convert a sheet row (keys = column headers) into a plain field-key object.
 // Ref fields are resolved via resolveRefId using the dual name+rawId columns.
-/**
- * @param {Record<string, any>} row
- * @param {Record<string, { key: string, isRawId?: boolean }>} headerMap
- * @param {NameToIdMaps} nameToId
- * @param {IdExistsSets} idExists
- * @returns {Record<string, any>}
- */
-export function mapRowToItem(row, headerMap, nameToId, idExists) {
-  /** @type {Record<string, { name?: string, rawId?: string }>} */
-  const refAccum = {}; // key → { name, rawId }
-  /** @type {Record<string, any>} */
-  const item = {};
+export function mapRowToItem(row: Record<string, any>, headerMap: Record<string, { key: string, isRawId?: boolean }>, nameToId: NameToIdMaps, idExists: IdExistsSets): Record<string, any> {
+  const refAccum: Record<string, { name?: string, rawId?: string }> = {}; // key → { name, rawId }
+  const item: Record<string, any> = {};
 
   for (const [colHeader, value] of Object.entries(row)) {
     const spec = headerMap[colHeader];
@@ -644,10 +515,9 @@ export function mapRowToItem(row, headerMap, nameToId, idExists) {
 
   // Resolve ref fields
   for (const [key, { name = '', rawId = '' }] of Object.entries(refAccum)) {
-    /** @type {EntityType | null | undefined} */
-    let refStore = REF_FIELD_MAP[key];
+    let refStore: EntityType | null | undefined = REF_FIELD_MAP[key];
     if (key === 'assignedToId') {
-      refStore = /** @type {Record<string, EntityType | null>} */ (ASSIGN_STORE_MAP)[item.assignedToType || ''] || null;
+      refStore = (ASSIGN_STORE_MAP as Record<string, EntityType | null>)[item.assignedToType || ''] || null;
     }
     if (refStore) {
       item[key] = resolveRefId(rawId, name, refStore, nameToId, idExists) || '';
@@ -662,19 +532,12 @@ export function mapRowToItem(row, headerMap, nameToId, idExists) {
 // Upsert with merge semantics:
 //   known id  → load existing record, overwrite only fields present in item
 //   unknown id → insert as new (drop unrecognised id so db.js generates one)
-/**
- * @param {EntityType} store
- * @param {Record<string, any>} item
- * @param {Set<string>} idSet
- * @param {ImportStats} stats
- * @returns {Promise<void>}
- */
-export async function mergeUpsert(store, item, idSet, stats) {
+export async function mergeUpsert(store: EntityType, item: Record<string, any>, idSet: Set<string>, stats: ImportStats): Promise<void> {
   const itemId = str(item.id);
 
   if (itemId && idSet.has(itemId)) {
     const existing = await getById(store, itemId) || {};
-    const merged = /** @type {Record<string, any>} */ ({ ...existing });
+    const merged: Record<string, any> = { ...existing };
     for (const [k, v] of Object.entries(item)) {
       if (k === 'id' || k === 'createdAt') continue;
       if (v !== undefined) merged[k] = v;
@@ -690,12 +553,8 @@ export async function mergeUpsert(store, item, idSet, stats) {
   }
 }
 
-/**
- * @param {any} value
- * @returns {string}
- */
-export function str(value) {
+export function str(value: any): string {
   return String(value ?? '').trim();
 }
 
-/** @type {any} */ (window).processXlsxImport = processXlsxImport;
+(window as any).processXlsxImport = processXlsxImport;
