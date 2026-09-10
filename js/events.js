@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    EVENT WIRING
    Depends on: state.js, app.js (navigate, openSheet, closeDetail,
@@ -7,8 +8,8 @@
 function wireEvents() {
   // Bottom nav — navigate is async; fire-and-forget is intentional here
   el.nav.addEventListener('click', e => {
-    const btn = e.target.closest('.nav-btn');
-    if (btn) navigate(btn.dataset.page);
+    const btn = /** @type {Element | null} */ (e.target)?.closest('.nav-btn');
+    if (btn) navigate(/** @type {HTMLElement} */ (btn).dataset.page);
   });
 
   // Back button — closeDetail is async; must await so the confirm dialog
@@ -36,17 +37,17 @@ function wireEvents() {
   // Hash change
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '') || 'home';
-    if (ENTITY[hash] || hash === 'home' || hash === 'checklist') {
+    if (/** @type {Record<string, EntityConfig>} */ (ENTITY)[hash] || hash === 'home' || hash === 'checklist') {
       if (hash !== state.page) navigate(hash);
     }
   });
 
   // Import file input
-  $('import-file-input').addEventListener('change', async e => {
-    const file = e.target.files[0];
+  /** @type {HTMLElement} */ ($('import-file-input')).addEventListener('change', async e => {
+    const file = /** @type {HTMLInputElement} */ (e.target).files?.[0];
     if (file) {
       await processImportFile(file);
-      e.target.value = '';
+      /** @type {HTMLInputElement} */ (e.target).value = '';
     }
   });
 

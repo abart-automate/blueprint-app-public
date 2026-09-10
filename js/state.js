@@ -63,7 +63,10 @@
  * @property {NetworkPortRow[]} formSlotNetworkPorts - In-edit Controller/Communication slot form.
  * @property {NetworkPortRow[]} formAssetNetworkPorts - In-edit HMI/Field Device asset form.
  *
- * @property {Partial<Record<StoreName, DbRecord[]>>} cache - Populated by refreshAll/loadCache.
+ * @property {Partial<Record<StoreName, DbRecord[]>> & { partsLibrary: DbRecord[] }} cache - Populated by
+ *   refreshAll/loadCache. partsLibrary is the one key initialised eagerly (see the initial `state`
+ *   value below) and kept current by getPartsLibraryCache(), so unlike the other stores it's never
+ *   actually undefined — typed non-optional so parts-library.js doesn't need a null guard on every access.
  * @property {Partial<Record<StoreName, Record<string, DbRecord>>>} refs
  *
  * @property {any} pickerMeta
@@ -131,7 +134,7 @@ const $ = id => document.getElementById(id);
  *   header: HTMLElement, main: HTMLElement, backBtn: HTMLElement, addBtn: HTMLElement,
  *   pageTitle: HTMLElement, detail: HTMLElement, resizeHandle: HTMLElement,
  *   backdrop: HTMLElement, sheet: HTMLElement, formTitle: HTMLElement, formBody: HTMLElement,
- *   formSave: HTMLElement, formCancel: HTMLElement, confirmBD: HTMLElement, confirmT: HTMLElement,
+ *   formSave: HTMLButtonElement, formCancel: HTMLElement, confirmBD: HTMLElement, confirmT: HTMLElement,
  *   confirmM: HTMLElement, confirmNo: HTMLElement, confirmSave: HTMLElement, confirmYes: HTMLElement,
  *   promptBD: HTMLElement, promptT: HTMLElement, promptM: HTMLElement,
  *   promptField: HTMLInputElement, promptCancel: HTMLElement, promptOk: HTMLElement,
@@ -172,7 +175,7 @@ function initEl() {
     sheet:        $('form-sheet'),
     formTitle:    $('form-title'),
     formBody:     $('form-body'),
-    formSave:     $('form-save'),
+    formSave:     /** @type {HTMLButtonElement | null} */ ($('form-save')),
     formCancel:   $('form-cancel'),
     confirmBD:    $('confirm-backdrop'),
     confirmT:     $('confirm-title'),

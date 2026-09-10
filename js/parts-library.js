@@ -1,11 +1,54 @@
+// @ts-check
 /* ============================================================
    PARTS LIBRARY
    Seed data, CRUD, page rendering, import/export.
    Depends on: db.js, entity-config.js, state.js, app.js (closeSheet, showToast, confirm, esc)
    ============================================================ */
 
+/**
+ * @typedef {Object} PartsLibraryItem
+ * @property {string} [id]
+ * @property {string} catalogNumber
+ * @property {string} manufacturer
+ * @property {string} platform
+ * @property {string} description
+ * @property {string} cardType
+ * @property {string} ioType
+ * @property {number} ioPointCount
+ * @property {string} voltageLevel
+ * @property {string} signalRange
+ * @property {string} isolationType
+ * @property {number} terminalCount
+ * @property {any[]} terminalDefinitions
+ * @property {string} rtbType
+ * @property {boolean} slotInstalled
+ * @property {number} slotWidth
+ * @property {number} backplaneCurrent5V
+ * @property {number} backplaneCurrent24V
+ * @property {string} firmwareRevision
+ * @property {string} userManualUrl
+ * @property {string} installGuideUrl
+ * @property {string} notes
+ */
+
 /* ---- SEED HELPER ---- */
 // _s(cat, desc, platform, cardType, ioType, ioPts, voltage, sigRange, isolation, termCnt, rtb, slotInstalled, notes)
+/**
+ * @param {string} c
+ * @param {string} d
+ * @param {string} p
+ * @param {string} ct
+ * @param {string} iot
+ * @param {number} n
+ * @param {string} v
+ * @param {string} sr
+ * @param {string} iso
+ * @param {number} tc
+ * @param {string} rtb
+ * @param {boolean} [si]
+ * @param {string} [notes]
+ * @returns {PartsLibraryItem}
+ */
 function _s(c,d,p,ct,iot,n,v,sr,iso,tc,rtb,si,notes) {
   return {
     catalogNumber:c, manufacturer:'Rockwell Automation', platform:p, description:d,
@@ -433,6 +476,7 @@ const PARTS_LIB_SEED = [
 
 /* ---- CACHE ---- */
 
+/** @returns {Promise<DbRecord[]>} */
 async function getPartsLibraryCache() {
   state.cache.partsLibrary = await getAll('partsLibrary');
   return state.cache.partsLibrary;
@@ -440,6 +484,7 @@ async function getPartsLibraryCache() {
 
 /* ---- SEED ---- */
 
+/** @returns {Promise<void>} */
 async function _forceSeedPartsLibrary() {
   const existing = await getAll('partsLibrary');
   const byCat = Object.fromEntries(existing.map(p => [p.catalogNumber?.toLowerCase(), p]));
@@ -452,6 +497,7 @@ async function _forceSeedPartsLibrary() {
 
 /* ---- PAGE RENDERING ---- */
 
+/** @returns {Promise<void>} */
 async function renderPartsLibraryPage() {
   await getPartsLibraryCache();
   const parts = state.cache.partsLibrary;
@@ -495,10 +541,10 @@ async function renderPartsLibraryPage() {
     </div>
   `;
 
-  const listEl = el.main.querySelector('#pl-list');
+  const listEl = /** @type {HTMLElement} */ (el.main.querySelector('#pl-list'));
 
   const render = () => {
-    const q = el.main.querySelector('#pl-search')?.value?.toLowerCase() || '';
+    const q = /** @type {HTMLInputElement | null} */ (el.main.querySelector('#pl-search'))?.value?.toLowerCase() || '';
     const shown = parts.filter(p => {
       const matchQ = !q
         || p.catalogNumber?.toLowerCase().includes(q)
@@ -517,49 +563,54 @@ async function renderPartsLibraryPage() {
     }
 
     listEl.innerHTML = shown.map(p => _partCardHtml(p)).join('');
-    listEl.querySelectorAll('.pl-edit-btn').forEach(btn => {
+    listEl.querySelectorAll('.pl-edit-btn').forEach(btn0 => {
+      const btn = /** @type {HTMLElement} */ (btn0);
       btn.addEventListener('click', e => { e.stopPropagation(); openPartForm(btn.dataset.id); });
     });
-    listEl.querySelectorAll('.pl-delete-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); deletePartLibEntry(btn.dataset.id, btn.dataset.cat); });
+    listEl.querySelectorAll('.pl-delete-btn').forEach(btn0 => {
+      const btn = /** @type {HTMLElement} */ (btn0);
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        deletePartLibEntry(/** @type {string} */ (btn.dataset.id), /** @type {string} */ (btn.dataset.cat));
+      });
     });
   };
 
-  el.main.querySelector('#pl-search').addEventListener('input', render);
+  /** @type {HTMLElement} */ (el.main.querySelector('#pl-search')).addEventListener('input', render);
 
-  el.main.querySelector('#pl-platform-chips').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
+  /** @type {HTMLElement} */ (el.main.querySelector('#pl-platform-chips')).addEventListener('click', e => {
+    const chip = /** @type {HTMLElement | null} */ (/** @type {Element | null} */ (e.target)?.closest('.chip'));
     if (!chip) return;
     el.main.querySelectorAll('#pl-platform-chips .chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
-    activePlatform = chip.dataset.val;
+    activePlatform = /** @type {string} */ (chip.dataset.val);
     render();
   });
 
-  el.main.querySelector('#pl-cardtype-chips').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
+  /** @type {HTMLElement} */ (el.main.querySelector('#pl-cardtype-chips')).addEventListener('click', e => {
+    const chip = /** @type {HTMLElement | null} */ (/** @type {Element | null} */ (e.target)?.closest('.chip'));
     if (!chip) return;
     el.main.querySelectorAll('#pl-cardtype-chips .chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
-    activeCardType = chip.dataset.val;
+    activeCardType = /** @type {string} */ (chip.dataset.val);
     render();
   });
 
-  el.main.querySelector('#pl-add-btn').addEventListener('click', () => openPartForm());
-  el.main.querySelector('#pl-export-btn').addEventListener('click', exportPartsLibraryXlsx);
+  el.main.querySelector('#pl-add-btn')?.addEventListener('click', () => openPartForm());
+  el.main.querySelector('#pl-export-btn')?.addEventListener('click', exportPartsLibraryXlsx);
 
-  el.main.querySelector('#pl-import-btn').addEventListener('click', () => {
+  el.main.querySelector('#pl-import-btn')?.addEventListener('click', () => {
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.accept = '.xlsx';
     inp.addEventListener('change', e => {
-      const file = e.target.files[0];
+      const file = /** @type {HTMLInputElement} */ (e.target).files?.[0];
       if (file) importPartsLibraryXlsx(file);
     });
     inp.click();
   });
 
-  el.main.querySelector('#pl-seed-btn').addEventListener('click', async () => {
+  el.main.querySelector('#pl-seed-btn')?.addEventListener('click', async () => {
     const ok = await confirm('Load Default Parts', 'Add all built-in Rockwell modules to the library? Existing entries will not be overwritten.', { yesLabel: 'Load', yesClass: 'btn-primary' });
     if (!ok) return;
     await _forceSeedPartsLibrary();
@@ -571,6 +622,10 @@ async function renderPartsLibraryPage() {
   render();
 }
 
+/**
+ * @param {DbRecord} p
+ * @returns {string}
+ */
 function _partCardHtml(p) {
   const metaParts = [p.platform, p.cardType];
   if (p.ioType && p.ioType !== 'N/A') metaParts.push(p.ioType);
@@ -599,18 +654,29 @@ function _partCardHtml(p) {
 
 /* ---- PART FORM ---- */
 
+/** @param {string | null} [id] */
 function openPartForm(id = null) {
   const existing = id ? state.cache.partsLibrary.find(p => p.id === id) : null;
   state.formType = FORM_TYPE.PARTS_LIB;
   state.formId   = id || null;
   el.formTitle.textContent = id ? 'Edit Part' : 'Add Part';
-  el.formBody.innerHTML = _buildPartFormHtml(existing);
+  el.formBody.innerHTML = _buildPartFormHtml(existing ?? null);
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';
   requestAnimationFrame(() => requestAnimationFrame(() => el.sheet.classList.add('open')));
 }
 
+/**
+ * @param {DbRecord | null} ex
+ * @returns {string}
+ */
 function _buildPartFormHtml(ex) {
+  /**
+   * @param {string} id
+   * @param {readonly string[]} opts
+   * @param {string} val
+   * @returns {string}
+   */
   const sel = (id, opts, val) => opts.map(o =>
     `<option value="${esc(o)}"${val===o?' selected':''}>${esc(o)}</option>`
   ).join('');
@@ -721,10 +787,11 @@ function _buildPartFormHtml(ex) {
   `;
 }
 
+/** @returns {Promise<void>} */
 async function savePartsLibForm() {
-  const cat  = $('pl-catalogNumber')?.value?.trim();
-  const mfr  = $('pl-manufacturer')?.value?.trim();
-  const cType = $('pl-cardType')?.value;
+  const cat  = _field('pl-catalogNumber')?.value?.trim();
+  const mfr  = _field('pl-manufacturer')?.value?.trim();
+  const cType = _field('pl-cardType')?.value;
 
   if (!cat || !mfr || !cType) {
     showToast('Catalog number, manufacturer, and card type are required', 'error');
@@ -739,25 +806,25 @@ async function savePartsLibForm() {
     id: id || undefined,
     catalogNumber:       cat,
     manufacturer:        mfr,
-    platform:            $('pl-platform')?.value          || '',
-    description:         $('pl-description')?.value?.trim() || '',
+    platform:            _field('pl-platform')?.value          || '',
+    description:         _field('pl-description')?.value?.trim() || '',
     cardType:            cType,
-    ioType:              $('pl-ioType')?.value             || 'N/A',
-    ioPointCount:        parseInt($('pl-ioPointCount')?.value)      || 0,
-    voltageLevel:        $('pl-voltageLevel')?.value?.trim()  || '',
-    signalRange:         $('pl-signalRange')?.value        || '',
-    isolationType:       $('pl-isolationType')?.value      || 'N/A',
-    terminalCount:       parseInt($('pl-terminalCount')?.value)     || 0,
+    ioType:              _field('pl-ioType')?.value             || 'N/A',
+    ioPointCount:        parseInt(_field('pl-ioPointCount')?.value ?? '')      || 0,
+    voltageLevel:        _field('pl-voltageLevel')?.value?.trim()  || '',
+    signalRange:         _field('pl-signalRange')?.value        || '',
+    isolationType:       _field('pl-isolationType')?.value      || 'N/A',
+    terminalCount:       parseInt(_field('pl-terminalCount')?.value ?? '')     || 0,
     terminalDefinitions: existing?.terminalDefinitions     || [],
-    rtbType:             $('pl-rtbType')?.value?.trim()    || '',
-    slotInstalled:       !!$('pl-slotInstalled')?.checked,
-    slotWidth:           parseInt($('pl-slotWidth')?.value)         || 1,
-    backplaneCurrent5V:  parseFloat($('pl-backplaneCurrent5V')?.value) || 0,
-    backplaneCurrent24V: parseFloat($('pl-backplaneCurrent24V')?.value) || 0,
-    firmwareRevision:    $('pl-firmwareRevision')?.value?.trim()  || '',
-    userManualUrl:       $('pl-userManualUrl')?.value?.trim()      || '',
-    installGuideUrl:     $('pl-installGuideUrl')?.value?.trim()    || '',
-    notes:               $('pl-notes')?.value?.trim()              || '',
+    rtbType:             _field('pl-rtbType')?.value?.trim()    || '',
+    slotInstalled:       !!(/** @type {HTMLInputElement | null} */ (_field('pl-slotInstalled')))?.checked,
+    slotWidth:           parseInt(_field('pl-slotWidth')?.value ?? '')         || 1,
+    backplaneCurrent5V:  parseFloat(_field('pl-backplaneCurrent5V')?.value ?? '') || 0,
+    backplaneCurrent24V: parseFloat(_field('pl-backplaneCurrent24V')?.value ?? '') || 0,
+    firmwareRevision:    _field('pl-firmwareRevision')?.value?.trim()  || '',
+    userManualUrl:       _field('pl-userManualUrl')?.value?.trim()      || '',
+    installGuideUrl:     _field('pl-installGuideUrl')?.value?.trim()    || '',
+    notes:               _field('pl-notes')?.value?.trim()              || '',
   };
 
   el.formSave.disabled    = true;
@@ -770,6 +837,11 @@ async function savePartsLibForm() {
   renderPartsLibraryPage();
 }
 
+/**
+ * @param {string} id
+ * @param {string} catalogNumber
+ * @returns {Promise<void>}
+ */
 async function deletePartLibEntry(id, catalogNumber) {
   const ok = await confirm('Delete Part', `Remove "${catalogNumber}" from the library?`, { yesLabel: 'Delete' });
   if (!ok) return;
@@ -781,6 +853,7 @@ async function deletePartLibEntry(id, catalogNumber) {
 
 /* ---- EXPORT ---- */
 
+/** @returns {void} */
 function exportPartsLibraryXlsx() {
   const parts = state.cache.partsLibrary;
   if (!parts.length) { showToast('No parts to export', ''); return; }
@@ -817,11 +890,16 @@ function exportPartsLibraryXlsx() {
 
 /* ---- IMPORT ---- */
 
+/**
+ * @param {File} file
+ * @returns {Promise<void>}
+ */
 async function importPartsLibraryXlsx(file) {
   try {
     const data = await file.arrayBuffer();
     const wb   = XLSX.read(data, { type: 'array' });
     const ws   = wb.Sheets[wb.SheetNames[0]];
+    /** @type {any[]} */
     const rows = XLSX.utils.sheet_to_json(ws);
 
     let added = 0, updated = 0, skipped = 0;
