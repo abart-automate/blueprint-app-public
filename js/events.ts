@@ -1,21 +1,20 @@
-// @ts-check
+import type { EntityConfig, EntityType } from './entity-config.js';
 
 import { ENTITY } from './entity-config.js';
 import { $, el, state } from './state.js';
 import { processImportFile, saveForm } from './operations.js';
 import { closeDetail, closeSheet, initDetailResizeHandle, navigate, openSheet } from './app.js';
-/** @import { EntityConfig, EntityType } from './entity-config.js' */
 /* ============================================================
    EVENT WIRING
    Depends on: state.js, app.js (navigate, openSheet, closeDetail,
    closeSheet, saveForm), operations.js (processImportFile)
    ============================================================ */
 
-export function wireEvents() {
+export function wireEvents(): void {
   // Bottom nav — navigate is async; fire-and-forget is intentional here
   el.nav.addEventListener('click', e => {
-    const btn = /** @type {Element | null} */ (e.target)?.closest('.nav-btn');
-    if (btn) navigate(/** @type {string} */ (/** @type {HTMLElement} */ (btn).dataset.page));
+    const btn = (e.target as Element | null)?.closest('.nav-btn');
+    if (btn) navigate((btn as HTMLElement).dataset.page as string);
   });
 
   // Back button — closeDetail is async; must await so the confirm dialog
@@ -29,7 +28,7 @@ export function wireEvents() {
   // Add button — hidden on home and checklist pages (those have no add-entity action)
   el.addBtn.addEventListener('click', () => {
     if (state.page !== 'home' && state.page !== 'checklist') {
-      openSheet(/** @type {EntityType} */ (state.page));
+      openSheet(state.page as EntityType);
     }
   });
 
@@ -43,17 +42,17 @@ export function wireEvents() {
   // Hash change
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '') || 'home';
-    if (/** @type {Record<string, EntityConfig>} */ (ENTITY)[hash] || hash === 'home' || hash === 'checklist') {
+    if ((ENTITY as Record<string, EntityConfig>)[hash] || hash === 'home' || hash === 'checklist') {
       if (hash !== state.page) navigate(hash);
     }
   });
 
   // Import file input
-  /** @type {HTMLElement} */ ($('import-file-input')).addEventListener('change', async e => {
-    const file = /** @type {HTMLInputElement} */ (e.target).files?.[0];
+  ($('import-file-input') as HTMLElement).addEventListener('change', async e => {
+    const file = (e.target as HTMLInputElement).files?.[0];
     if (file) {
       await processImportFile(file);
-      /** @type {HTMLInputElement} */ (e.target).value = '';
+      (e.target as HTMLInputElement).value = '';
     }
   });
 

@@ -1,4 +1,6 @@
-// @ts-check
+import type { DbRecord } from './db.js';
+import type { AssetChildLookup, EntityConfig, EntityType, FieldDef } from './entity-config.js';
+import type { NormalizedMediaItem } from './utils.js';
 
 import { clearStore, getAll, getById, getSetting, remove, setSetting, upsert } from './db.js';
 import { ASSET_CLASS_NETWORK_PORTS, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, PLC_CARD_TYPE_FIELDS } from './entity-config.js';
@@ -10,9 +12,6 @@ import { closeDetail, closeSheet, openDetail, renderPage } from './app.js';
 import { exportExcel, exportToZip } from './export.js';
 import { processXlsxImport } from './import.js';
 import { mergeJsonImport } from './json-merge.js';
-/** @import { DbRecord } from './db.js' */
-/** @import { AssetChildLookup, EntityConfig, EntityType, FieldDef } from './entity-config.js' */
-/** @import { NormalizedMediaItem } from './utils.js' */
 /* ============================================================
    DATA OPERATIONS
    Depends on: entity-config.js, state.js, utils.js, db.js,
@@ -24,24 +23,17 @@ import { mergeJsonImport } from './json-merge.js';
  * Reads a DOM element by id and casts it to a form-control type — a local
  * shorthand for the `$('f-key')` + cast pattern repeated throughout this
  * file's DOM-reading save handlers.
- * @param {string} id
- * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null}
  */
-export function _field(id) {
-  return /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */ ($(id));
+export function _field(id: string): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null {
+  return $(id) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
 }
 
-/**
- * @param {EntityType} type
- * @returns {EntityConfig['getChildren']}
- */
-export const _getChildren = type => ENTITY[type]?.getChildren ?? [];
+export const _getChildren = (type: EntityType): EntityConfig['getChildren'] => ENTITY[type]?.getChildren ?? [];
 
 /**
  * Dispatcher: routes to the appropriate save handler based on state.formType.
- * @returns {Promise<void>}
  */
-export async function saveForm() {
+export async function saveForm(): Promise<void> {
   const type = state.formType;
   if (type === null) return saveEntityForm(); // formType is always set while a form is open; matches prior if-chain's fallthrough
   switch (type) {
@@ -61,33 +53,31 @@ export async function saveForm() {
   }
 }
 
-export async function savePickerForm() {
+export async function savePickerForm(): Promise<void> {
   const { childType, parentField, parentId, selected } = state.pickerMeta || {};
   if (!selected?.size) return;
   for (const id of selected) {
-    const existing = /** @type {Record<string, Record<string, DbRecord>>} */ (state.refs)[childType]?.[id];
+    const existing = (state.refs as Record<string, Record<string, DbRecord>>)[childType]?.[id];
     if (existing) await upsert(childType, { ...existing, [parentField]: parentId });
   }
   await refreshAll();
   const count = selected.size;
-  const pcfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[childType];
+  const pcfg  = (ENTITY as Record<string, EntityConfig>)[childType];
   closeSheet();
   showToast(`${count} ${pcfg.label}${count > 1 ? 's' : ''} assigned`, 'success');
   renderPage();
   if (state.detailType) renderDetail();
 }
 
-/** @returns {Promise<void>} */
-export async function saveSlotForm() {
-    const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
+export async function saveSlotForm(): Promise<void> {
+    const { rackId, slotNumber } = state.formPreset as { rackId: string, slotNumber: number };
     const rack     = state.refs.assets?.[rackId];
     if (!rack) { showToast('Rack not found', 'error'); return; }
     const cardType = _field('f-cardType')?.value || '';
     // Card Type must be selected before type-specific sections (IO points, terminal wiring,
     // network ports) can be collected — reject early so the user gets clear feedback.
     if (!cardType) { showToast('Card Type is required', 'error'); return; }
-    /** @type {Record<string, any>} */
-    const slotData = {
+    const slotData: Record<string, any> = {
       slotNumber,
       name:            _field('f-name')?.value.trim()            || '',
       cardType,
@@ -103,7 +93,7 @@ export async function saveSlotForm() {
       slotData.ioPoints = state.formIoPoints.map(r => ({...r}));
       slotData.powerBus = state.formPowerBus
         .filter(e => e.refId)
-        .map(e => ({ type: e.type, refId: e.refId, wiring: /** @type {any[]} */ (e.wiring).filter(w => w.terminal || w.label) }));
+        .map(e => ({ type: e.type, refId: e.refId, wiring: (e.wiring as any[]).filter(w => w.terminal || w.label) }));
     }
     // Terminal Block Wiring applies to Analog, Digital, and Specialty cards.
     // Blank rows (both fields empty) are filtered out to keep stored data clean.
@@ -137,8 +127,7 @@ export async function saveSlotForm() {
     }
 }
 
-/** @returns {Promise<void>} */
-export async function savePlantForm() {
+export async function savePlantForm(): Promise<void> {
   const name = _field('pf-name')?.value.trim();
   if (!name) { showToast('Plant name is required', 'error'); return; }
   await setSetting('plantName', name);
@@ -152,13 +141,9 @@ export async function savePlantForm() {
  * Returns an error string if any IP address in item conflicts with another asset,
  * or null if the IP is unique. Checks the primary ipAddress field, switchNetworks
  * entries, and networkPorts entries — a device can carry IPs in any of these.
- * @param {Record<string, any>} item
- * @param {DbRecord[]} allAssets
- * @returns {string | null}
  */
-export function validateUniqueIp(item, allAssets) {
-  /** @type {Array<{ networkId: string, ipAddress: string }>} */
-  const assignments = [];
+export function validateUniqueIp(item: Record<string, any>, allAssets: DbRecord[]): string | null {
+  const assignments: Array<{ networkId: string, ipAddress: string }> = [];
   if (item.ipAddress && item.networkId)
     assignments.push({ networkId: item.networkId, ipAddress: item.ipAddress });
   for (const sn of item.switchNetworks || []) {
@@ -188,11 +173,8 @@ export function validateUniqueIp(item, allAssets) {
 
 /**
  * Returns an error string if any other item in the store already has the same name, or null.
- * @param {EntityType} type
- * @param {Record<string, any>} item
- * @returns {string | null}
  */
-export function validateUniqueName(type, item) {
+export function validateUniqueName(type: EntityType, item: Record<string, any>): string | null {
   const nameVal = item.name?.trim();
   if (!nameVal) return null;
   const conflict = (state.cache[type] || []).find(i => i.id !== item.id && i.name === nameVal);
@@ -201,11 +183,8 @@ export function validateUniqueName(type, item) {
 
 /**
  * Returns the first field config that is required but empty, or null if all required fields pass.
- * @param {EntityType} type
- * @param {Record<string, any>} item
- * @returns {FieldDef | null}
  */
-export function validateRequiredFields(type, item) {
+export function validateRequiredFields(type: EntityType, item: Record<string, any>): FieldDef | null {
   for (const f of getEffectiveFields(type, item)) {
     if (f.required && !item[f.key]) return f;
   }
@@ -216,13 +195,11 @@ export function validateRequiredFields(type, item) {
  * Saves the currently-open entity form. Uses getEffectiveFields() for a single-pass
  * field read covering base, protocol, class, subclass, and network-type fields.
  * Switch/Router port and network tables are read from form state, not DOM inputs.
- * @returns {Promise<void>}
  */
-export async function saveEntityForm() {
-  const type = /** @type {EntityType} */ (state.formType);
+export async function saveEntityForm(): Promise<void> {
+  const type = state.formType as EntityType;
   const cfg = ENTITY[type];
-  /** @type {Record<string, any>} */
-  const item = state.formId ? (await getById(type, state.formId)) || {} : {};
+  const item: Record<string, any> = state.formId ? (await getById(type, state.formId)) || {} : {};
 
   // Capture areaId before fields are overwritten; undefined means "not a panel edit" (no cascade).
   const oldPanelAreaId = (type === 'panels' && state.formId) ? item.areaId : undefined;
@@ -231,11 +208,11 @@ export async function saveEntityForm() {
   // sets (classFields, subclassFields, protocolFields) correctly when item starts empty for
   // new entities. The main loop overwrites these again — no data is lost.
   if (type === 'assets') {
-    if (_field('f-assetClass'))    item.assetClass    = /** @type {HTMLInputElement} */ (_field('f-assetClass')).value    || '';
-    if (_field('f-assetSubclass')) item.assetSubclass = /** @type {HTMLInputElement} */ (_field('f-assetSubclass')).value || '';
+    if (_field('f-assetClass'))    item.assetClass    = (_field('f-assetClass') as HTMLInputElement).value    || '';
+    if (_field('f-assetSubclass')) item.assetSubclass = (_field('f-assetSubclass') as HTMLInputElement).value || '';
   }
   if (type === 'networks') {
-    if (_field('f-networkType'))   item.networkType   = /** @type {HTMLInputElement} */ (_field('f-networkType')).value   || '';
+    if (_field('f-networkType'))   item.networkType   = (_field('f-networkType') as HTMLInputElement).value   || '';
   }
 
   // Single pass over all effective fields (base + protocol/class/subclass/network-type).
@@ -244,7 +221,7 @@ export async function saveEntityForm() {
     // utils.js's calcCompleteness(): 'assign-type'/'assign-id' aren't
     // produced by any current entity-config.js field def, but this branch
     // (along with form.js/detail.js) is kept defensive rather than deleted.
-    const fType = /** @type {string} */ (f.type);
+    const fType = f.type as string;
     if (fType === 'assign-type') {
       item.assignedToType = _field('f-assign-type')?.value || '';
     } else if (fType === 'assign-id') {
@@ -284,8 +261,7 @@ export async function saveEntityForm() {
 
   item.images = await freshenMediaItems(state.formImages);
   if (cfg.requiredPhotoSlots) {
-    /** @type {Record<string, NormalizedMediaItem[]>} */
-    const _freshNamedPhotos = {};
+    const _freshNamedPhotos: Record<string, NormalizedMediaItem[]> = {};
     for (const [_slot, _items] of Object.entries(state.formNamedPhotos)) {
       _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
     }
@@ -329,25 +305,23 @@ export async function saveEntityForm() {
 
 /**
  * Confirms and deletes an entity, cascading to child records defined in ENTITY[type].getChildren.
- * @param {EntityType} type - Entity store name
- * @param {string} id   - Entity id
- * @param {string} name - Display name for the confirm dialog
- * @returns {Promise<void>}
+ * @param type - Entity store name
+ * @param id   - Entity id
+ * @param name - Display name for the confirm dialog
  */
-export async function deleteItem(type, id, name) {
+export async function deleteItem(type: EntityType, id: string, name: string): Promise<void> {
   const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`, { yesLabel: 'Delete' });
   if (!ok) return;
 
   // Collect direct children from cache
-  /** @type {Array<{ label: string, store: EntityType, field: string, countFn?: (all: AssetChildLookup[], id: string) => number, items: DbRecord[] }>} */
-  const childRels = [];
+  const childRels: Array<{ label: string, store: EntityType, field: string, countFn?: (all: AssetChildLookup[], id: string) => number, items: DbRecord[] }> = [];
   for (const rel of _getChildren(type)) {
     let items = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
     // rel.filter isn't part of EntityConfig['getChildren']'s current typedef — like
     // the 'assign-type'/'assign-id' field-type check in saveEntityForm(), no current
     // entity-config.js entry sets it, but the check is kept defensive via a cast
     // rather than widening the typedef for a field nothing currently uses.
-    const relFilter = /** @type {any} */ (rel).filter;
+    const relFilter = (rel as any).filter;
     if (relFilter) items = items.filter(relFilter);
     if (items.length > 0) childRels.push({ ...rel, items });
   }
@@ -367,7 +341,7 @@ export async function deleteItem(type, id, name) {
   if (deleteChildren) {
     for (const rel of childRels) {
       for (const item of rel.items) {
-        await cascadeDeleteItem(rel.store, /** @type {string} */ (item.id));
+        await cascadeDeleteItem(rel.store, item.id as string);
       }
     }
   } else {
@@ -386,18 +360,13 @@ export async function deleteItem(type, id, name) {
   renderPage();
 }
 
-/**
- * @param {EntityType} type
- * @param {string} id
- * @returns {Promise<void>}
- */
-export async function cascadeDeleteItem(type, id) {
+export async function cascadeDeleteItem(type: EntityType, id: string): Promise<void> {
   for (const rel of _getChildren(type)) {
     let children = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
-    const relFilter = /** @type {any} */ (rel).filter;
+    const relFilter = (rel as any).filter;
     if (relFilter) children = children.filter(relFilter);
     for (const child of children) {
-      await cascadeDeleteItem(rel.store, /** @type {string} */ (child.id));
+      await cascadeDeleteItem(rel.store, child.id as string);
     }
   }
   await remove(type, id);
@@ -407,15 +376,14 @@ export async function cascadeDeleteItem(type, id) {
    CLEAR ALL DATA
    ============================================================ */
 
-/** @returns {Promise<void>} */
-export async function clearAllData() {
+export async function clearAllData(): Promise<void> {
   const ok = await confirm(
     'Clear All Data',
     'This will permanently delete all areas, panels, equipment, and media. This cannot be undone.',
     { yesLabel: 'Clear All' }
   );
   if (!ok) return;
-  for (const name of /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'])) {
+  for (const name of ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'] as const) {
     await clearStore(name);
   }
   revokeAllMediaUrls();
@@ -431,11 +399,8 @@ export async function clearAllData() {
 /**
  * Strips system-generated and media fields before duplication.
  * upsert() then assigns a fresh id, createdAt, and updatedAt.
- * @param {Record<string, any>} entity
- * @param {Record<string, any>} [overrides]
- * @returns {Record<string, any>}
  */
-export function _stripMediaAndSystemFields(entity, overrides = {}) {
+export function _stripMediaAndSystemFields(entity: Record<string, any>, overrides: Record<string, any> = {}): Record<string, any> {
   const { id: _id, createdAt: _c, updatedAt: _u, images: _img, namedPhotos: _np, ...rest } = entity;
   return { ...rest, ...overrides };
 }
@@ -444,12 +409,9 @@ export function _stripMediaAndSystemFields(entity, overrides = {}) {
  * Shows a scrollable checklist of panel children for the user to select.
  * Appended to #app (position:relative) so the absolute overlay covers the full viewport.
  * Resolves with the selected subset array, or null if the user cancels.
- * @param {Record<string, any>[]} children
- * @returns {Promise<Record<string, any>[] | null>}
  */
-export function showChildSelector(children) {
-  /** @type {Record<string, string>} */
-  const BADGE = { power: 'badge-power', safety: 'badge-safety', assets: 'badge-asset' };
+export function showChildSelector(children: Record<string, any>[]): Promise<Record<string, any>[] | null> {
+  const BADGE: Record<string, string> = { power: 'badge-power', safety: 'badge-safety', assets: 'badge-asset' };
   return new Promise(resolve => {
     const backdrop = document.createElement('div');
     backdrop.className = 'confirm-backdrop open';
@@ -471,25 +433,19 @@ export function showChildSelector(children) {
           <button class="btn btn-primary"  data-action="ok">Continue</button>
         </div>
       </div>`;
-    /** @type {HTMLElement} */ ($('app')).appendChild(backdrop);
+    ($('app') as HTMLElement).appendChild(backdrop);
 
-    const cleanup = () => /** @type {HTMLElement} */ ($('app')).removeChild(backdrop);
-    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=cancel]')).addEventListener('click', () => { cleanup(); resolve(null); });
-    /** @type {HTMLElement} */ (backdrop.querySelector('[data-action=ok]')).addEventListener('click', () => {
+    const cleanup = () => ($('app') as HTMLElement).removeChild(backdrop);
+    (backdrop.querySelector('[data-action=cancel]') as HTMLElement).addEventListener('click', () => { cleanup(); resolve(null); });
+    (backdrop.querySelector('[data-action=ok]') as HTMLElement).addEventListener('click', () => {
       const selected = [...backdrop.querySelectorAll('input[type=checkbox]:checked')]
-        .map(cb => children[parseInt(/** @type {HTMLInputElement} */ (cb).value)]);
+        .map(cb => children[parseInt((cb as HTMLInputElement).value)]);
       cleanup(); resolve(selected);
     });
   });
 }
 
-/**
- * @param {EntityType} store
- * @param {string} baseName
- * @param {string} [suffix]
- * @returns {string}
- */
-export function uniqueCopyName(store, baseName, suffix = 'copy') {
+export function uniqueCopyName(store: EntityType, baseName: string, suffix: string = 'copy'): string {
   const existing = new Set((state.cache[store] || []).map(i => i.name));
   const candidate = `${baseName} (${suffix})`;
   if (!existing.has(candidate)) return candidate;
@@ -498,12 +454,7 @@ export function uniqueCopyName(store, baseName, suffix = 'copy') {
   return `${baseName} (${suffix} ${n})`;
 }
 
-/**
- * @param {EntityType} type
- * @param {string} id
- * @returns {Promise<void>}
- */
-export async function duplicateItem(type, id) {
+export async function duplicateItem(type: EntityType, id: string): Promise<void> {
   await refreshAll();
   const original = state.refs[type]?.[id];
   if (!original) return;
@@ -519,14 +470,13 @@ export async function duplicateItem(type, id) {
   if (newName === null) return;
 
   // Step 2: for panels, let the user select which children to include
-  /** @type {Record<string, any>[]} */
-  let selectedChildren = [];
+  let selectedChildren: Record<string, any>[] = [];
   if (type === 'panels') {
-    const childDefs = /** @type {const} */ ([
+    const childDefs = [
       { store: 'power',  field: 'panelId', typeLabel: 'Power'  },
       { store: 'safety', field: 'panelId', typeLabel: 'Safety' },
       { store: 'assets', field: 'panelId', typeLabel: 'Asset'  },
-    ]);
+    ] as const;
     const allChildren = childDefs.flatMap(def =>
       (state.cache[def.store] || [])
         .filter(item => item[def.field] === id)
@@ -560,15 +510,14 @@ export async function duplicateItem(type, id) {
   await refreshAll();
   showToast(`${cfg.label} duplicated`, 'success');
   renderPage();
-  openDetail(type, /** @type {string} */ (saved.id));
+  openDetail(type, saved.id as string);
 }
 
 /* ============================================================
    EXPORT OPTIONS DIALOG
    ============================================================ */
 
-/** @returns {Promise<void>} */
-export async function showExportOptions() {
+export async function showExportOptions(): Promise<void> {
   const modal = document.createElement('div');
   modal.className = 'export-options-modal';
   modal.innerHTML = `
@@ -615,8 +564,8 @@ export async function showExportOptions() {
   document.body.appendChild(modal);
 
   modal.addEventListener('click', async (e) => {
-    const target = /** @type {HTMLElement} */ (e.target);
-    const option = /** @type {HTMLButtonElement | null} */ (target.closest('.export-option'));
+    const target = e.target as HTMLElement;
+    const option = target.closest('.export-option') as HTMLButtonElement | null;
     const cancelBtn = target.closest('#export-cancel');
     const backdrop = target.classList.contains('export-options-backdrop');
 
@@ -641,43 +590,29 @@ export async function showExportOptions() {
    IMPORT / EXPORT WRAPPERS
    ============================================================ */
 
-/**
- * @template T
- * @param {T | T[] | undefined | null} v
- * @returns {T[]}
- */
-export const _toArr = v => Array.isArray(v) ? v : (v ? [v] : []);
+export const _toArr = <T,>(v: T | T[] | undefined | null): T[] => Array.isArray(v) ? v : (v ? [v] : []);
 
-/**
- * @param {Blob} blob
- * @returns {Promise<string>}
- */
-export async function _blobToBase64(blob) {
+export async function _blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(/** @type {string} */ (reader.result));
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
 }
 
-/**
- * @param {Record<string, any>} entity
- * @returns {Promise<Record<string, any>>}
- */
-export async function _serializeEntityMedia(entity) {
+export async function _serializeEntityMedia(entity: Record<string, any>): Promise<Record<string, any>> {
   const out = { ...entity };
   if (out.images?.length) {
-    out.images = await Promise.all(/** @type {any[]} */ (out.images).map(async item => {
+    out.images = await Promise.all((out.images as any[]).map(async item => {
       if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
       return item;
     }));
   }
   if (out.namedPhotos) {
-    /** @type {Record<string, any>} */
-    const slots = {};
+    const slots: Record<string, any> = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
-      slots[slot] = await Promise.all(_toArr(value).map(async item => {
+      slots[slot] = await Promise.all(_toArr<any>(value).map(async item => {
         if (item?.blob instanceof Blob) return _blobToBase64(item.blob);
         return item;
       }));
@@ -687,22 +622,17 @@ export async function _serializeEntityMedia(entity) {
   return out;
 }
 
-/**
- * @param {Record<string, any>} entity
- * @returns {Record<string, any>}
- */
-export function _deserializeEntityMedia(entity) {
+export function _deserializeEntityMedia(entity: Record<string, any>): Record<string, any> {
   const out = { ...entity };
   if (out.images) {
-    out.images = /** @type {any[]} */ (out.images)
+    out.images = (out.images as any[])
       .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
       .filter(item => item?.blob instanceof Blob || typeof item === 'string');
   }
   if (out.namedPhotos) {
-    /** @type {Record<string, any>} */
-    const slots = {};
+    const slots: Record<string, any> = {};
     for (const [slot, value] of Object.entries(out.namedPhotos)) {
-      slots[slot] = _toArr(value)
+      slots[slot] = _toArr<any>(value)
         .map(item => (typeof item === 'string' && item.startsWith('data:')) ? base64ToMediaItem(item) : item)
         .filter(item => item?.blob instanceof Blob || typeof item === 'string');
     }
@@ -713,16 +643,15 @@ export function _deserializeEntityMedia(entity) {
 
 /**
  * Exports all plant data to ZIP (with media) or XLSX. Prompts user to choose format.
- * @returns {Promise<void>}
  */
-export async function exportData() {
+export async function exportData(): Promise<void> {
   try {
-    const stores = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
+    const stores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'] as const;
     const payload = {
       appName:    'blueprint',
       version:    1,
       exportedAt: new Date().toISOString(),
-      data:       /** @type {Record<string, any>} */ ({}),
+      data:       {} as Record<string, any>,
     };
     for (const name of stores) {
       const items = await getAll(name);
@@ -732,7 +661,7 @@ export async function exportData() {
     const settings = await getAll('settings');
     payload.data.settings = await Promise.all(settings.map(async s =>
       s.id === 'checklistItems'
-        ? { ...s, value: await Promise.all(/** @type {any[]} */ (s.value || []).map(_serializeEntityMedia)) }
+        ? { ...s, value: await Promise.all((s.value || [] as any[]).map(_serializeEntityMedia)) }
         : s
     ));
 
@@ -754,15 +683,11 @@ export async function exportData() {
   }
 }
 
-export function importData() {
-  /** @type {HTMLElement} */ ($('import-file-input')).click();
+export function importData(): void {
+  ($('import-file-input') as HTMLElement).click();
 }
 
-/**
- * @param {File} file
- * @returns {Promise<void>}
- */
-export async function processImportFile(file) {
+export async function processImportFile(file: File): Promise<void> {
   // Route .xlsx files to the Excel merge importer
   if (file.name.toLowerCase().endsWith('.xlsx')) {
     await processXlsxImport(file);
@@ -801,7 +726,7 @@ export async function processImportFile(file) {
       return;
     }
 
-    const allStores = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings']);
+    const allStores = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings'] as const;
     for (const name of allStores) {
       await clearStore(name);
     }
