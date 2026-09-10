@@ -37,7 +37,7 @@
 // gated-activation pattern below (waiting worker + SKIP_WAITING message on
 // user consent) is adopted for predictability of *when* control transfers,
 // not because that was an active bug for this app's architecture.
-const SW_BUILD = '20260910T1923Z-3ac0f67';
+const SW_BUILD = '20260910T1939Z-6148fd4';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
