@@ -1,10 +1,9 @@
-// @ts-check
 // IndexedDB layer for Plant Asset Manager
 export const DB_NAME = 'PlantAssetDB';
 export const DB_VERSION = 3;
-export const STORES = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary']);
+export const STORES = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary'] as const;
 
-/** @typedef {typeof STORES[number]} StoreName */
+export type StoreName = typeof STORES[number];
 
 /**
  * A stored record. Every store's records are plain objects keyed by `id`
@@ -14,45 +13,34 @@ export const STORES = /** @type {const} */ (['areas', 'panels', 'power', 'safety
  * placeholder for "whatever entity-config.js says this store holds", not a
  * shortcut — replacing it is exactly the entity-config.ts work described in
  * the TypeScript migration plan.
- * @typedef {Record<string, any> & { id?: string, createdAt?: string, updatedAt?: string }} DbRecord
  */
+export type DbRecord = Record<string, any> & { id?: string, createdAt?: string, updatedAt?: string };
 
-/** @type {IDBDatabase | null} */
-export let _db = null;
+export let _db: IDBDatabase | null = null;
 
-/** @returns {Promise<IDBDatabase>} */
-export async function initDB() {
+export async function initDB(): Promise<IDBDatabase> {
   if (_db) return _db;
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
-      const d = /** @type {IDBOpenDBRequest} */ (e.target).result;
+      const d = (e.target as IDBOpenDBRequest).result;
       STORES.forEach(name => {
         if (!d.objectStoreNames.contains(name)) {
           d.createObjectStore(name, { keyPath: 'id' });
         }
       });
     };
-    req.onsuccess  = (e) => { _db = /** @type {IDBOpenDBRequest} */ (e.target).result; resolve(_db); };
+    req.onsuccess  = (e) => { _db = (e.target as IDBOpenDBRequest).result; resolve(_db); };
     req.onerror    = ()  => reject(req.error);
     req.onblocked  = ()  => reject(new Error('IndexedDB blocked'));
   });
 }
 
-/**
- * @param {StoreName} name
- * @param {IDBTransactionMode} [mode]
- * @returns {IDBObjectStore}
- */
-export function tx(name, mode = 'readonly') {
-  return /** @type {IDBDatabase} */ (_db).transaction(name, mode).objectStore(name);
+export function tx(name: StoreName, mode: IDBTransactionMode = 'readonly'): IDBObjectStore {
+  return (_db as IDBDatabase).transaction(name, mode).objectStore(name);
 }
 
-/**
- * @param {StoreName} name
- * @returns {Promise<DbRecord[]>}
- */
-export async function getAll(name) {
+export async function getAll(name: StoreName): Promise<DbRecord[]> {
   return new Promise((res, rej) => {
     const req = tx(name).getAll();
     req.onsuccess = () => res(req.result ?? []);
@@ -60,12 +48,7 @@ export async function getAll(name) {
   });
 }
 
-/**
- * @param {StoreName} name
- * @param {string} id
- * @returns {Promise<DbRecord | null>}
- */
-export async function getById(name, id) {
+export async function getById(name: StoreName, id: string): Promise<DbRecord | null> {
   return new Promise((res, rej) => {
     const req = tx(name).get(id);
     req.onsuccess = () => res(req.result ?? null);
@@ -76,11 +59,8 @@ export async function getById(name, id) {
 /**
  * Inserts or replaces a record. Auto-assigns `id` (if missing) and
  * `createdAt`/`updatedAt` timestamps; mutates and returns the same object.
- * @param {StoreName} name
- * @param {DbRecord} item
- * @returns {Promise<DbRecord>}
  */
-export async function upsert(name, item) {
+export async function upsert(name: StoreName, item: DbRecord): Promise<DbRecord> {
   return new Promise((res, rej) => {
     if (!item.id)        item.id        = crypto.randomUUID();
     if (!item.createdAt) item.createdAt = new Date().toISOString();
@@ -91,12 +71,7 @@ export async function upsert(name, item) {
   });
 }
 
-/**
- * @param {StoreName} name
- * @param {string} id
- * @returns {Promise<void>}
- */
-export async function remove(name, id) {
+export async function remove(name: StoreName, id: string): Promise<void> {
   return new Promise((res, rej) => {
     const req = tx(name, 'readwrite').delete(id);
     req.onsuccess = () => res();
@@ -104,11 +79,7 @@ export async function remove(name, id) {
   });
 }
 
-/**
- * @param {StoreName} name
- * @returns {Promise<void>}
- */
-export async function clearStore(name) {
+export async function clearStore(name: StoreName): Promise<void> {
   return new Promise((res, rej) => {
     const req = tx(name, 'readwrite').clear();
     req.onsuccess = () => res();
@@ -116,21 +87,12 @@ export async function clearStore(name) {
   });
 }
 
-/**
- * @param {string} key
- * @returns {Promise<any>}
- */
-export async function getSetting(key) {
+export async function getSetting(key: string): Promise<any> {
   const s = await getById('settings', key);
   return s?.value ?? null;
 }
 
-/**
- * @param {string} key
- * @param {any} value
- * @returns {Promise<void>}
- */
-export async function setSetting(key, value) {
+export async function setSetting(key: string, value: any): Promise<void> {
   return new Promise((res, rej) => {
     const req = tx('settings', 'readwrite').put({ id: key, value });
     req.onsuccess = () => res();

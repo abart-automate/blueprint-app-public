@@ -1,7 +1,6 @@
-// @ts-check
-/** @import { DbRecord, StoreName } from './db.js' */
-/** @import { FormType } from './entity-config.js' */
-/** @import { NormalizedMediaItem } from './utils.js' */
+import type { DbRecord, StoreName } from './db.js';
+import type { FormType } from './entity-config.js';
+import type { NormalizedMediaItem } from './utils.js';
 
 import { getAll } from './db.js';
 /* ============================================================
@@ -14,75 +13,93 @@ import { getAll } from './db.js';
  * A media item as held in state's *editable* image/photo arrays (already
  * normalized — see utils.js's normalizeMediaItems() for the raw stored-value
  * shapes this gets built from).
- * @typedef {{ blob: Blob, mimeType: string }} EditableMediaItem
  */
+export interface EditableMediaItem { blob: Blob, mimeType: string }
 
-/** @typedef {{ terminal?: string, label?: string }} ItemTableRow */
+export interface ItemTableRow { terminal?: string, label?: string }
 
 /**
  * A single network-port entry, as used by both PLC slot Controller/
  * Communication cards (state.*SlotNetworkPorts) and HMI/Field Device assets
  * (state.*AssetNetworkPorts) — see utils.js's getEntityNetworkPorts().
- * @typedef {{ portNumber?: number, networkId: string, ipAddress?: string, nodeAddress?: string }} NetworkPortRow
  */
+export interface NetworkPortRow { portNumber?: number, networkId: string, ipAddress?: string, nodeAddress?: string }
 
 /**
  * Row shapes for the switch-network/switch-port/IO-point/power-bus tables are
  * still owned by renderers/tables.js (not yet typed) — kept as an honest
  * `Record<string, any>` placeholder here rather than guessed at.
- * @typedef {Record<string, any>} UntypedTableRow
  */
+export type UntypedTableRow = Record<string, any>;
 
-/**
- * @typedef {Object} State
- * @property {string} page
- *
- * @property {FormType | null} detailType
- * @property {string | null} detailId
- * @property {Array<{ type: FormType | null, id: string | null, slotNumber?: number | null }>} detailStack
- * @property {number | null} detailSlotNumber
- * @property {Record<string, any>} detailChanges - Pending field-level edits (key -> value).
- * @property {NormalizedMediaItem[]} detailImages - "Other Media" gallery. Unlike formImages,
- *   not blob-converted at load time (normalizeMediaItems() may leave legacy base64 items
- *   without a real Blob) — freshenMediaItems() only runs at save time.
- * @property {Record<string, NormalizedMediaItem[]>} detailNamedPhotos - Keyed by required-photo slot name.
- * @property {boolean} detailMediaDirty - True after any add/remove so the navigation guard fires.
- * @property {Record<string, ItemTableRow[]>} detailItemTables - Keyed by wiring-table key.
- * @property {UntypedTableRow[]} detailSwitchNetworks
- * @property {UntypedTableRow[]} detailSwitchPorts
- * @property {UntypedTableRow[]} detailSlotIoPoints
- * @property {UntypedTableRow[]} detailSlotPowerBus
- * @property {NetworkPortRow[]} detailSlotNetworkPorts - In-edit Controller/Communication card.
- * @property {NetworkPortRow[]} detailAssetNetworkPorts - In-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS).
- *
- * @property {FormType | null} formType
- * @property {string | null} formId
- * @property {Record<string, any> | null} formPreset - Polymorphic: {rackId,slotNumber} for a PLC slot form, or {field,value,extra,copyFrom} for an entity form preset.
- * @property {EditableMediaItem[]} formImages
- * @property {Record<string, EditableMediaItem[]>} formNamedPhotos
- * @property {Record<string, ItemTableRow[]>} formItemTables
- * @property {UntypedTableRow[]} formSwitchNetworks
- * @property {UntypedTableRow[]} formSwitchPorts
- * @property {UntypedTableRow[]} formIoPoints
- * @property {UntypedTableRow[]} formPowerBus
- * @property {NetworkPortRow[]} formSlotNetworkPorts - In-edit Controller/Communication slot form.
- * @property {NetworkPortRow[]} formAssetNetworkPorts - In-edit HMI/Field Device asset form.
- *
- * @property {Partial<Record<StoreName, DbRecord[]>> & { partsLibrary: DbRecord[] }} cache - Populated by
- *   refreshAll/loadCache. partsLibrary is the one key initialised eagerly (see the initial `state`
- *   value below) and kept current by getPartsLibraryCache(), so unlike the other stores it's never
- *   actually undefined — typed non-optional so parts-library.js doesn't need a null guard on every access.
- * @property {Partial<Record<StoreName, Record<string, DbRecord>>>} refs
- *
- * @property {any} pickerMeta
- *
- * @property {any} deferredInstallPrompt - The captured `beforeinstallprompt` event, held here
- *   (rather than as a module-level `let` in init.js) so ES-module consumers can read AND clear
- *   it via ordinary property mutation instead of reassigning a read-only imported binding.
- */
+export interface State {
+  page: string;
 
-/** @type {State} */
-export const state = {
+  detailType: FormType | null;
+  detailId: string | null;
+  detailStack: Array<{ type: FormType | null, id: string | null, slotNumber?: number | null }>;
+  detailSlotNumber: number | null;
+  /** Pending field-level edits (key -> value). */
+  detailChanges: Record<string, any>;
+  /**
+   * "Other Media" gallery. Unlike formImages, not blob-converted at load
+   * time (normalizeMediaItems() may leave legacy base64 items without a
+   * real Blob) — freshenMediaItems() only runs at save time.
+   */
+  detailImages: NormalizedMediaItem[];
+  /** Keyed by required-photo slot name. */
+  detailNamedPhotos: Record<string, NormalizedMediaItem[]>;
+  /** True after any add/remove so the navigation guard fires. */
+  detailMediaDirty: boolean;
+  /** Keyed by wiring-table key. */
+  detailItemTables: Record<string, ItemTableRow[]>;
+  detailSwitchNetworks: UntypedTableRow[];
+  detailSwitchPorts: UntypedTableRow[];
+  detailSlotIoPoints: UntypedTableRow[];
+  detailSlotPowerBus: UntypedTableRow[];
+  /** In-edit Controller/Communication card. */
+  detailSlotNetworkPorts: NetworkPortRow[];
+  /** In-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS). */
+  detailAssetNetworkPorts: NetworkPortRow[];
+
+  formType: FormType | null;
+  formId: string | null;
+  /** Polymorphic: {rackId,slotNumber} for a PLC slot form, or {field,value,extra,copyFrom} for an entity form preset. */
+  formPreset: Record<string, any> | null;
+  formImages: EditableMediaItem[];
+  formNamedPhotos: Record<string, EditableMediaItem[]>;
+  formItemTables: Record<string, ItemTableRow[]>;
+  formSwitchNetworks: UntypedTableRow[];
+  formSwitchPorts: UntypedTableRow[];
+  formIoPoints: UntypedTableRow[];
+  formPowerBus: UntypedTableRow[];
+  /** In-edit Controller/Communication slot form. */
+  formSlotNetworkPorts: NetworkPortRow[];
+  /** In-edit HMI/Field Device asset form. */
+  formAssetNetworkPorts: NetworkPortRow[];
+
+  /**
+   * Populated by refreshAll/loadCache. partsLibrary is the one key
+   * initialised eagerly (see the initial `state` value below) and kept
+   * current by getPartsLibraryCache(), so unlike the other stores it's
+   * never actually undefined — typed non-optional so parts-library.js
+   * doesn't need a null guard on every access.
+   */
+  cache: Partial<Record<StoreName, DbRecord[]>> & { partsLibrary: DbRecord[] };
+  refs: Partial<Record<StoreName, Record<string, DbRecord>>>;
+
+  pickerMeta: any;
+
+  /**
+   * The captured `beforeinstallprompt` event, held here (rather than as a
+   * module-level `let` in init.js) so ES-module consumers can read AND
+   * clear it via ordinary property mutation instead of reassigning a
+   * read-only imported binding.
+   */
+  deferredInstallPrompt: any;
+}
+
+export const state: State = {
   // --- Navigation ---
   page: 'home',
 
@@ -135,24 +152,18 @@ export const state = {
 // Global shorthand for document.getElementById, used throughout every
 // renderer/operations file (not just here) — must stay a top-level
 // declaration, not scoped inside initEl() below.
-/**
- * @param {string} id
- * @returns {HTMLElement | null}
- */
-export const $ = id => document.getElementById(id);
+export const $ = (id: string): HTMLElement | null => document.getElementById(id);
 
-/**
- * @typedef {{
- *   header: HTMLElement, main: HTMLElement, backBtn: HTMLElement, addBtn: HTMLElement,
- *   pageTitle: HTMLElement, detail: HTMLElement, resizeHandle: HTMLElement,
- *   backdrop: HTMLElement, sheet: HTMLElement, formTitle: HTMLElement, formBody: HTMLElement,
- *   formSave: HTMLButtonElement, formCancel: HTMLElement, confirmBD: HTMLElement, confirmT: HTMLElement,
- *   confirmM: HTMLElement, confirmNo: HTMLElement, confirmSave: HTMLElement, confirmYes: HTMLElement,
- *   promptBD: HTMLElement, promptT: HTMLElement, promptM: HTMLElement,
- *   promptField: HTMLInputElement, promptCancel: HTMLElement, promptOk: HTMLElement,
- *   toast: HTMLElement, nav: HTMLElement,
- * }} ElRefs
- */
+export interface ElRefs {
+  header: HTMLElement, main: HTMLElement, backBtn: HTMLElement, addBtn: HTMLElement,
+  pageTitle: HTMLElement, detail: HTMLElement, resizeHandle: HTMLElement,
+  backdrop: HTMLElement, sheet: HTMLElement, formTitle: HTMLElement, formBody: HTMLElement,
+  formSave: HTMLButtonElement, formCancel: HTMLElement, confirmBD: HTMLElement, confirmT: HTMLElement,
+  confirmM: HTMLElement, confirmNo: HTMLElement, confirmSave: HTMLElement, confirmYes: HTMLElement,
+  promptBD: HTMLElement, promptT: HTMLElement, promptM: HTMLElement,
+  promptField: HTMLInputElement, promptCancel: HTMLElement, promptOk: HTMLElement,
+  toast: HTMLElement, nav: HTMLElement,
+}
 
 /**
  * Cache of frequently-used DOM element references, keyed by logical name.
@@ -172,9 +183,9 @@ export const $ = id => document.getElementById(id);
  * missing, converting "silently null forever" into a fail-fast startup
  * error with the offending id named.
  */
-export let el = /** @type {ElRefs} */ (/** @type {unknown} */ (null));
+export let el: ElRefs = null as unknown as ElRefs;
 
-export function initEl() {
+export function initEl(): void {
   const refs = {
     header:       $('app-header'),
     main:         $('app-main'),
@@ -187,7 +198,7 @@ export function initEl() {
     sheet:        $('form-sheet'),
     formTitle:    $('form-title'),
     formBody:     $('form-body'),
-    formSave:     /** @type {HTMLButtonElement | null} */ ($('form-save')),
+    formSave:     $('form-save') as HTMLButtonElement | null,
     formCancel:   $('form-cancel'),
     confirmBD:    $('confirm-backdrop'),
     confirmT:     $('confirm-title'),
@@ -198,7 +209,7 @@ export function initEl() {
     promptBD:     $('prompt-backdrop'),
     promptT:      $('prompt-title'),
     promptM:      $('prompt-msg'),
-    promptField:  /** @type {HTMLInputElement | null} */ ($('prompt-input')),
+    promptField:  $('prompt-input') as HTMLInputElement | null,
     promptCancel: $('prompt-cancel'),
     promptOk:     $('prompt-ok'),
     toast:        $('toast'),
@@ -208,19 +219,14 @@ export function initEl() {
   if (missing.length) {
     throw new Error(`initEl: missing expected DOM element(s) for: ${missing.join(', ')}`);
   }
-  el = /** @type {ElRefs} */ (refs);
+  el = refs as ElRefs;
 }
 
 /* ---- TOAST ---- */
 
-/** @type {ReturnType<typeof setTimeout> | undefined} */
-export let toastTimer;
+export let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-/**
- * @param {string} msg
- * @param {string} [type]
- */
-export function showToast(msg, type = '') {
+export function showToast(msg: string, type: string = ''): void {
   el.toast.textContent = msg;
   el.toast.className = 'toast show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
@@ -237,12 +243,12 @@ export function showToast(msg, type = '') {
  *
  * Deliberately named `confirm`, shadowing the built-in `window.confirm` for
  * every caller in this app (same as the original plain-JS behavior).
- * @param {string} title
- * @param {string} msg
- * @param {{ yesLabel?: string, noLabel?: string, yesClass?: string }} [opts]
- * @returns {Promise<boolean>}
  */
-export function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' } = {}) {
+export function confirm(
+  title: string,
+  msg: string,
+  { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' }: { yesLabel?: string, noLabel?: string, yesClass?: string } = {}
+): Promise<boolean> {
   return new Promise(resolve => {
     el.confirmT.textContent  = title;
     el.confirmM.textContent  = msg;
@@ -268,12 +274,12 @@ export function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', y
 /**
  * Shows a 3-button dialog laid out left-to-right.
  * Button classes are restored to their HTML defaults on cleanup.
- * @param {string} title
- * @param {string} msg
- * @param {{ cancelLabel: string, midLabel: string, midClass: string, yesLabel: string, yesClass: string }} opts
- * @returns {Promise<'cancel' | 'mid' | 'yes'>}
  */
-export function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel, yesClass }) {
+export function confirmThreeWay(
+  title: string,
+  msg: string,
+  { cancelLabel, midLabel, midClass, yesLabel, yesClass }: { cancelLabel: string, midLabel: string, midClass: string, yesLabel: string, yesClass: string }
+): Promise<'cancel' | 'mid' | 'yes'> {
   return new Promise(resolve => {
     el.confirmT.textContent      = title;
     el.confirmM.textContent      = msg;
@@ -308,11 +314,8 @@ export function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, y
 
 /**
  * Shows a 3-button "unsaved changes" dialog (left-to-right).
- * @param {string} title
- * @param {string} msg
- * @returns {Promise<'save' | 'discard' | null>}
  */
-export function confirmUnsaved(title, msg) {
+export function confirmUnsaved(title: string, msg: string): Promise<'save' | 'discard' | null> {
   return confirmThreeWay(title, msg, {
     cancelLabel: 'Cancel',
     midLabel:    'Save Changes', midClass: 'btn-primary',
@@ -323,12 +326,8 @@ export function confirmUnsaved(title, msg) {
 /**
  * Shows a text-input prompt dialog.
  * Requires a non-empty value — blank submission shakes the input and re-focuses.
- * @param {string} title
- * @param {string} msg
- * @param {string} [defaultValue]
- * @returns {Promise<string | null>}
  */
-export function promptInput(title, msg, defaultValue = '') {
+export function promptInput(title: string, msg: string, defaultValue: string = ''): Promise<string | null> {
   return new Promise(resolve => {
     el.promptT.textContent = title;
     el.promptM.textContent = msg;
@@ -347,8 +346,7 @@ export function promptInput(title, msg, defaultValue = '') {
       cleanup(); resolve(val);
     };
     const cancel = () => { cleanup(); resolve(null); };
-    /** @param {KeyboardEvent} e */
-    const onKey  = e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') cancel(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') cancel(); };
 
     const cleanup = () => {
       el.promptBD.classList.remove('open');
@@ -364,8 +362,7 @@ export function promptInput(title, msg, defaultValue = '') {
 
 /* ---- CACHE & REFS ---- */
 
-/** @param {StoreName[]} storeNames */
-export async function loadCache(storeNames) {
+export async function loadCache(storeNames: StoreName[]): Promise<void> {
   await Promise.all(storeNames.map(async name => {
     const records = await getAll(name);
     state.cache[name] = records;
@@ -373,6 +370,6 @@ export async function loadCache(storeNames) {
   }));
 }
 
-export async function refreshAll() {
+export async function refreshAll(): Promise<void> {
   await loadCache(['areas','panels','power','safety','networks','assets']);
 }
