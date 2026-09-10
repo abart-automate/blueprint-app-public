@@ -3,6 +3,10 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // GitHub Pages serves this as a project page under /blueprint-app-public/,
+  // so built asset URLs must be rooted there, not at '/'. Local dev/preview
+  // (no GITHUB_ACTIONS env var) keeps serving from '/'.
+  base: process.env.GITHUB_ACTIONS ? '/blueprint-app-public/' : '/',
   build: {
     target: 'es2022',
   },
