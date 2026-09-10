@@ -1,4 +1,6 @@
-// @ts-check
+import type { DbRecord } from './db.js';
+import type { EntityConfig, EntityType, FormType, RefFieldDef } from './entity-config.js';
+import type { ChecklistItem, ChecklistSubItem } from './utils.js';
 
 import { getSetting, setSetting } from './db.js';
 import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
@@ -9,9 +11,6 @@ import { renderForm } from './renderers/form.js';
 import { renderDetail, saveDetailChanges } from './renderers/detail.js';
 import { clearAllData, deleteItem, importData, showExportOptions } from './operations.js';
 import { renderPartsLibraryPage } from './parts-library.js';
-/** @import { DbRecord } from './db.js' */
-/** @import { EntityConfig, EntityType, FormType, RefFieldDef } from './entity-config.js' */
-/** @import { ChecklistItem, ChecklistSubItem } from './utils.js' */
 /* ============================================================
    MAIN PAGE CONTROLLER
    Renders home, checklist, and list pages; manages detail panel
@@ -38,9 +37,8 @@ import { renderPartsLibraryPage } from './parts-library.js';
  * Returns true if the detail panel has any unsaved edits that should
  * trigger a "leave without saving?" prompt before navigating away.
  * Checks both field-level changes and media/table dirty state.
- * @returns {boolean}
  */
-export function hasUnsavedDetailChanges() {
+export function hasUnsavedDetailChanges(): boolean {
   return Object.keys(state.detailChanges).length > 0 || state.detailMediaDirty;
 }
 
@@ -48,9 +46,8 @@ export function hasUnsavedDetailChanges() {
  * Resets all six detail edit state properties back to their empty defaults.
  * Called after a successful save, a discard, or a force-close so the
  * navigation guard cannot fire on stale state.
- * @returns {void}
  */
-export function _clearDetailEditState() {
+export function _clearDetailEditState(): void {
   state.detailChanges        = {};
   state.detailMediaDirty     = false;
   state.detailImages         = [];
@@ -76,9 +73,8 @@ export function _clearDetailEditState() {
  * Does NOT refresh the list pane — that is the caller's responsibility:
  *   - closeDetail() calls renderPage() after this to show up-to-date card data.
  *   - navigate() skips the extra renderPage() because it calls renderPage() itself.
- * @returns {void}
  */
-export function _closeDetailImmediate() {
+export function _closeDetailImmediate(): void {
   el.detail.classList.remove('open');
 
   // Revoke all blob URLs while el.detail DOM is still intact — must precede innerHTML = ''.
@@ -118,9 +114,8 @@ export function _closeDetailImmediate() {
  * Renders an empty-state placeholder inside the detail pane when no entity
  * is selected.  Only meaningful on desktop where the pane is always visible.
  * Reuses the existing .empty and .det-panel-scroll CSS classes.
- * @returns {void}
  */
-export function renderDetailPlaceholder() {
+export function renderDetailPlaceholder(): void {
   el.detail.innerHTML = `
     <div class="det-panel-scroll" style="display:flex;align-items:center;justify-content:center;height:100%">
       <div class="empty">
@@ -153,9 +148,8 @@ export function renderDetailPlaceholder() {
  *
  * On mobile/tablet this function is effectively a no-op because the handle
  * element is display:none and getLayoutMode() guards the pointerdown handler.
- * @returns {void}
  */
-export function initDetailResizeHandle() {
+export function initDetailResizeHandle(): void {
   const handle = el.resizeHandle;
   if (!handle) return;
 
@@ -179,8 +173,7 @@ export function initDetailResizeHandle() {
     const minW = parseInt(rootStyle.getPropertyValue('--list-pane-min-w'), 10) || 200;
     const maxW = parseInt(rootStyle.getPropertyValue('--list-pane-max-w'), 10) || 480;
 
-    /** @param {PointerEvent} ev */
-    function onMove(ev) {
+    function onMove(ev: PointerEvent) {
       /* Dragging the handle RIGHT widens the list pane; LEFT narrows it. */
       const delta = ev.clientX - startX;
       const newW  = Math.min(maxW, Math.max(minW, startW + delta));
@@ -208,14 +201,13 @@ export function initDetailResizeHandle() {
 /**
  * Opens the detail panel for an entity. If a panel is already open, pushes it
  * onto detailStack so the back button can return to it.
- * @param {EntityType} type  - Entity store name (e.g. 'assets', 'panels')
- * @param {string} id    - Entity id
- * @returns {void}
+ * @param type  - Entity store name (e.g. 'assets', 'panels')
+ * @param id    - Entity id
  *
  * Mobile/tablet: animates the overlay panel in from the right (unchanged).
  * Desktop:       the pane is permanently visible; we just update its content.
  */
-export function openDetail(type, id) {
+export function openDetail(type: EntityType, id: string): void {
   const wasOpen = !!(state.detailType && state.detailId);
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId });
@@ -251,7 +243,7 @@ export function openDetail(type, id) {
       el.backBtn.style.visibility = 'hidden';
       el.addBtn.style.visibility  = 'visible';
     }
-    el.pageTitle.textContent = /** @type {Record<string, EntityConfig>} */ (ENTITY)[state.page]?.plural || 'blueprint';
+    el.pageTitle.textContent = (ENTITY as Record<string, EntityConfig>)[state.page]?.plural || 'blueprint';
   }
 }
 
@@ -259,19 +251,15 @@ export function openDetail(type, id) {
  * Closes the detail panel, or pops back to the previous stacked panel.
  * If there are unsaved changes, prompts the user first.
  * Returns early (keeping the panel open) if the user chooses to cancel.
- * @returns {Promise<void>}
  */
-export async function closeDetail() {
+export async function closeDetail(): Promise<void> {
   // Guard: if there are unsaved edits, give the user 3 choices before proceeding.
   if (hasUnsavedDetailChanges()) {
     const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
     if (action === null) return; // Cancel — stay on the current detail
 
     if (action === 'save') {
-      const ok = await saveDetailChanges(
-        /** @type {FormType} */ (state.detailType),
-        /** @type {string} */ (state.detailId)
-      );
+      const ok = await saveDetailChanges(state.detailType as FormType, state.detailId as string);
       if (!ok) return; // Validation failed — stay so the user can fix the error
       // saveDetailChanges already cleared edit state; fall through to close.
     } else {
@@ -281,14 +269,14 @@ export async function closeDetail() {
   }
 
   if (state.detailStack.length > 0) {
-    const prev = /** @type {{ type: FormType | null, id: string | null, slotNumber?: number | null }} */ (state.detailStack.pop());
+    const prev = state.detailStack.pop() as { type: FormType | null, id: string | null, slotNumber?: number | null };
     state.detailType       = prev.type;
     state.detailId         = prev.id;
     state.detailSlotNumber = prev.slotNumber ?? null;
     renderDetail();
     el.pageTitle.textContent = prev.type === FORM_TYPE.PLC_SLOT
       ? `Slot ${prev.slotNumber}`
-      : ENTITY[/** @type {EntityType} */ (prev.type)].label;
+      : ENTITY[prev.type as EntityType].label;
     return;
   }
 
@@ -306,36 +294,35 @@ export async function closeDetail() {
 
 /**
  * Opens the bottom-sheet form for creating or editing an entity.
- * @param {EntityType}  type   - Entity store name
- * @param {string | null} [id]   - Entity id to edit; null for new
- * @param {Record<string, any> | null} [preset] - Pre-fill values: { field, value } or { copyFrom: item }
- * @returns {void}
+ * @param type   - Entity store name
+ * @param id   - Entity id to edit; null for new
+ * @param preset - Pre-fill values: { field, value } or { copyFrom: item }
  */
-export function openSheet(type, id = null, preset = null) {
+export function openSheet(type: EntityType, id: string | null = null, preset: Record<string, any> | null = null): void {
   state.formType   = type;
   state.formId     = id;
   state.formPreset = preset;
   const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
   // Normalize legacy single-item or base64 string media to Array<{blob,mimeType}>.
   state.formImages = (existing?.images || []).map(
-    (/** @type {any} */ x) => (typeof x === 'string' ? base64ToMediaItem(x) : x)
+    (x: any) => (typeof x === 'string' ? base64ToMediaItem(x) : x)
   );
   state.formNamedPhotos = Object.fromEntries(
     Object.entries(existing?.namedPhotos || {}).map(([k, v]) => {
       const arr = Array.isArray(v) ? v : (v ? [v] : []);
-      return [k, arr.map((/** @type {any} */ x) => (typeof x === 'string' ? base64ToMediaItem(x) : x))];
+      return [k, arr.map((x: any) => (typeof x === 'string' ? base64ToMediaItem(x) : x))];
     })
   );
   state.formItemTables = {};
   const cfg = ENTITY[type];
   for (const t of [...(cfg.itemTables || []), ...Object.values(cfg.classItemTables || {}).flat()])
-    state.formItemTables[t.key] = existing?.[t.key]?.map((/** @type {any} */ r) => ({...r})) ?? [];
-  state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map((/** @type {any} */ r) => ({...r})) : [];
-  state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map((/** @type {any} */ r) => ({...r}))    : [];
+    state.formItemTables[t.key] = existing?.[t.key]?.map((r: any) => ({...r})) ?? [];
+  state.formSwitchNetworks = existing?.switchNetworks ? existing.switchNetworks.map((r: any) => ({...r})) : [];
+  state.formSwitchPorts    = existing?.switchPorts    ? existing.switchPorts.map((r: any) => ({...r}))    : [];
   state.formAssetNetworkPorts = existing?.networkPorts?.length
-    ? existing.networkPorts.map((/** @type {any} */ r) => ({...r}))
+    ? existing.networkPorts.map((r: any) => ({...r}))
     : (existing?.networkId ? [buildLegacyNetworkPortRow(existing)] : []);
-  state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map((/** @type {any} */ r) => ({...r}))       : [];
+  state.formIoPoints       = existing?.ioPoints       ? existing.ioPoints.map((r: any) => ({...r}))       : [];
   const isCopy   = !id && !!preset?.copyFrom;
   const subLabel = isCopy
     ? (existing?.assetSubclass || null)
@@ -354,8 +341,7 @@ export function openSheet(type, id = null, preset = null) {
   });
 }
 
-/** @returns {void} */
-export function closeSheet() {
+export function closeSheet(): void {
   el.sheet.classList.remove('open');
   el.backdrop.classList.remove('open');
   el.formSave.textContent = 'Save';
@@ -379,29 +365,24 @@ export function closeSheet() {
   state.pickerMeta        = null;
 }
 
-/**
- * @param {string} rackId
- * @param {number} slotNumber
- * @returns {void}
- */
-export function openSlotForm(rackId, slotNumber) {
+export function openSlotForm(rackId: string, slotNumber: number): void {
   const rack     = state.refs.assets?.[rackId];
-  const existing = rack?.slots?.find((/** @type {any} */ s) => s.slotNumber === slotNumber) || null;
+  const existing = rack?.slots?.find((s: any) => s.slotNumber === slotNumber) || null;
   state.formType     = FORM_TYPE.PLC_SLOT;
   state.formId       = null;
   state.formPreset   = { rackId, slotNumber };
   state.formImages   = [];
   state.formIoPoints = existing?.ioPoints
-    ? existing.ioPoints.map((/** @type {any} */ r) => ({ label: r.label ?? r.tagName ?? 'Spare', signalType: r.signalType || '', wiringType: r.wiringType || '' }))
+    ? existing.ioPoints.map((r: any) => ({ label: r.label ?? r.tagName ?? 'Spare', signalType: r.signalType || '', wiringType: r.wiringType || '' }))
     : [];
   state.formPowerBus = existing?.powerBus
-    ? existing.powerBus.map((/** @type {any} */ e) => ({ type: e.type || 'Power', refId: e.refId || '', wiring: (e.wiring || []).map((/** @type {any} */ w) => ({...w})) }))
+    ? existing.powerBus.map((e: any) => ({ type: e.type || 'Power', refId: e.refId || '', wiring: (e.wiring || []).map((w: any) => ({...w})) }))
     : [];
   // Initialize terminal wiring and network port form state from the saved slot.
   // formItemTables is not set by the generic openSheet() path for slot forms, so
   // it must be initialised explicitly here for renderItemTable to hydrate correctly.
-  state.formItemTables        = { terminalWiring: existing?.terminalWiring?.map((/** @type {any} */ r) => ({...r})) ?? [] };
-  state.formSlotNetworkPorts  = existing?.networkPorts?.map((/** @type {any} */ p) => ({...p})) ?? [];
+  state.formItemTables        = { terminalWiring: existing?.terminalWiring?.map((r: any) => ({...r})) ?? [] };
+  state.formSlotNetworkPorts  = existing?.networkPorts?.map((p: any) => ({...p})) ?? [];
   el.formTitle.textContent = existing
     ? `Slot ${slotNumber} — Edit Card`
     : `Slot ${slotNumber} — Add Card`;
@@ -413,12 +394,7 @@ export function openSlotForm(rackId, slotNumber) {
   requestAnimationFrame(() => requestAnimationFrame(() => el.sheet.classList.add('open')));
 }
 
-/**
- * @param {string} rackId
- * @param {number} slotNumber
- * @returns {void}
- */
-export function openSlotDetail(rackId, slotNumber) {
+export function openSlotDetail(rackId: string, slotNumber: number): void {
   const wasOpen = !!state.detailType;
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId, slotNumber: state.detailSlotNumber });
@@ -442,13 +418,7 @@ export function openSlotDetail(rackId, slotNumber) {
   el.pageTitle.textContent    = `Slot ${slotNumber}`;
 }
 
-/**
- * @param {EntityType} childType
- * @param {string} parentField
- * @param {string} parentId
- * @returns {Promise<void>}
- */
-export async function openAssignOrCreate(childType, parentField, parentId) {
+export async function openAssignOrCreate(childType: EntityType, parentField: string, parentId: string): Promise<void> {
   await refreshAll();
   const cfg        = ENTITY[childType];
   const unassigned = (state.cache[childType] || []).filter(i => Object.hasOwn(i, parentField) && !i[parentField]);
@@ -458,8 +428,7 @@ export async function openAssignOrCreate(childType, parentField, parentId) {
     return;
   }
 
-  /** @type {Set<string>} */
-  const selected = new Set();
+  const selected = new Set<string>();
   state.formType   = FORM_TYPE.PICKER;
   state.pickerMeta = { childType, parentField, parentId, selected };
   el.formTitle.textContent = `Add ${cfg.label}`;
@@ -496,15 +465,15 @@ export async function openAssignOrCreate(childType, parentField, parentId) {
     el.formSave.textContent = selected.size > 0 ? `Assign (${selected.size})` : 'Assign';
   };
 
-  /** @type {HTMLElement} */ (el.formBody.querySelector('#picker-create-new')).addEventListener('click', () => {
+  (el.formBody.querySelector('#picker-create-new') as HTMLElement).addEventListener('click', () => {
     closeSheet();
     openSheet(childType, null, { field: parentField, value: parentId });
   });
 
   el.formBody.querySelectorAll('.picker-item').forEach(row0 => {
-    const row = /** @type {HTMLElement} */ (row0);
+    const row = row0 as HTMLElement;
     row.addEventListener('click', () => {
-      const id = /** @type {string} */ (row.dataset.id);
+      const id = row.dataset.id as string;
       if (selected.has(id)) {
         selected.delete(id);
         row.classList.remove('picker-item-selected');
@@ -529,10 +498,8 @@ export async function openAssignOrCreate(childType, parentField, parentId) {
  * Navigates to a new page tab.  If the detail panel is open with unsaved changes,
  * prompts the user before proceeding.  The guard fires BEFORE clearing detailStack
  * so that cancelling the dialog keeps the stack intact and the panel visible.
- * @param {string} page
- * @returns {Promise<void>}
  */
-export async function navigate(page) {
+export async function navigate(page: string): Promise<void> {
   if (state.detailType) {
     // Guard fires BEFORE clearing detailStack so cancelling keeps the stack intact.
     if (hasUnsavedDetailChanges()) {
@@ -540,10 +507,7 @@ export async function navigate(page) {
       if (action === null) return; // Cancel — abort navigation
 
       if (action === 'save') {
-        const ok = await saveDetailChanges(
-          /** @type {FormType} */ (state.detailType),
-          /** @type {string} */ (state.detailId)
-        );
+        const ok = await saveDetailChanges(state.detailType as FormType, state.detailId as string);
         if (!ok) return; // Validation failed — abort navigation
         // saveDetailChanges cleared edit state; fall through to close + navigate.
       } else {
@@ -559,17 +523,13 @@ export async function navigate(page) {
   window.location.hash = page;
   setHeaderForPage(page);
   document.querySelectorAll('.nav-btn').forEach(b => {
-    const btn = /** @type {HTMLElement} */ (b);
+    const btn = b as HTMLElement;
     btn.classList.toggle('active', btn.dataset.page === page);
   });
   renderPage();
 }
 
-/**
- * @param {string} page
- * @returns {void}
- */
-export function setHeaderForPage(page) {
+export function setHeaderForPage(page: string): void {
   if (page === 'home') {
     el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
@@ -583,7 +543,7 @@ export function setHeaderForPage(page) {
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'hidden';
   } else {
-    el.pageTitle.textContent   = /** @type {Record<string, EntityConfig>} */ (ENTITY)[page].plural;
+    el.pageTitle.textContent   = (ENTITY as Record<string, EntityConfig>)[page].plural;
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'visible';
   }
@@ -600,20 +560,22 @@ export const PAGE_RENDERERS = {
   'parts-library': () => renderPartsLibraryPage(),
 };
 
-/** Re-renders the current page based on state.page. @returns {Promise<void>} */
-export async function renderPage() {
+/** Re-renders the current page based on state.page. */
+export async function renderPage(): Promise<void> {
   // Revoke any blob URLs from the outgoing page's card list before replacing el.main.
   // getCardThumbSrc() creates untracked URLs invisible to revokeAllMediaUrls(); they must
   // be explicitly revoked here on every page navigation to prevent accumulation toward the
   // per-page blob URL cap.
   revokeBlobUrlsInContainer(el.main);
   el.main.innerHTML = '<div class="spinner"></div>';
-  const renderer = /** @type {Record<string, () => Promise<void>>} */ (PAGE_RENDERERS)[state.page]
-    || (() => renderList(/** @type {EntityType} */ (state.page)));
+  const renderer = (PAGE_RENDERERS as Record<string, () => Promise<void>>)[state.page]
+    || (() => renderList(state.page as EntityType));
   await renderer();
 }
 
 /* ---- HOME ---- */
+
+export let _swBuildCache: string | null = null;
 
 /**
  * Reads the running SW_BUILD stamp straight out of Cache Storage — shared
@@ -621,10 +583,8 @@ export async function renderPage() {
  * worker is needed. Resolves to null if the Cache Storage API is unavailable
  * or nothing's been precached yet. Cached after the first lookup since the
  * controlling build can't change without a reload.
- * @returns {Promise<string | null>}
  */
-export let _swBuildCache = /** @type {string | null} */ (null);
-export async function getRunningBuild() {
+export async function getRunningBuild(): Promise<string | null> {
   if (_swBuildCache) return _swBuildCache;
   if (!('caches' in window)) return null;
   const keys = (await caches.keys()).filter(k => k.startsWith('plant-asset-'));
@@ -641,27 +601,24 @@ export async function getRunningBuild() {
 
 /**
  * Renders "20260909T2141Z-0ea8a43" as "2026-09-09 21:41 UTC (0ea8a43)" for display.
- * @param {string} build
- * @returns {string}
  */
-export function formatBuildLabel(build) {
+export function formatBuildLabel(build: string): string {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z-(.+)$/.exec(build);
   if (!m) return build;
   const [, y, mo, d, h, mi, hash] = m;
   return `${y}-${mo}-${d} ${h}:${mi} UTC (${hash})`;
 }
 
-/** Renders the plant home page with summary stats, area cards, and checklist overview. @returns {Promise<void>} */
-export async function renderHome() {
+/** Renders the plant home page with summary stats, area cards, and checklist overview. */
+export async function renderHome(): Promise<void> {
   await refreshAll();
   const [plantName, plantDesc] = await Promise.all([
     getSetting('plantName').then(v => v || 'My Plant'),
     getSetting('plantDesc').then(v => v || 'Tap the edit button to set plant info'),
   ]);
 
-  /** @type {Record<string, number>} */
-  const counts = {};
-  for (const key of Object.keys(ENTITY)) counts[key] = state.cache[/** @type {EntityType} */ (key)]?.length ?? 0;
+  const counts: Record<string, number> = {};
+  for (const key of Object.keys(ENTITY)) counts[key] = state.cache[key as EntityType]?.length ?? 0;
 
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
   const showInstall = !isStandalone && !!state.deferredInstallPrompt;
@@ -739,15 +696,15 @@ export async function renderHome() {
   el.main.querySelector('#home-edit-plant')?.addEventListener('click', () => openPlantForm());
   el.main.querySelector('#home-stats-toggle')?.addEventListener('click', () => {
     _statsExpanded = !_statsExpanded;
-    const grid = /** @type {HTMLElement} */ (el.main.querySelector('#home-stats-grid'));
-    const btn  = /** @type {HTMLElement} */ (el.main.querySelector('#home-stats-toggle'));
+    const grid = el.main.querySelector('#home-stats-grid') as HTMLElement;
+    const btn  = el.main.querySelector('#home-stats-toggle') as HTMLElement;
     grid.hidden = !_statsExpanded;
     btn.classList.toggle('expanded', _statsExpanded);
     btn.setAttribute('aria-expanded', String(_statsExpanded));
   });
   el.main.querySelectorAll('.stat-card').forEach(card0 => {
-    const card = /** @type {HTMLElement} */ (card0);
-    card.addEventListener('click', () => navigate(/** @type {string} */ (card.dataset.nav)));
+    const card = card0 as HTMLElement;
+    card.addEventListener('click', () => navigate(card.dataset.nav as string));
   });
   el.main.querySelector('#home-parts-lib-btn')?.addEventListener('click', () => navigate('parts-library'));
   el.main.querySelector('#home-export-btn')?.addEventListener('click', showExportOptions);
@@ -767,8 +724,7 @@ export async function renderHome() {
 }
 
 /* ---- CHECKLIST PAGE ---- */
-/** @returns {Promise<void>} */
-export async function renderChecklist() {
+export async function renderChecklist(): Promise<void> {
   await refreshAll();
   const items = (await getSetting('checklistItems')) || [];
   // Reuse home-checklist container ID — only one page renders at a time
@@ -779,15 +735,9 @@ export async function renderChecklist() {
 }
 
 export let _statsExpanded = false;
-/** @type {Set<string>} */
-export const _expandedAutoKeys = new Set();
+export const _expandedAutoKeys = new Set<string>();
 
-/**
- * @param {ChecklistItem[]} autoItems
- * @param {any[]} customItems
- * @returns {string}
- */
-export function buildChecklistHtml(autoItems, customItems) {
+export function buildChecklistHtml(autoItems: ChecklistItem[], customItems: any[]): string {
   const autoDone  = autoItems.reduce((s, i) => s + i.done, 0);
   const autoTotal = autoItems.reduce((s, i) => s + i.total, 0);
   const custDone  = customItems.filter(i => i.completed).length;
@@ -811,7 +761,7 @@ export function buildChecklistHtml(autoItems, customItems) {
 
     if (!hasSubs) return row;
 
-    const subRows = /** @type {ChecklistSubItem[]} */ (item.subItems).map(sub => {
+    const subRows = (item.subItems as ChecklistSubItem[]).map(sub => {
       const sc = sub.done === sub.total;
       return `<div class="checklist-item checklist-subitem checklist-item-auto${sc ? ' checklist-done' : ''}">
         <span class="checklist-check-icon${sc ? ' checklist-icon-complete' : ''}">${sc ? ICON_CHECK : ICON_CIRCLE}</span>
@@ -860,11 +810,7 @@ export function buildChecklistHtml(autoItems, customItems) {
     </div>`;
 }
 
-/**
- * @param {any[]} [customItems]
- * @returns {Promise<void>}
- */
-export async function bindChecklistEvents(customItems) {
+export async function bindChecklistEvents(customItems?: any[]): Promise<void> {
   const container = $('home-checklist');
   if (!container) return;
 
@@ -877,10 +823,10 @@ export async function bindChecklistEvents(customItems) {
 
   // Expand/collapse auto-item subtypes
   container.querySelectorAll('.checklist-expand-btn').forEach(btn0 => {
-    const btn = /** @type {HTMLElement} */ (btn0);
+    const btn = btn0 as HTMLElement;
     btn.addEventListener('click', () => {
-      const key = /** @type {string} */ (btn.dataset.key);
-      const sub = /** @type {HTMLElement | null} */ (container.querySelector(`.checklist-subgroup[data-parent="${key}"]`));
+      const key = btn.dataset.key as string;
+      const sub = container.querySelector(`.checklist-subgroup[data-parent="${key}"]`) as HTMLElement | null;
       if (!sub) return;
       const nowExpanded = !_expandedAutoKeys.has(key);
       nowExpanded ? _expandedAutoKeys.add(key) : _expandedAutoKeys.delete(key);
@@ -891,10 +837,10 @@ export async function bindChecklistEvents(customItems) {
 
   // Toggle completed state
   container.querySelectorAll('.checklist-toggle-btn').forEach(btn0 => {
-    const btn = /** @type {HTMLElement} */ (btn0);
+    const btn = btn0 as HTMLElement;
     btn.addEventListener('click', async () => {
       const items = (await getSetting('checklistItems')) || [];
-      const idx = items.findIndex((/** @type {any} */ i) => i.id === btn.dataset.cid);
+      const idx = items.findIndex((i: any) => i.id === btn.dataset.cid);
       if (idx === -1) return;
       items[idx].completed = !items[idx].completed;
       await setSetting('checklistItems', items);
@@ -904,9 +850,9 @@ export async function bindChecklistEvents(customItems) {
 
   // Delete item
   container.querySelectorAll('.checklist-delete-btn').forEach(btn0 => {
-    const btn = /** @type {HTMLElement} */ (btn0);
+    const btn = btn0 as HTMLElement;
     btn.addEventListener('click', async () => {
-      const items = ((await getSetting('checklistItems')) || []).filter((/** @type {any} */ i) => i.id !== btn.dataset.cid);
+      const items = ((await getSetting('checklistItems')) || []).filter((i: any) => i.id !== btn.dataset.cid);
       await setSetting('checklistItems', items);
       await rerender();
     });
@@ -914,9 +860,9 @@ export async function bindChecklistEvents(customItems) {
 
   // Toggle detail panel visibility (notes + photos)
   container.querySelectorAll('.checklist-detail-btn').forEach(btn0 => {
-    const btn = /** @type {HTMLElement} */ (btn0);
+    const btn = btn0 as HTMLElement;
     btn.addEventListener('click', () => {
-      const panel = /** @type {HTMLElement | null} */ (container.querySelector(`#checklist-detail-${btn.dataset.cid}`));
+      const panel = container.querySelector(`#checklist-detail-${btn.dataset.cid}`) as HTMLElement | null;
       if (!panel) return;
       panel.hidden = !panel.hidden;
       btn.classList.toggle('active', !panel.hidden);
@@ -925,10 +871,10 @@ export async function bindChecklistEvents(customItems) {
 
   // Auto-save notes on change; update has-detail indicator without a full rerender
   container.querySelectorAll('.checklist-notes-input').forEach(textarea0 => {
-    const textarea = /** @type {HTMLTextAreaElement} */ (textarea0);
+    const textarea = textarea0 as HTMLTextAreaElement;
     textarea.addEventListener('change', async () => {
       const items = (await getSetting('checklistItems')) || [];
-      const idx = items.findIndex((/** @type {any} */ i) => i.id === textarea.dataset.cid);
+      const idx = items.findIndex((i: any) => i.id === textarea.dataset.cid);
       if (idx === -1) return;
       const val = textarea.value.trim();
       items[idx].notes = val || undefined;
@@ -941,18 +887,18 @@ export async function bindChecklistEvents(customItems) {
   // Wire media galleries for each custom item.
   // customItems is passed from the caller to avoid an extra DB read; falls back to a fresh read.
   const items = customItems ?? ((await getSetting('checklistItems')) || []);
-  items.forEach((/** @type {any} */ item) => {
-    const wrap = /** @type {HTMLElement | null} */ (container.querySelector(`#checklist-media-${item.id}`));
+  items.forEach((item: any) => {
+    const wrap = container.querySelector(`#checklist-media-${item.id}`) as HTMLElement | null;
     if (!wrap) return;
 
     // Reads latest item state from DB so blob references stay current after add/remove.
     const refreshGallery = async () => {
       const latest = (await getSetting('checklistItems')) || [];
-      const cur = latest.find((/** @type {any} */ i) => i.id === item.id) || item;
+      const cur = latest.find((i: any) => i.id === item.id) || item;
       renderMediaGallery(wrap, cur.images || [], {
-        onAdd: async (/** @type {any[]} */ newMedia) => {
+        onAdd: async (newMedia: any[]) => {
           const updated = (await getSetting('checklistItems')) || [];
-          const idx = updated.findIndex((/** @type {any} */ i) => i.id === item.id);
+          const idx = updated.findIndex((i: any) => i.id === item.id);
           if (idx === -1) return;
           updated[idx].images = [...(updated[idx].images || []), ...newMedia];
           await setSetting('checklistItems', updated);
@@ -960,14 +906,14 @@ export async function bindChecklistEvents(customItems) {
           if (btn) btn.classList.add('has-detail');
           await refreshGallery();
         },
-        onRemove: async (/** @type {number} */ rmIdx) => {
+        onRemove: async (rmIdx: number) => {
           const updated = (await getSetting('checklistItems')) || [];
-          const idx = updated.findIndex((/** @type {any} */ i) => i.id === item.id);
+          const idx = updated.findIndex((i: any) => i.id === item.id);
           if (idx === -1) return;
-          updated[idx].images = (updated[idx].images || []).filter((/** @type {any} */ _, /** @type {number} */ i) => i !== rmIdx);
+          updated[idx].images = (updated[idx].images || []).filter((_: any, i: number) => i !== rmIdx);
           await setSetting('checklistItems', updated);
           const btn = container.querySelector(`.checklist-detail-btn[data-cid="${item.id}"]`);
-          const notesEl = /** @type {HTMLTextAreaElement | null} */ (container.querySelector(`.checklist-notes-input[data-cid="${item.id}"]`));
+          const notesEl = container.querySelector(`.checklist-notes-input[data-cid="${item.id}"]`) as HTMLTextAreaElement | null;
           if (btn) btn.classList.toggle('has-detail', !!(updated[idx]?.images?.length || notesEl?.value));
           await refreshGallery();
         },
@@ -978,7 +924,7 @@ export async function bindChecklistEvents(customItems) {
 
   // Add new item
   const doAdd = async () => {
-    const input = /** @type {HTMLInputElement | null} */ ($('checklist-new-input'));
+    const input = $('checklist-new-input') as HTMLInputElement | null;
     const label = input?.value.trim();
     if (!label) return;
     const items = (await getSetting('checklistItems')) || [];
@@ -991,8 +937,7 @@ export async function bindChecklistEvents(customItems) {
   $('checklist-new-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
 }
 
-/** @returns {void} */
-export function openPlantForm() {
+export function openPlantForm(): void {
   el.formTitle.textContent = 'Plant Info';
   state.formType = FORM_TYPE.PLANT;
   state.formImages = [];
@@ -1006,20 +951,19 @@ export function openPlantForm() {
       <textarea id="pf-desc" class="f-textarea" placeholder="Brief description of the plant"></textarea>
     </div>
   `;
-  getSetting('plantName').then(n => { if (n) /** @type {HTMLInputElement} */ ($('pf-name')).value = n; });
-  getSetting('plantDesc').then(d => { if (d) /** @type {HTMLTextAreaElement} */ ($('pf-desc')).value = d; });
+  getSetting('plantName').then(n => { if (n) ($('pf-name') as HTMLInputElement).value = n; });
+  getSetting('plantDesc').then(d => { if (d) ($('pf-desc') as HTMLTextAreaElement).value = d; });
   el.backdrop.classList.add('open');
   el.sheet.style.display = 'flex';
   requestAnimationFrame(() => requestAnimationFrame(() => el.sheet.classList.add('open')));
 }
 
 /* ---- AREAS LIST ---- */
-/** @returns {Promise<void>} */
-export async function renderAreasList() {
+export async function renderAreasList(): Promise<void> {
   await refreshAll();
   // sortByName's { name?: string } param triggers TS's weak-type-detection against
   // DbRecord's index signature ("no properties in common") — see detail.js's identical fix.
-  const areas = [...(state.cache.areas || [])].sort(/** @type {(a: DbRecord, b: DbRecord) => number} */ (sortByName));
+  const areas = [...(state.cache.areas || [])].sort(sortByName as (a: DbRecord, b: DbRecord) => number);
 
   el.main.innerHTML = `
     <div class="search-wrap">
@@ -1031,10 +975,10 @@ export async function renderAreasList() {
     <div id="area-list" class="area-list"></div>
   `;
 
-  const list = /** @type {HTMLElement} */ (el.main.querySelector('#area-list'));
+  const list = el.main.querySelector('#area-list') as HTMLElement;
 
   const render = () => {
-    const q = /** @type {HTMLInputElement | null} */ (el.main.querySelector('#list-search'))?.value?.toLowerCase() || '';
+    const q = (el.main.querySelector('#list-search') as HTMLInputElement | null)?.value?.toLowerCase() || '';
     const shown = q ? areas.filter(a => a.name?.toLowerCase().includes(q)) : areas;
 
     if (!shown.length) {
@@ -1058,28 +1002,23 @@ export async function renderAreasList() {
     }).join('');
 
     list.querySelectorAll('.area-card').forEach(card0 => {
-      const card = /** @type {HTMLElement} */ (card0);
-      card.addEventListener('click', () => openDetail('areas', /** @type {string} */ (card.dataset.id)));
+      const card = card0 as HTMLElement;
+      card.addEventListener('click', () => openDetail('areas', card.dataset.id as string));
     });
     list.querySelectorAll('.area-card-delete').forEach(btn0 => {
-      const btn = /** @type {HTMLElement} */ (btn0);
+      const btn = btn0 as HTMLElement;
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        deleteItem('areas', /** @type {string} */ (btn.dataset.id), /** @type {string} */ (btn.dataset.name));
+        deleteItem('areas', btn.dataset.id as string, btn.dataset.name as string);
       });
     });
   };
 
-  /** @type {HTMLElement} */ (el.main.querySelector('#list-search')).addEventListener('input', render);
+  (el.main.querySelector('#list-search') as HTMLElement).addEventListener('input', render);
   render();
 }
 
-/**
- * @param {DbRecord} area
- * @param {{ panels: number, power: number, safety: number, networks: number, assets: number }} counts
- * @returns {string}
- */
-export function areaCardHTML(area, counts) {
+export function areaCardHTML(area: DbRecord, counts: { panels: number, power: number, safety: number, networks: number, assets: number }): string {
   const pct = calcAreaCompleteness(area);
   const barColor = completenessColor(pct);
   const countDefs = [
@@ -1113,16 +1052,11 @@ export function areaCardHTML(area, counts) {
 }
 
 /* ---- LIST VIEW ---- */
-/**
- * @param {EntityType} type
- * @param {{ preFilter?: (item: DbRecord) => boolean, label?: string, plural?: string, chipField?: string }} [opts]
- * @returns {Promise<void>}
- */
-export async function renderList(type, opts = {}) {
+export async function renderList(type: EntityType, opts: { preFilter?: (item: DbRecord) => boolean, label?: string, plural?: string, chipField?: string } = {}): Promise<void> {
   await loadCache(['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
   let items = state.cache[type] || [];
   if (opts.preFilter) items = items.filter(opts.preFilter);
-  items = [...items].sort(/** @type {(a: DbRecord, b: DbRecord) => number} */ (sortByName));
+  items = [...items].sort(sortByName as (a: DbRecord, b: DbRecord) => number);
   const cfg        = ENTITY[type];
   const cfgLabel   = opts.label  || cfg.label;
   const cfgPlural  = opts.plural || cfg.plural;
@@ -1145,7 +1079,7 @@ export async function renderList(type, opts = {}) {
 
   parentFilter.bind(el.main);
 
-  const list = /** @type {HTMLElement} */ (el.main.querySelector('#card-list'));
+  const list = el.main.querySelector('#card-list') as HTMLElement;
   let activeParent = 'all';
 
   const render = () => {
@@ -1154,7 +1088,7 @@ export async function renderList(type, opts = {}) {
     // revoked on every re-render to prevent unbounded accumulation toward the per-page
     // blob URL cap. Covers both the empty-state and populated-state branches below.
     revokeBlobUrlsInContainer(list);
-    const q     = /** @type {HTMLInputElement | null} */ (el.main.querySelector('#list-search'))?.value?.toLowerCase() || '';
+    const q     = (el.main.querySelector('#list-search') as HTMLInputElement | null)?.value?.toLowerCase() || '';
     const shown = items.filter(item => {
       const matchQ = !q || item.name?.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q) || item.tag?.toLowerCase().includes(q);
       const matchP = activeParent === 'all' || matchParentChip(type, item, activeParent, opts.chipField);
@@ -1170,30 +1104,24 @@ export async function renderList(type, opts = {}) {
 
     list.innerHTML = shown.map(item => cardHTML(type, item)).join('');
     list.querySelectorAll('.card').forEach(card0 => {
-      const card = /** @type {HTMLElement} */ (card0);
-      card.addEventListener('click', () => openDetail(type, /** @type {string} */ (card.dataset.id)));
+      const card = card0 as HTMLElement;
+      card.addEventListener('click', () => openDetail(type, card.dataset.id as string));
     });
     list.querySelectorAll('.card-delete-btn').forEach(btn0 => {
-      const btn = /** @type {HTMLElement} */ (btn0);
+      const btn = btn0 as HTMLElement;
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        deleteItem(type, /** @type {string} */ (btn.dataset.id), /** @type {string} */ (btn.dataset.name));
+        deleteItem(type, btn.dataset.id as string, btn.dataset.name as string);
       });
     });
   };
 
-  /** @type {HTMLElement} */ (el.main.querySelector('#list-search')).addEventListener('input', render);
-  el.main.addEventListener('chip-change', e => { activeParent = /** @type {CustomEvent} */ (e).detail; render(); });
+  (el.main.querySelector('#list-search') as HTMLElement).addEventListener('input', render);
+  el.main.addEventListener('chip-change', e => { activeParent = (e as CustomEvent).detail; render(); });
   render();
 }
 
-/**
- * @param {EntityType} type
- * @param {DbRecord} item
- * @param {EntityConfig} cfg
- * @returns {string}
- */
-export function _cardLocationLine(type, item, cfg) {
+export function _cardLocationLine(type: EntityType, item: DbRecord, cfg: EntityConfig): string {
   const panel = resolveRefName('panels', item.panelId);
   const area  = resolveRefName('areas', item.areaId);
   if (panel && area) return `${area} / ${panel}`;
@@ -1202,42 +1130,31 @@ export function _cardLocationLine(type, item, cfg) {
   return type === 'assets' ? '' : (cfg.getSubtitle ? cfg.getSubtitle(item, state.refs) : '');
 }
 
-/**
- * @param {EntityType} type
- * @param {DbRecord} item
- * @param {string} [contextNetworkId]
- * @returns {string}
- */
-export function _cardNetworkLine(type, item, contextNetworkId) {
+export function _cardNetworkLine(type: EntityType, item: DbRecord, contextNetworkId?: string): string {
   if (type !== 'assets') return '';
   if (item.assetClass === 'PLC') {
     // A PLC rack has no network connection of its own — each Controller/
     // Communication slot does, via slot.networkPorts[] — so aggregate across
     // slots rather than reading getEntityNetworkPorts(item) directly.
     const parts = (item.slots || [])
-      .filter((/** @type {any} */ s) => CARD_TYPE_NET_TYPES.has(s.cardType))
-      .flatMap((/** @type {any} */ s) => formatNetworkPortLabels(getEntityNetworkPorts(s), contextNetworkId));
+      .filter((s: any) => CARD_TYPE_NET_TYPES.has(s.cardType))
+      .flatMap((s: any) => formatNetworkPortLabels(getEntityNetworkPorts(s), contextNetworkId));
     return parts.join(', ');
   }
   return formatNetworkPortLabels(getEntityNetworkPorts(item), contextNetworkId).join(', ');
 }
 
-/**
- * @param {DbRecord} item
- * @param {EntityConfig} cfg
- * @returns {string}
- */
-export function _cardCountsHtml(item, cfg) {
+export function _cardCountsHtml(item: DbRecord, cfg: EntityConfig): string {
   const allChildren = [
     ...(cfg.getChildren || []),
     ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
   ];
   const counts = allChildren.map(child => {
-    const all = /** @type {Record<string, DbRecord[]>} */ (state.cache)[child.store] || [];
+    const all = (state.cache as Record<string, DbRecord[]>)[child.store] || [];
     // child.filter isn't part of EntityConfig['getChildren']'s current typedef — same
     // defensive dead-code pattern as rel.filter in operations.js, refFilter/readOnly
     // in form.js, and child.filter/extraPresets in detail.js's buildChildSections.
-    const childFilter = /** @type {any} */ (child).filter;
+    const childFilter = (child as any).filter;
     const n = child.countFn
       ? child.countFn(all, item.id ?? '')
       : childFilter
@@ -1248,19 +1165,13 @@ export function _cardCountsHtml(item, cfg) {
   return counts.length ? `
     <div class="card-counts">
       ${counts.map(c => `
-        <div class="card-count-item" style="color:${/** @type {Record<string, EntityConfig>} */ (ENTITY)[c.store].color}" title="${esc(c.label)}">
+        <div class="card-count-item" style="color:${(ENTITY as Record<string, EntityConfig>)[c.store].color}" title="${esc(c.label)}">
           ${entityIcon(c.store, 14)}<span>${c.n}</span>
         </div>`).join('')}
     </div>` : '';
 }
 
-/**
- * @param {EntityType} type
- * @param {DbRecord} item
- * @param {{ contextNetworkId?: string }} [opts]
- * @returns {string}
- */
-export function cardHTML(type, item, { contextNetworkId } = {}) {
+export function cardHTML(type: EntityType, item: DbRecord, { contextNetworkId }: { contextNetworkId?: string } = {}): string {
   const cfg  = ENTITY[type];
   const classLine = type === 'assets' && item.assetClass
     ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
@@ -1325,19 +1236,12 @@ export function cardHTML(type, item, { contextNetworkId } = {}) {
 /* ---- PARENT FILTER CHIPS ---- */
 // Returns { html, bind } where html is the chip row markup and bind(container)
 // wires click events. Split so the caller can inject html first, then call bind.
-/**
- * @param {EntityType} type
- * @param {DbRecord[]} items
- * @param {string} [chipFieldKey]
- * @returns {{ html: string, bind: (container: Element) => void }}
- */
-export function buildParentFilterChips(type, items, chipFieldKey) {
-  /** @param {Element} container */
-  const bindChips = (container) => {
+export function buildParentFilterChips(type: EntityType, items: DbRecord[], chipFieldKey?: string): { html: string, bind: (container: Element) => void } {
+  const bindChips = (container: Element) => {
     const chips = container.querySelector('#filter-chips');
     if (!chips) return;
     chips.addEventListener('click', e => {
-      const chip = /** @type {HTMLElement | null} */ (/** @type {Element | null} */ (e.target)?.closest('.chip'));
+      const chip = (e.target as Element | null)?.closest('.chip') as HTMLElement | null;
       if (!chip) return;
       chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
@@ -1353,13 +1257,13 @@ export function buildParentFilterChips(type, items, chipFieldKey) {
     // are both expected by convention to resolve to a 'ref' field — RefFieldDef is the
     // only FieldDef variant with refStore, but .find()'s return type doesn't carry that
     // guarantee through as a narrowed type, so cast rather than re-deriving it.
-    const refStore = /** @type {RefFieldDef} */ (parentField).refStore;
+    const refStore = (parentField as RefFieldDef).refStore;
     const parentIds = [...new Set(items.map(i => i[parentField.key]).filter(Boolean))];
     const hasUnassigned = items.some(i => !i[parentField.key]);
     if (!parentIds.length && !hasUnassigned) return { html: '', bind: () => {} };
     // .filter(Boolean) narrows out undefined entries at runtime but TS can't infer that
     // from a plain truthiness check — cast back to the non-undefined element type.
-    const parents = /** @type {DbRecord[]} */ (parentIds.map(id => state.refs[refStore]?.[id]).filter(Boolean));
+    const parents = parentIds.map(id => state.refs[refStore]?.[id]).filter(Boolean) as DbRecord[];
     if (!parents.length && !hasUnassigned) return { html: '', bind: () => {} };
     const html = `
       <div class="chips" id="filter-chips">
@@ -1373,7 +1277,7 @@ export function buildParentFilterChips(type, items, chipFieldKey) {
 
   // enumFilterChip is declared only on EnumFieldDef, not the shared FieldDef union —
   // same rationale as the RefFieldDef cast above.
-  const enumField = ENTITY[type]?.fields.find(f => /** @type {any} */ (f).enumFilterChip);
+  const enumField = ENTITY[type]?.fields.find(f => (f as any).enumFilterChip);
   if (enumField) {
     const values = [...new Set(items.map(i => i[enumField.key]).filter(Boolean))];
     if (!values.length) return { html: '', bind: () => {} };
@@ -1389,14 +1293,7 @@ export function buildParentFilterChips(type, items, chipFieldKey) {
   return { html: '', bind: () => {} };
 }
 
-/**
- * @param {EntityType} type
- * @param {DbRecord} item
- * @param {string} parentId
- * @param {string} [chipFieldKey]
- * @returns {boolean}
- */
-export function matchParentChip(type, item, parentId, chipFieldKey) {
+export function matchParentChip(type: EntityType, item: DbRecord, parentId: string, chipFieldKey?: string): boolean {
   const field = chipFieldKey
     ? ENTITY[type]?.fields.find(f => f.key === chipFieldKey)
     : ENTITY[type]?.fields.find(f => f.type === 'ref' && (f.required || f.filterChip));
@@ -1405,7 +1302,7 @@ export function matchParentChip(type, item, parentId, chipFieldKey) {
     return item[field.key] === parentId;
   }
   if (!chipFieldKey) {
-    const enumField = ENTITY[type]?.fields.find(f => /** @type {any} */ (f).enumFilterChip);
+    const enumField = ENTITY[type]?.fields.find(f => (f as any).enumFilterChip);
     if (enumField) return item[enumField.key] === parentId;
   }
   return true;
