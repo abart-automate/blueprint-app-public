@@ -20,11 +20,11 @@
 </head>
 <body>
   <h1>PWA Icon Generator</h1>
-  <p>Opens <code>icons/icon-source.svg</code> and exports all required PNG sizes. Save each file into the <code>icons/</code> folder.</p>
+  <p>Opens <code>public/icons/icon-source.svg</code> and exports all required PNG sizes. Save each file into the <code>public/icons/</code> folder.</p>
 
   <div class="note">
     <strong>How to use:</strong> Serve this file with a local server (e.g. <code>npx serve .</code> or VS Code Live Server),
-    then open it in Chrome. Icons will generate automatically. Click each download link and move the file to <code>icons/</code>.
+    then open it in Chrome. Icons will generate automatically. Click each download link and move the file to <code>public/icons/</code>.
     You cannot open this via <code>file://</code> due to CORS restrictions on SVG loading.
   </div>
 
@@ -46,10 +46,10 @@
 
       let svgText;
       try {
-        const resp = await fetch('./icons/icon-source.svg');
+        const resp = await fetch('./public/icons/icon-source.svg');
         svgText = await resp.text();
       } catch (e) {
-        statusEl.textContent = 'Error loading icons/icon-source.svg — make sure you are serving via a local server (not file://).';
+        statusEl.textContent = 'Error loading public/icons/icon-source.svg — make sure you are serving via a local server (not file://).';
         statusEl.style.color = '#dc2626';
         return;
       }
@@ -88,7 +88,7 @@
         });
 
         URL.revokeObjectURL(svgUrl);
-        statusEl.textContent = `✓ ${SIZES.length} icons ready — click each download link, then move files to icons/`;
+        statusEl.textContent = `✓ ${SIZES.length} icons ready — click each download link, then move files to public/icons/`;
         statusEl.style.color = '#16a34a';
       };
 

@@ -5,6 +5,8 @@
     "allowJs": true,
     "checkJs": false,
     "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "noImplicitAny": true,
     "strictNullChecks": true,
     "esModuleInterop": true,

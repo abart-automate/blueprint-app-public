@@ -1,4 +1,18 @@
 // @ts-check
+
+import { clearStore, getAll, getById, getSetting, remove, setSetting, upsert } from './db.js';
+import { ASSET_CLASS_NETWORK_PORTS, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, PLC_CARD_TYPE_FIELDS } from './entity-config.js';
+import { $, confirm, confirmThreeWay, promptInput, refreshAll, showToast, state } from './state.js';
+import { assertNever, base64ToMediaItem, freshenMediaItems, getEffectiveFields, isSwitchAsset, itemTables, renumberSlots, revokeAllMediaUrls } from './utils.js';
+import { renderDetail } from './renderers/detail.js';
+import { savePartsLibForm } from './parts-library.js';
+import { closeDetail, closeSheet, openDetail, renderPage } from './app.js';
+import { exportExcel, exportToZip } from './export.js';
+import { processXlsxImport } from './import.js';
+import { mergeJsonImport } from './json-merge.js';
+/** @import { DbRecord } from './db.js' */
+/** @import { AssetChildLookup, EntityConfig, EntityType, FieldDef } from './entity-config.js' */
+/** @import { NormalizedMediaItem } from './utils.js' */
 /* ============================================================
    DATA OPERATIONS
    Depends on: entity-config.js, state.js, utils.js, db.js,
@@ -13,7 +27,7 @@
  * @param {string} id
  * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null}
  */
-function _field(id) {
+export function _field(id) {
   return /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */ ($(id));
 }
 
@@ -21,13 +35,13 @@ function _field(id) {
  * @param {EntityType} type
  * @returns {EntityConfig['getChildren']}
  */
-const _getChildren = type => ENTITY[type]?.getChildren ?? [];
+export const _getChildren = type => ENTITY[type]?.getChildren ?? [];
 
 /**
  * Dispatcher: routes to the appropriate save handler based on state.formType.
  * @returns {Promise<void>}
  */
-async function saveForm() {
+export async function saveForm() {
   const type = state.formType;
   if (type === null) return saveEntityForm(); // formType is always set while a form is open; matches prior if-chain's fallthrough
   switch (type) {
@@ -47,7 +61,7 @@ async function saveForm() {
   }
 }
 
-async function savePickerForm() {
+export async function savePickerForm() {
   const { childType, parentField, parentId, selected } = state.pickerMeta || {};
   if (!selected?.size) return;
   for (const id of selected) {
@@ -64,7 +78,7 @@ async function savePickerForm() {
 }
 
 /** @returns {Promise<void>} */
-async function saveSlotForm() {
+export async function saveSlotForm() {
     const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
     const rack     = state.refs.assets?.[rackId];
     if (!rack) { showToast('Rack not found', 'error'); return; }
@@ -124,7 +138,7 @@ async function saveSlotForm() {
 }
 
 /** @returns {Promise<void>} */
-async function savePlantForm() {
+export async function savePlantForm() {
   const name = _field('pf-name')?.value.trim();
   if (!name) { showToast('Plant name is required', 'error'); return; }
   await setSetting('plantName', name);
@@ -142,7 +156,7 @@ async function savePlantForm() {
  * @param {DbRecord[]} allAssets
  * @returns {string | null}
  */
-function validateUniqueIp(item, allAssets) {
+export function validateUniqueIp(item, allAssets) {
   /** @type {Array<{ networkId: string, ipAddress: string }>} */
   const assignments = [];
   if (item.ipAddress && item.networkId)
@@ -178,7 +192,7 @@ function validateUniqueIp(item, allAssets) {
  * @param {Record<string, any>} item
  * @returns {string | null}
  */
-function validateUniqueName(type, item) {
+export function validateUniqueName(type, item) {
   const nameVal = item.name?.trim();
   if (!nameVal) return null;
   const conflict = (state.cache[type] || []).find(i => i.id !== item.id && i.name === nameVal);
@@ -191,7 +205,7 @@ function validateUniqueName(type, item) {
  * @param {Record<string, any>} item
  * @returns {FieldDef | null}
  */
-function validateRequiredFields(type, item) {
+export function validateRequiredFields(type, item) {
   for (const f of getEffectiveFields(type, item)) {
     if (f.required && !item[f.key]) return f;
   }
@@ -204,7 +218,7 @@ function validateRequiredFields(type, item) {
  * Switch/Router port and network tables are read from form state, not DOM inputs.
  * @returns {Promise<void>}
  */
-async function saveEntityForm() {
+export async function saveEntityForm() {
   const type = /** @type {EntityType} */ (state.formType);
   const cfg = ENTITY[type];
   /** @type {Record<string, any>} */
@@ -320,7 +334,7 @@ async function saveEntityForm() {
  * @param {string} name - Display name for the confirm dialog
  * @returns {Promise<void>}
  */
-async function deleteItem(type, id, name) {
+export async function deleteItem(type, id, name) {
   const ok = await confirm('Delete ' + ENTITY[type].label, `Delete "${name}"? This cannot be undone.`, { yesLabel: 'Delete' });
   if (!ok) return;
 
@@ -377,7 +391,7 @@ async function deleteItem(type, id, name) {
  * @param {string} id
  * @returns {Promise<void>}
  */
-async function cascadeDeleteItem(type, id) {
+export async function cascadeDeleteItem(type, id) {
   for (const rel of _getChildren(type)) {
     let children = (state.cache[rel.store] || []).filter(i => i[rel.field] === id);
     const relFilter = /** @type {any} */ (rel).filter;
@@ -394,7 +408,7 @@ async function cascadeDeleteItem(type, id) {
    ============================================================ */
 
 /** @returns {Promise<void>} */
-async function clearAllData() {
+export async function clearAllData() {
   const ok = await confirm(
     'Clear All Data',
     'This will permanently delete all areas, panels, equipment, and media. This cannot be undone.',
@@ -421,7 +435,7 @@ async function clearAllData() {
  * @param {Record<string, any>} [overrides]
  * @returns {Record<string, any>}
  */
-function _stripMediaAndSystemFields(entity, overrides = {}) {
+export function _stripMediaAndSystemFields(entity, overrides = {}) {
   const { id: _id, createdAt: _c, updatedAt: _u, images: _img, namedPhotos: _np, ...rest } = entity;
   return { ...rest, ...overrides };
 }
@@ -433,7 +447,7 @@ function _stripMediaAndSystemFields(entity, overrides = {}) {
  * @param {Record<string, any>[]} children
  * @returns {Promise<Record<string, any>[] | null>}
  */
-function showChildSelector(children) {
+export function showChildSelector(children) {
   /** @type {Record<string, string>} */
   const BADGE = { power: 'badge-power', safety: 'badge-safety', assets: 'badge-asset' };
   return new Promise(resolve => {
@@ -475,7 +489,7 @@ function showChildSelector(children) {
  * @param {string} [suffix]
  * @returns {string}
  */
-function uniqueCopyName(store, baseName, suffix = 'copy') {
+export function uniqueCopyName(store, baseName, suffix = 'copy') {
   const existing = new Set((state.cache[store] || []).map(i => i.name));
   const candidate = `${baseName} (${suffix})`;
   if (!existing.has(candidate)) return candidate;
@@ -489,7 +503,7 @@ function uniqueCopyName(store, baseName, suffix = 'copy') {
  * @param {string} id
  * @returns {Promise<void>}
  */
-async function duplicateItem(type, id) {
+export async function duplicateItem(type, id) {
   await refreshAll();
   const original = state.refs[type]?.[id];
   if (!original) return;
@@ -554,7 +568,7 @@ async function duplicateItem(type, id) {
    ============================================================ */
 
 /** @returns {Promise<void>} */
-async function showExportOptions() {
+export async function showExportOptions() {
   const modal = document.createElement('div');
   modal.className = 'export-options-modal';
   modal.innerHTML = `
@@ -632,13 +646,13 @@ async function showExportOptions() {
  * @param {T | T[] | undefined | null} v
  * @returns {T[]}
  */
-const _toArr = v => Array.isArray(v) ? v : (v ? [v] : []);
+export const _toArr = v => Array.isArray(v) ? v : (v ? [v] : []);
 
 /**
  * @param {Blob} blob
  * @returns {Promise<string>}
  */
-async function _blobToBase64(blob) {
+export async function _blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(/** @type {string} */ (reader.result));
@@ -651,7 +665,7 @@ async function _blobToBase64(blob) {
  * @param {Record<string, any>} entity
  * @returns {Promise<Record<string, any>>}
  */
-async function _serializeEntityMedia(entity) {
+export async function _serializeEntityMedia(entity) {
   const out = { ...entity };
   if (out.images?.length) {
     out.images = await Promise.all(/** @type {any[]} */ (out.images).map(async item => {
@@ -677,7 +691,7 @@ async function _serializeEntityMedia(entity) {
  * @param {Record<string, any>} entity
  * @returns {Record<string, any>}
  */
-function _deserializeEntityMedia(entity) {
+export function _deserializeEntityMedia(entity) {
   const out = { ...entity };
   if (out.images) {
     out.images = /** @type {any[]} */ (out.images)
@@ -701,7 +715,7 @@ function _deserializeEntityMedia(entity) {
  * Exports all plant data to ZIP (with media) or XLSX. Prompts user to choose format.
  * @returns {Promise<void>}
  */
-async function exportData() {
+export async function exportData() {
   try {
     const stores = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
     const payload = {
@@ -740,7 +754,7 @@ async function exportData() {
   }
 }
 
-function importData() {
+export function importData() {
   /** @type {HTMLElement} */ ($('import-file-input')).click();
 }
 
@@ -748,7 +762,7 @@ function importData() {
  * @param {File} file
  * @returns {Promise<void>}
  */
-async function processImportFile(file) {
+export async function processImportFile(file) {
   // Route .xlsx files to the Excel merge importer
   if (file.name.toLowerCase().endsWith('.xlsx')) {
     await processXlsxImport(file);

@@ -1,4 +1,13 @@
 // @ts-check
+
+import { getById } from '../db.js';
+import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
+import { $, el, refreshAll, state } from '../state.js';
+import { attachFieldEmptyToggle, buildEnumOptions, buildRefOptions, esc, isSwitchAsset } from '../utils.js';
+import { _renderNetworkPortsTable, renderClassItemTables, renderIoPointsTable, renderItemTableForm, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableForm, renderPowerBusTableForm, renderSwitchNetworksTableForm, renderSwitchPortsTableForm, syncIoPointCount } from './tables.js';
+import { _field } from '../operations.js';
+/** @import { DbRecord } from '../db.js' */
+/** @import { EntityConfig, EntityType, FieldDef } from '../entity-config.js' */
 /* ============================================================
    FORM RENDERER
    Renders the bottom-sheet form for creating/editing entities,
@@ -14,7 +23,7 @@
    ============================================================ */
 
 /** @returns {Promise<void>} */
-async function renderForm() {
+export async function renderForm() {
   if (state.formType === FORM_TYPE.PLANT) return;
   if (state.formType === FORM_TYPE.PLC_SLOT) return renderSlotForm();
   return renderEntityForm();
@@ -31,7 +40,7 @@ async function renderForm() {
  * @param {boolean} condition
  * @param {Array<() => void>} [renderFns]
  */
-function toggleConditionalSection(wrapIds, condition, renderFns = []) {
+export function toggleConditionalSection(wrapIds, condition, renderFns = []) {
   for (const id of wrapIds) {
     const wrap = $(id);
     if (wrap) wrap.style.display = condition ? '' : 'none';
@@ -42,7 +51,7 @@ function toggleConditionalSection(wrapIds, condition, renderFns = []) {
 /* ---- PLC SLOT FORM ---- */
 
 /** @returns {Promise<void>} */
-async function renderSlotForm() {
+export async function renderSlotForm() {
   const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
   const rack     = state.refs.assets?.[rackId];
   const existing = rack?.slots?.find(/** @param {any} s */ s => s.slotNumber === slotNumber) || null;
@@ -143,7 +152,7 @@ async function renderSlotForm() {
 // then (2) dynamic sections (class fields, subclass fields, switch tables, PLC card
 // type fields) are wired and rendered via event-driven async callbacks after mount.
 /** @returns {Promise<void>} */
-async function renderEntityForm() {
+export async function renderEntityForm() {
   const type = /** @type {EntityType} */ (state.formType);
   const id   = state.formId;
   const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
@@ -425,7 +434,7 @@ async function renderEntityForm() {
  * @param {EntityType} type
  * @returns {Promise<string>}
  */
-async function buildFormField(f, existing, type) {
+export async function buildFormField(f, existing, type) {
   const presetVal = !existing
     ? (state.formPreset?.field === f.key ? state.formPreset.value : (state.formPreset?.extra?.[f.key] ?? null))
     : null;
@@ -515,7 +524,7 @@ async function buildFormField(f, existing, type) {
  * @param {string | undefined | null} currentId
  * @returns {Promise<void>}
  */
-async function populateAssignId(type, assignType, currentId) {
+export async function populateAssignId(type, assignType, currentId) {
   const fg  = $('fg-assign-id');
   const sel = _field('f-assign-id');
   const lbl = $('label-assign-id');
@@ -549,7 +558,7 @@ async function populateAssignId(type, assignType, currentId) {
  * @param {string} areaId
  * @param {string | undefined} currentPanelId
  */
-function filterPanelsByArea(areaId, currentPanelId) {
+export function filterPanelsByArea(areaId, currentPanelId) {
   const sel = _field('f-panelId');
   if (!sel) return;
   const all      = state.cache['panels'] || [];
@@ -564,7 +573,7 @@ function filterPanelsByArea(areaId, currentPanelId) {
  * @param {string | undefined | null} currentPowerId
  * @returns {Promise<void>}
  */
-async function filterPowerByPanel(panelId, currentPowerId) {
+export async function filterPowerByPanel(panelId, currentPowerId) {
   const sel = _field('f-powerId');
   if (!sel) return;
   const all = state.cache['power'] || [];

@@ -4,3 +4,7 @@
 
 # npm / TypeScript tooling
 node_modules/
+
+# Vite build output
+dist/
+dev-dist/

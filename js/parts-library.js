@@ -1,4 +1,12 @@
 // @ts-check
+
+import { getAll, remove, upsert } from './db.js';
+import { FORM_TYPE, ICON_TRASH, PART_CARD_TYPES, PART_IO_TYPES, PART_ISOLATION, PART_PLATFORMS, PART_SIGNAL_RANGES } from './entity-config.js';
+import { confirm, el, showToast, state } from './state.js';
+import { esc } from './utils.js';
+import { _field } from './operations.js';
+import { closeSheet } from './app.js';
+/** @import { DbRecord } from './db.js' */
 /* ============================================================
    PARTS LIBRARY
    Seed data, CRUD, page rendering, import/export.
@@ -49,7 +57,7 @@
  * @param {string} [notes]
  * @returns {PartsLibraryItem}
  */
-function _s(c,d,p,ct,iot,n,v,sr,iso,tc,rtb,si,notes) {
+export function _s(c,d,p,ct,iot,n,v,sr,iso,tc,rtb,si,notes) {
   return {
     catalogNumber:c, manufacturer:'Rockwell Automation', platform:p, description:d,
     cardType:ct, ioType:iot||'N/A', ioPointCount:n||0, voltageLevel:v||'',
@@ -61,7 +69,7 @@ function _s(c,d,p,ct,iot,n,v,sr,iso,tc,rtb,si,notes) {
 }
 
 /* ---- SEED DATA ---- */
-const PARTS_LIB_SEED = [
+export const PARTS_LIB_SEED = [
 
   // ======================================================
   // 1769 CompactLogix
@@ -477,7 +485,7 @@ const PARTS_LIB_SEED = [
 /* ---- CACHE ---- */
 
 /** @returns {Promise<DbRecord[]>} */
-async function getPartsLibraryCache() {
+export async function getPartsLibraryCache() {
   state.cache.partsLibrary = await getAll('partsLibrary');
   return state.cache.partsLibrary;
 }
@@ -485,7 +493,7 @@ async function getPartsLibraryCache() {
 /* ---- SEED ---- */
 
 /** @returns {Promise<void>} */
-async function _forceSeedPartsLibrary() {
+export async function _forceSeedPartsLibrary() {
   const existing = await getAll('partsLibrary');
   const byCat = Object.fromEntries(existing.map(p => [p.catalogNumber?.toLowerCase(), p]));
   for (const template of PARTS_LIB_SEED) {
@@ -498,7 +506,7 @@ async function _forceSeedPartsLibrary() {
 /* ---- PAGE RENDERING ---- */
 
 /** @returns {Promise<void>} */
-async function renderPartsLibraryPage() {
+export async function renderPartsLibraryPage() {
   await getPartsLibraryCache();
   const parts = state.cache.partsLibrary;
 
@@ -626,7 +634,7 @@ async function renderPartsLibraryPage() {
  * @param {DbRecord} p
  * @returns {string}
  */
-function _partCardHtml(p) {
+export function _partCardHtml(p) {
   const metaParts = [p.platform, p.cardType];
   if (p.ioType && p.ioType !== 'N/A') metaParts.push(p.ioType);
   if (!p.slotInstalled) metaParts.push('Accessory');
@@ -655,7 +663,7 @@ function _partCardHtml(p) {
 /* ---- PART FORM ---- */
 
 /** @param {string | null} [id] */
-function openPartForm(id = null) {
+export function openPartForm(id = null) {
   const existing = id ? state.cache.partsLibrary.find(p => p.id === id) : null;
   state.formType = FORM_TYPE.PARTS_LIB;
   state.formId   = id || null;
@@ -670,7 +678,7 @@ function openPartForm(id = null) {
  * @param {DbRecord | null} ex
  * @returns {string}
  */
-function _buildPartFormHtml(ex) {
+export function _buildPartFormHtml(ex) {
   /**
    * @param {string} id
    * @param {readonly string[]} opts
@@ -788,7 +796,7 @@ function _buildPartFormHtml(ex) {
 }
 
 /** @returns {Promise<void>} */
-async function savePartsLibForm() {
+export async function savePartsLibForm() {
   const cat  = _field('pl-catalogNumber')?.value?.trim();
   const mfr  = _field('pl-manufacturer')?.value?.trim();
   const cType = _field('pl-cardType')?.value;
@@ -842,7 +850,7 @@ async function savePartsLibForm() {
  * @param {string} catalogNumber
  * @returns {Promise<void>}
  */
-async function deletePartLibEntry(id, catalogNumber) {
+export async function deletePartLibEntry(id, catalogNumber) {
   const ok = await confirm('Delete Part', `Remove "${catalogNumber}" from the library?`, { yesLabel: 'Delete' });
   if (!ok) return;
   await remove('partsLibrary', id);
@@ -854,7 +862,7 @@ async function deletePartLibEntry(id, catalogNumber) {
 /* ---- EXPORT ---- */
 
 /** @returns {void} */
-function exportPartsLibraryXlsx() {
+export function exportPartsLibraryXlsx() {
   const parts = state.cache.partsLibrary;
   if (!parts.length) { showToast('No parts to export', ''); return; }
 
@@ -894,7 +902,7 @@ function exportPartsLibraryXlsx() {
  * @param {File} file
  * @returns {Promise<void>}
  */
-async function importPartsLibraryXlsx(file) {
+export async function importPartsLibraryXlsx(file) {
   try {
     const data = await file.arrayBuffer();
     const wb   = XLSX.read(data, { type: 'array' });

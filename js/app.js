@@ -1,4 +1,17 @@
 // @ts-check
+
+import { getSetting, setSetting } from './db.js';
+import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
+import { $, confirmUnsaved, el, loadCache, refreshAll, state } from './state.js';
+import { base64ToMediaItem, buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, getCardThumbSrc, getEntityNetworkPorts, getLayoutMode, markFormMediaStart, resolveRefName, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, sortByName } from './utils.js';
+import { renderMediaGallery } from './renderers/tables.js';
+import { renderForm } from './renderers/form.js';
+import { renderDetail, saveDetailChanges } from './renderers/detail.js';
+import { clearAllData, deleteItem, importData, showExportOptions } from './operations.js';
+import { renderPartsLibraryPage } from './parts-library.js';
+/** @import { DbRecord } from './db.js' */
+/** @import { EntityConfig, EntityType, FormType, RefFieldDef } from './entity-config.js' */
+/** @import { ChecklistItem, ChecklistSubItem } from './utils.js' */
 /* ============================================================
    MAIN PAGE CONTROLLER
    Renders home, checklist, and list pages; manages detail panel
@@ -27,7 +40,7 @@
  * Checks both field-level changes and media/table dirty state.
  * @returns {boolean}
  */
-function hasUnsavedDetailChanges() {
+export function hasUnsavedDetailChanges() {
   return Object.keys(state.detailChanges).length > 0 || state.detailMediaDirty;
 }
 
@@ -37,7 +50,7 @@ function hasUnsavedDetailChanges() {
  * navigation guard cannot fire on stale state.
  * @returns {void}
  */
-function _clearDetailEditState() {
+export function _clearDetailEditState() {
   state.detailChanges        = {};
   state.detailMediaDirty     = false;
   state.detailImages         = [];
@@ -65,7 +78,7 @@ function _clearDetailEditState() {
  *   - navigate() skips the extra renderPage() because it calls renderPage() itself.
  * @returns {void}
  */
-function _closeDetailImmediate() {
+export function _closeDetailImmediate() {
   el.detail.classList.remove('open');
 
   // Revoke all blob URLs while el.detail DOM is still intact — must precede innerHTML = ''.
@@ -107,7 +120,7 @@ function _closeDetailImmediate() {
  * Reuses the existing .empty and .det-panel-scroll CSS classes.
  * @returns {void}
  */
-function renderDetailPlaceholder() {
+export function renderDetailPlaceholder() {
   el.detail.innerHTML = `
     <div class="det-panel-scroll" style="display:flex;align-items:center;justify-content:center;height:100%">
       <div class="empty">
@@ -142,7 +155,7 @@ function renderDetailPlaceholder() {
  * element is display:none and getLayoutMode() guards the pointerdown handler.
  * @returns {void}
  */
-function initDetailResizeHandle() {
+export function initDetailResizeHandle() {
   const handle = el.resizeHandle;
   if (!handle) return;
 
@@ -202,7 +215,7 @@ function initDetailResizeHandle() {
  * Mobile/tablet: animates the overlay panel in from the right (unchanged).
  * Desktop:       the pane is permanently visible; we just update its content.
  */
-function openDetail(type, id) {
+export function openDetail(type, id) {
   const wasOpen = !!(state.detailType && state.detailId);
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId });
@@ -248,7 +261,7 @@ function openDetail(type, id) {
  * Returns early (keeping the panel open) if the user chooses to cancel.
  * @returns {Promise<void>}
  */
-async function closeDetail() {
+export async function closeDetail() {
   // Guard: if there are unsaved edits, give the user 3 choices before proceeding.
   if (hasUnsavedDetailChanges()) {
     const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
@@ -298,7 +311,7 @@ async function closeDetail() {
  * @param {Record<string, any> | null} [preset] - Pre-fill values: { field, value } or { copyFrom: item }
  * @returns {void}
  */
-function openSheet(type, id = null, preset = null) {
+export function openSheet(type, id = null, preset = null) {
   state.formType   = type;
   state.formId     = id;
   state.formPreset = preset;
@@ -342,7 +355,7 @@ function openSheet(type, id = null, preset = null) {
 }
 
 /** @returns {void} */
-function closeSheet() {
+export function closeSheet() {
   el.sheet.classList.remove('open');
   el.backdrop.classList.remove('open');
   el.formSave.textContent = 'Save';
@@ -371,7 +384,7 @@ function closeSheet() {
  * @param {number} slotNumber
  * @returns {void}
  */
-function openSlotForm(rackId, slotNumber) {
+export function openSlotForm(rackId, slotNumber) {
   const rack     = state.refs.assets?.[rackId];
   const existing = rack?.slots?.find((/** @type {any} */ s) => s.slotNumber === slotNumber) || null;
   state.formType     = FORM_TYPE.PLC_SLOT;
@@ -405,7 +418,7 @@ function openSlotForm(rackId, slotNumber) {
  * @param {number} slotNumber
  * @returns {void}
  */
-function openSlotDetail(rackId, slotNumber) {
+export function openSlotDetail(rackId, slotNumber) {
   const wasOpen = !!state.detailType;
   if (wasOpen) {
     state.detailStack.push({ type: state.detailType, id: state.detailId, slotNumber: state.detailSlotNumber });
@@ -435,7 +448,7 @@ function openSlotDetail(rackId, slotNumber) {
  * @param {string} parentId
  * @returns {Promise<void>}
  */
-async function openAssignOrCreate(childType, parentField, parentId) {
+export async function openAssignOrCreate(childType, parentField, parentId) {
   await refreshAll();
   const cfg        = ENTITY[childType];
   const unassigned = (state.cache[childType] || []).filter(i => Object.hasOwn(i, parentField) && !i[parentField]);
@@ -519,7 +532,7 @@ async function openAssignOrCreate(childType, parentField, parentId) {
  * @param {string} page
  * @returns {Promise<void>}
  */
-async function navigate(page) {
+export async function navigate(page) {
   if (state.detailType) {
     // Guard fires BEFORE clearing detailStack so cancelling keeps the stack intact.
     if (hasUnsavedDetailChanges()) {
@@ -556,7 +569,7 @@ async function navigate(page) {
  * @param {string} page
  * @returns {void}
  */
-function setHeaderForPage(page) {
+export function setHeaderForPage(page) {
   if (page === 'home') {
     el.pageTitle.textContent   = 'blueprint';
     el.backBtn.style.visibility = 'hidden';
@@ -580,7 +593,7 @@ function setHeaderForPage(page) {
    PAGE RENDERING
    ============================================================ */
 
-const PAGE_RENDERERS = {
+export const PAGE_RENDERERS = {
   home:           () => renderHome(),
   areas:          () => renderAreasList(),
   checklist:      () => renderChecklist(),
@@ -588,7 +601,7 @@ const PAGE_RENDERERS = {
 };
 
 /** Re-renders the current page based on state.page. @returns {Promise<void>} */
-async function renderPage() {
+export async function renderPage() {
   // Revoke any blob URLs from the outgoing page's card list before replacing el.main.
   // getCardThumbSrc() creates untracked URLs invisible to revokeAllMediaUrls(); they must
   // be explicitly revoked here on every page navigation to prevent accumulation toward the
@@ -610,8 +623,8 @@ async function renderPage() {
  * controlling build can't change without a reload.
  * @returns {Promise<string | null>}
  */
-let _swBuildCache = /** @type {string | null} */ (null);
-async function getRunningBuild() {
+export let _swBuildCache = /** @type {string | null} */ (null);
+export async function getRunningBuild() {
   if (_swBuildCache) return _swBuildCache;
   if (!('caches' in window)) return null;
   const keys = (await caches.keys()).filter(k => k.startsWith('plant-asset-'));
@@ -631,7 +644,7 @@ async function getRunningBuild() {
  * @param {string} build
  * @returns {string}
  */
-function formatBuildLabel(build) {
+export function formatBuildLabel(build) {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z-(.+)$/.exec(build);
   if (!m) return build;
   const [, y, mo, d, h, mi, hash] = m;
@@ -639,7 +652,7 @@ function formatBuildLabel(build) {
 }
 
 /** Renders the plant home page with summary stats, area cards, and checklist overview. @returns {Promise<void>} */
-async function renderHome() {
+export async function renderHome() {
   await refreshAll();
   const [plantName, plantDesc] = await Promise.all([
     getSetting('plantName').then(v => v || 'My Plant'),
@@ -651,7 +664,7 @@ async function renderHome() {
   for (const key of Object.keys(ENTITY)) counts[key] = state.cache[/** @type {EntityType} */ (key)]?.length ?? 0;
 
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-  const showInstall = !isStandalone && !!_deferredInstallPrompt;
+  const showInstall = !isStandalone && !!state.deferredInstallPrompt;
   const runningBuild = await getRunningBuild();
 
   el.main.innerHTML = `
@@ -742,11 +755,11 @@ async function renderHome() {
   el.main.querySelector('#home-clear-btn')?.addEventListener('click', clearAllData);
   if (showInstall) {
     el.main.querySelector('#home-install-btn')?.addEventListener('click', async () => {
-      if (!_deferredInstallPrompt) return;
-      _deferredInstallPrompt.prompt();
-      const { outcome } = await _deferredInstallPrompt.userChoice;
+      if (!state.deferredInstallPrompt) return;
+      state.deferredInstallPrompt.prompt();
+      const { outcome } = await state.deferredInstallPrompt.userChoice;
       if (outcome === 'accepted') {
-        _deferredInstallPrompt = null;
+        state.deferredInstallPrompt = null;
         renderHome();
       }
     });
@@ -755,7 +768,7 @@ async function renderHome() {
 
 /* ---- CHECKLIST PAGE ---- */
 /** @returns {Promise<void>} */
-async function renderChecklist() {
+export async function renderChecklist() {
   await refreshAll();
   const items = (await getSetting('checklistItems')) || [];
   // Reuse home-checklist container ID — only one page renders at a time
@@ -765,16 +778,16 @@ async function renderChecklist() {
   await bindChecklistEvents(items);
 }
 
-let _statsExpanded = false;
+export let _statsExpanded = false;
 /** @type {Set<string>} */
-const _expandedAutoKeys = new Set();
+export const _expandedAutoKeys = new Set();
 
 /**
  * @param {ChecklistItem[]} autoItems
  * @param {any[]} customItems
  * @returns {string}
  */
-function buildChecklistHtml(autoItems, customItems) {
+export function buildChecklistHtml(autoItems, customItems) {
   const autoDone  = autoItems.reduce((s, i) => s + i.done, 0);
   const autoTotal = autoItems.reduce((s, i) => s + i.total, 0);
   const custDone  = customItems.filter(i => i.completed).length;
@@ -851,7 +864,7 @@ function buildChecklistHtml(autoItems, customItems) {
  * @param {any[]} [customItems]
  * @returns {Promise<void>}
  */
-async function bindChecklistEvents(customItems) {
+export async function bindChecklistEvents(customItems) {
   const container = $('home-checklist');
   if (!container) return;
 
@@ -979,7 +992,7 @@ async function bindChecklistEvents(customItems) {
 }
 
 /** @returns {void} */
-function openPlantForm() {
+export function openPlantForm() {
   el.formTitle.textContent = 'Plant Info';
   state.formType = FORM_TYPE.PLANT;
   state.formImages = [];
@@ -1002,7 +1015,7 @@ function openPlantForm() {
 
 /* ---- AREAS LIST ---- */
 /** @returns {Promise<void>} */
-async function renderAreasList() {
+export async function renderAreasList() {
   await refreshAll();
   // sortByName's { name?: string } param triggers TS's weak-type-detection against
   // DbRecord's index signature ("no properties in common") — see detail.js's identical fix.
@@ -1066,7 +1079,7 @@ async function renderAreasList() {
  * @param {{ panels: number, power: number, safety: number, networks: number, assets: number }} counts
  * @returns {string}
  */
-function areaCardHTML(area, counts) {
+export function areaCardHTML(area, counts) {
   const pct = calcAreaCompleteness(area);
   const barColor = completenessColor(pct);
   const countDefs = [
@@ -1105,7 +1118,7 @@ function areaCardHTML(area, counts) {
  * @param {{ preFilter?: (item: DbRecord) => boolean, label?: string, plural?: string, chipField?: string }} [opts]
  * @returns {Promise<void>}
  */
-async function renderList(type, opts = {}) {
+export async function renderList(type, opts = {}) {
   await loadCache(['areas', 'panels', 'power', 'safety', 'networks', 'assets']);
   let items = state.cache[type] || [];
   if (opts.preFilter) items = items.filter(opts.preFilter);
@@ -1180,7 +1193,7 @@ async function renderList(type, opts = {}) {
  * @param {EntityConfig} cfg
  * @returns {string}
  */
-function _cardLocationLine(type, item, cfg) {
+export function _cardLocationLine(type, item, cfg) {
   const panel = resolveRefName('panels', item.panelId);
   const area  = resolveRefName('areas', item.areaId);
   if (panel && area) return `${area} / ${panel}`;
@@ -1195,7 +1208,7 @@ function _cardLocationLine(type, item, cfg) {
  * @param {string} [contextNetworkId]
  * @returns {string}
  */
-function _cardNetworkLine(type, item, contextNetworkId) {
+export function _cardNetworkLine(type, item, contextNetworkId) {
   if (type !== 'assets') return '';
   if (item.assetClass === 'PLC') {
     // A PLC rack has no network connection of its own — each Controller/
@@ -1214,7 +1227,7 @@ function _cardNetworkLine(type, item, contextNetworkId) {
  * @param {EntityConfig} cfg
  * @returns {string}
  */
-function _cardCountsHtml(item, cfg) {
+export function _cardCountsHtml(item, cfg) {
   const allChildren = [
     ...(cfg.getChildren || []),
     ...(cfg.subclassChildren?.[item?.assetSubclass] || []),
@@ -1247,7 +1260,7 @@ function _cardCountsHtml(item, cfg) {
  * @param {{ contextNetworkId?: string }} [opts]
  * @returns {string}
  */
-function cardHTML(type, item, { contextNetworkId } = {}) {
+export function cardHTML(type, item, { contextNetworkId } = {}) {
   const cfg  = ENTITY[type];
   const classLine = type === 'assets' && item.assetClass
     ? (item.assetSubclass ? `${item.assetClass} — ${item.assetSubclass}` : item.assetClass)
@@ -1318,7 +1331,7 @@ function cardHTML(type, item, { contextNetworkId } = {}) {
  * @param {string} [chipFieldKey]
  * @returns {{ html: string, bind: (container: Element) => void }}
  */
-function buildParentFilterChips(type, items, chipFieldKey) {
+export function buildParentFilterChips(type, items, chipFieldKey) {
   /** @param {Element} container */
   const bindChips = (container) => {
     const chips = container.querySelector('#filter-chips');
@@ -1383,7 +1396,7 @@ function buildParentFilterChips(type, items, chipFieldKey) {
  * @param {string} [chipFieldKey]
  * @returns {boolean}
  */
-function matchParentChip(type, item, parentId, chipFieldKey) {
+export function matchParentChip(type, item, parentId, chipFieldKey) {
   const field = chipFieldKey
     ? ENTITY[type]?.fields.find(f => f.key === chipFieldKey)
     : ENTITY[type]?.fields.find(f => f.type === 'ref' && (f.required || f.filterChip));

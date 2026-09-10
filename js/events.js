@@ -1,11 +1,17 @@
 // @ts-check
+
+import { ENTITY } from './entity-config.js';
+import { $, el, state } from './state.js';
+import { processImportFile, saveForm } from './operations.js';
+import { closeDetail, closeSheet, initDetailResizeHandle, navigate, openSheet } from './app.js';
+/** @import { EntityConfig, EntityType } from './entity-config.js' */
 /* ============================================================
    EVENT WIRING
    Depends on: state.js, app.js (navigate, openSheet, closeDetail,
    closeSheet, saveForm), operations.js (processImportFile)
    ============================================================ */
 
-function wireEvents() {
+export function wireEvents() {
   // Bottom nav — navigate is async; fire-and-forget is intentional here
   el.nav.addEventListener('click', e => {
     const btn = /** @type {Element | null} */ (e.target)?.closest('.nav-btn');

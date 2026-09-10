@@ -1,4 +1,13 @@
 // @ts-check
+
+import { getAll, getById, setSetting, upsert } from './db.js';
+import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
+import { confirm, refreshAll, showToast } from './state.js';
+import { renumberSlots } from './utils.js';
+import { renderPage } from './app.js';
+import { REF_FIELD_MAP, prettifyKey } from './export.js';
+/** @import { DbRecord } from './db.js' */
+/** @import { EntityType } from './entity-config.js' */
 // XLSX Import Module for Blueprint App
 // Merges data from an exported Excel file back into the database.
 // Records not present in the file are left untouched (merge, not replace).
@@ -14,7 +23,7 @@
  */
 
 /** @type {Set<string>} */
-const KNOWN_SHEET_NAMES = new Set([
+export const KNOWN_SHEET_NAMES = new Set([
   'Areas', 'Panels', 'Power', 'Safety', 'Networks',
   'Network Switch', 'Switch Networks', 'Switch Ports',
   'PLC', 'PLC Slots', 'HMI', 'HMI Network Ports',
@@ -31,7 +40,7 @@ const KNOWN_SHEET_NAMES = new Set([
  * @param {File} file
  * @returns {Promise<void>}
  */
-async function processXlsxImport(file) {
+export async function processXlsxImport(file) {
   try {
     if (typeof XLSX === 'undefined') {
       throw new Error('XLSX library is not loaded');
@@ -103,7 +112,7 @@ async function processXlsxImport(file) {
 // ---------------------------------------------------------------------------
 
 /** @type {{ sheetName: string, store: EntityType }[]} */
-const ENTITY_SHEET_DEFS = [
+export const ENTITY_SHEET_DEFS = [
   { sheetName: 'Areas',    store: 'areas' },
   { sheetName: 'Panels',   store: 'panels' },
   { sheetName: 'Power',    store: 'power' },
@@ -118,7 +127,7 @@ const ENTITY_SHEET_DEFS = [
  * @param {ImportStats} stats
  * @returns {Promise<void>}
  */
-async function importEntitySheets(wb, nameToId, idExists, stats) {
+export async function importEntitySheets(wb, nameToId, idExists, stats) {
   for (const { sheetName, store } of ENTITY_SHEET_DEFS) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
@@ -150,7 +159,7 @@ async function importEntitySheets(wb, nameToId, idExists, stats) {
 // ---------------------------------------------------------------------------
 
 /** @type {{ sheetName: string, assetClass: string }[]} */
-const ASSET_CLASS_SHEET_DEFS = [
+export const ASSET_CLASS_SHEET_DEFS = [
   { sheetName: 'Network Switch', assetClass: 'Network Switch' },
   { sheetName: 'PLC',            assetClass: 'PLC' },
   { sheetName: 'HMI',            assetClass: 'HMI' },
@@ -164,7 +173,7 @@ const ASSET_CLASS_SHEET_DEFS = [
  * @param {ImportStats} stats
  * @returns {Promise<void>}
  */
-async function importAssetSheets(wb, nameToId, idExists, stats) {
+export async function importAssetSheets(wb, nameToId, idExists, stats) {
   for (const { sheetName, assetClass } of ASSET_CLASS_SHEET_DEFS) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
@@ -214,7 +223,7 @@ async function importAssetSheets(wb, nameToId, idExists, stats) {
  * @param {any} wb
  * @returns {Promise<void>}
  */
-async function importChecklistSheet(wb) {
+export async function importChecklistSheet(wb) {
   const ws = wb.Sheets['Checklist'];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
@@ -238,7 +247,7 @@ async function importChecklistSheet(wb) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importSubdataSheets(wb, nameToId, idExists) {
+export async function importSubdataSheets(wb, nameToId, idExists) {
   await importSwitchNetworksSheet(wb, nameToId, idExists);
   await importSwitchPortsSheet(wb, nameToId, idExists);
   await importPlcSlotsSheet(wb, nameToId, idExists);
@@ -255,7 +264,7 @@ async function importSubdataSheets(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importSwitchNetworksSheet(wb, nameToId, idExists) {
+export async function importSwitchNetworksSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['Switch Networks'];
   if (!ws) return;
 
@@ -280,7 +289,7 @@ async function importSwitchNetworksSheet(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importSwitchPortsSheet(wb, nameToId, idExists) {
+export async function importSwitchPortsSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['Switch Ports'];
   if (!ws) return;
 
@@ -311,7 +320,7 @@ async function importSwitchPortsSheet(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idExists) {
+export async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idExists) {
   const ws = wb.Sheets[sheetName];
   if (!ws) return;
 
@@ -343,7 +352,7 @@ async function importAssetNetworkPortsSheet(wb, sheetName, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importPlcSlotsSheet(wb, nameToId, idExists) {
+export async function importPlcSlotsSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['PLC Slots'];
   if (!ws) return;
 
@@ -394,7 +403,7 @@ async function importPlcSlotsSheet(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
+export async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['Field Device Parameters'];
   if (!ws) return;
 
@@ -417,7 +426,7 @@ async function importFieldDeviceParametersSheet(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importPowerWiringSheet(wb, nameToId, idExists) {
+export async function importPowerWiringSheet(wb, nameToId, idExists) {
   const ws = wb.Sheets['Power Wiring'];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -445,7 +454,7 @@ async function importPowerWiringSheet(wb, nameToId, idExists) {
  * @param {IdExistsSets} idExists
  * @returns {Promise<void>}
  */
-async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId, idExists) {
+export async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId, idExists) {
   const ws = wb.Sheets[sheetName];
   if (!ws) return;
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -468,7 +477,7 @@ async function importAssetWiringSheet(wb, sheetName, wiringKey, nameToId, idExis
  * @param {DbRecord[]} items
  * @returns {Map<string, string>}
  */
-function buildNameMap(items) {
+export function buildNameMap(items) {
   const map = new Map();
   for (const item of items) {
     if (item.name) map.set(item.name.trim().toLowerCase(), /** @type {string} */ (item.id));
@@ -484,7 +493,7 @@ function buildNameMap(items) {
  * @param {IdExistsSets} idExists
  * @returns {string | null}
  */
-function resolveRefId(rawId, name, store, nameToId, idExists) {
+export function resolveRefId(rawId, name, store, nameToId, idExists) {
   if (rawId && idExists[store]?.has(rawId)) return rawId;
   if (name) {
     const found = nameToId[store]?.get(name.trim().toLowerCase());
@@ -502,7 +511,7 @@ function resolveRefId(rawId, name, store, nameToId, idExists) {
  * @param {EntityType} [store]
  * @returns {Map<string, any[]>}
  */
-function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists, store = 'assets') {
+export function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists, store = 'assets') {
   /** @type {Map<string, any[]>} */
   const grouped = new Map();
   for (const row of rows) {
@@ -519,7 +528,7 @@ function groupByParentAsset(rows, idCol, nameCol, nameToId, idExists, store = 'a
  * @param {Record<string, any>} row
  * @returns {boolean}
  */
-function isPlaceholderRow(row) {
+export function isPlaceholderRow(row) {
   const vals = Object.values(row);
   if (!vals.length) return true;
   if (vals.every(v => v === '' || v == null)) return true;
@@ -537,7 +546,7 @@ function isPlaceholderRow(row) {
  * @param {string[]} [excludeKeys]
  * @returns {Record<string, { key: string, isRawId?: boolean }>}
  */
-function buildImportHeaderMap(store, assetClass = null, excludeKeys = []) {
+export function buildImportHeaderMap(store, assetClass = null, excludeKeys = []) {
   const excludeSet = new Set(excludeKeys);
   const entity = ENTITY[store];
   if (!entity) return {};
@@ -600,7 +609,7 @@ function buildImportHeaderMap(store, assetClass = null, excludeKeys = []) {
  * @param {IdExistsSets} idExists
  * @returns {Record<string, any>}
  */
-function mapRowToItem(row, headerMap, nameToId, idExists) {
+export function mapRowToItem(row, headerMap, nameToId, idExists) {
   /** @type {Record<string, { name?: string, rawId?: string }>} */
   const refAccum = {}; // key → { name, rawId }
   /** @type {Record<string, any>} */
@@ -660,7 +669,7 @@ function mapRowToItem(row, headerMap, nameToId, idExists) {
  * @param {ImportStats} stats
  * @returns {Promise<void>}
  */
-async function mergeUpsert(store, item, idSet, stats) {
+export async function mergeUpsert(store, item, idSet, stats) {
   const itemId = str(item.id);
 
   if (itemId && idSet.has(itemId)) {
@@ -685,7 +694,7 @@ async function mergeUpsert(store, item, idSet, stats) {
  * @param {any} value
  * @returns {string}
  */
-function str(value) {
+export function str(value) {
   return String(value ?? '').trim();
 }
 

@@ -1,4 +1,15 @@
 // @ts-check
+
+import { getById, upsert } from '../db.js';
+import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_PLUS, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
+import { confirm, el, refreshAll, showToast, state } from '../state.js';
+import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
+import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
+import { deleteItem, duplicateItem } from '../operations.js';
+import { _clearDetailEditState, cardHTML, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm } from '../app.js';
+/** @import { DbRecord } from '../db.js' */
+/** @import { EntityConfig, EntityType, FieldDef, FormType } from '../entity-config.js' */
+/** @import { NormalizedMediaItem } from '../utils.js' */
 /* ============================================================
    DETAIL VIEW RENDERERS
    Depends on: entity-config.js, state.js, utils.js, db.js, app.js (openDetail,
@@ -11,7 +22,7 @@
  * @param {{ preserveScroll?: boolean }} [opts]
  * @returns {Promise<void>}
  */
-async function renderDetail({ preserveScroll = false } = {}) {
+export async function renderDetail({ preserveScroll = false } = {}) {
   const { detailType: type, detailId: id } = state;
   if (!type || !id) return;
   // Scroll lives on the inner .det-panel-scroll container, not el.detail itself.
@@ -22,7 +33,7 @@ async function renderDetail({ preserveScroll = false } = {}) {
 }
 
 /** @param {number} savedScroll */
-async function renderSlotDetail(savedScroll) {
+export async function renderSlotDetail(savedScroll) {
   const id = /** @type {string} */ (state.detailId);
   await refreshAll();
   const rack = state.refs.assets?.[id];
@@ -301,7 +312,7 @@ async function renderSlotDetail(savedScroll) {
  * @param {{ isFirst?: boolean, isLast?: boolean }} [opts]
  * @returns {string}
  */
-function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = false } = {}) {
+export function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = false } = {}) {
   // Defensive fallback for data-inconsistency edge cases — normal path never reaches this.
   if (!slot) {
     return `<div class="sn-det-row rack-slot-row" data-rack-id="${rackId}" data-slot-num="${slotNumber}" style="cursor:pointer">
@@ -351,7 +362,7 @@ function buildSlotRow(rackId, slotNumber, slot, { isFirst = false, isLast = fals
  * @param {any} item      - Current entity data (provides the initial value)
  * @returns {string} HTML string for the control, wrapped in .det-fval
  */
-function buildEditableFieldHtml(f, item) {
+export function buildEditableFieldHtml(f, item) {
   const rawVal   = item[f.key] ?? '';
   const isEmpty  = rawVal === '' || rawVal == null;
   const emptyCls = isEmpty ? ' field-empty' : '';
@@ -399,7 +410,7 @@ function buildEditableFieldHtml(f, item) {
  * @param {number} savedScroll
  * @returns {Promise<void>}
  */
-async function renderEntityDetail(savedScroll) {
+export async function renderEntityDetail(savedScroll) {
   const type = /** @type {EntityType} */ (state.detailType);
   const id   = /** @type {string} */ (state.detailId);
   const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
@@ -1038,7 +1049,7 @@ async function renderEntityDetail(savedScroll) {
  * @param {{ expanded?: boolean }} [opts]
  * @returns {string}
  */
-function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
+export function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
   const chevron = ICON_CHEVRON;
   return `
     <div class="det-card det-collapsible">
@@ -1058,7 +1069,7 @@ function buildCollapsibleCard(title, bodyHtml, { expanded = false } = {}) {
  * @param {string} parentId
  * @returns {Array<{ rack: any, slots: any[] }>}
  */
-function getSlotLinkedRacks(parentType, parentId) {
+export function getSlotLinkedRacks(parentType, parentId) {
   return (state.cache.assets || [])
     .filter(a => a.assetClass === 'PLC' && a.slots?.length)
     .map(rack => {
@@ -1083,7 +1094,7 @@ function getSlotLinkedRacks(parentType, parentId) {
  * @param {string} [contextNetworkId]
  * @returns {string}
  */
-function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
+export function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
   const cfg = ENTITY.assets;
   const firstMedia = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
   const thumbSrc = getCardThumbSrc(firstMedia);
@@ -1118,7 +1129,7 @@ function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
  * @param {any} item
  * @returns {Promise<string>}
  */
-async function buildChildSections(type, id, item) {
+export async function buildChildSections(type, id, item) {
   const cfg = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
   const allChildren = [
     ...(cfg.getChildren || []),
@@ -1206,7 +1217,7 @@ async function buildChildSections(type, id, item) {
  * @param {string} id
  * @returns {Promise<boolean>}
  */
-async function saveDetailChanges(type, id) {
+export async function saveDetailChanges(type, id) {
   // Slot cards are sub-objects of a rack asset — delegate to the slot saver.
   if (type === FORM_TYPE.PLC_SLOT) {
     return saveSlotDetailChanges(id, /** @type {number} */ (state.detailSlotNumber));
@@ -1290,7 +1301,7 @@ async function saveDetailChanges(type, id) {
  * @param {number} slotNumber
  * @returns {Promise<boolean>}
  */
-async function saveSlotDetailChanges(rackId, slotNumber) {
+export async function saveSlotDetailChanges(rackId, slotNumber) {
   const rack = await getById('assets', rackId);
   if (!rack) return false;
 

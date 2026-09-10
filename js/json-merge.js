@@ -1,4 +1,13 @@
 // @ts-check
+
+import { getAll, getById, setSetting, upsert } from './db.js';
+import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
+import { $, confirm, refreshAll, showToast, state } from './state.js';
+import { _deserializeEntityMedia, _serializeEntityMedia, uniqueCopyName } from './operations.js';
+import { renderPage } from './app.js';
+import { REF_FIELD_MAP } from './export.js';
+/** @import { DbRecord } from './db.js' */
+/** @import { EntityType } from './entity-config.js' */
 // JSON Merge Import Module
 // Non-destructive alternative to the "Replace All" JSON import in operations.js.
 // Detects name/ID matches between the imported file and existing data, lets the
@@ -12,13 +21,13 @@
 //               app.js (refreshAll, renderPage)
 
 /** @type {readonly EntityType[]} */
-const MERGE_STORE_ORDER = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
+export const MERGE_STORE_ORDER = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'];
 
 // Ref-field keys whose values are entity ids, mapped to the store they point into.
 // REF_FIELD_MAP (export.js) already covers areaId/panelId/powerId/safetyId/networkId;
 // assetId is added here for cross-asset references (e.g. switchPorts[].assetId).
 /** @type {Record<string, string>} */
-const MERGE_REF_STORE_KEYS = { ...REF_FIELD_MAP, assetId: 'assets' };
+export const MERGE_REF_STORE_KEYS = { ...REF_FIELD_MAP, assetId: 'assets' };
 
 /**
  * @typedef {Object} MergeConflict
@@ -55,7 +64,7 @@ const MERGE_REF_STORE_KEYS = { ...REF_FIELD_MAP, assetId: 'assets' };
  * @param {Record<string, any>} importedItem
  * @returns {DbRecord | null}
  */
-function _findExistingMatch(store, importedItem) {
+export function _findExistingMatch(store, importedItem) {
   if (importedItem.id && state.refs[store]?.[importedItem.id]) return state.refs[store][importedItem.id];
   const name = importedItem.name?.trim().toLowerCase();
   if (!name) return null;
@@ -66,7 +75,7 @@ function _findExistingMatch(store, importedItem) {
  * @param {Record<string, any>} entity
  * @returns {Record<string, any>}
  */
-function _diffableFields(entity) {
+export function _diffableFields(entity) {
   const { id, createdAt, updatedAt, ...rest } = entity;
   return rest;
 }
@@ -78,7 +87,7 @@ function _diffableFields(entity) {
  * @param {DbRecord} existing
  * @returns {Promise<boolean>}
  */
-async function _isSameAsExisting(importedItem, existing) {
+export async function _isSameAsExisting(importedItem, existing) {
   const serializedExisting = await _serializeEntityMedia(existing);
   return JSON.stringify(_diffableFields(importedItem)) === JSON.stringify(_diffableFields(serializedExisting));
 }
@@ -88,7 +97,7 @@ async function _isSameAsExisting(importedItem, existing) {
  * @param {MergePayload} payload
  * @returns {Promise<MergePlan>}
  */
-async function detectJsonMergePlan(payload) {
+export async function detectJsonMergePlan(payload) {
   await refreshAll();
   /** @type {Partial<Record<EntityType, MergeConflict[]>>} */
   const conflictsByStore = {};
@@ -147,7 +156,7 @@ async function detectJsonMergePlan(payload) {
  * @param {MergePlan} plan
  * @returns {Promise<MergePlan | null>}
  */
-function showJsonMergeReview(plan) {
+export function showJsonMergeReview(plan) {
   const groups = MERGE_STORE_ORDER
     .filter(store => plan.conflictsByStore[store]?.length)
     .map(store => ({ store, conflicts: /** @type {MergeConflict[]} */ (plan.conflictsByStore[store]) }));
@@ -273,7 +282,7 @@ function showJsonMergeReview(plan) {
  * @param {Record<string, Record<string, string>>} remapTables - storeName -> (oldId -> newId)
  * @returns {T}
  */
-function remapRefsDeep(value, remapTables) {
+export function remapRefsDeep(value, remapTables) {
   if (Array.isArray(value)) return /** @type {T} */ (value.map(v => remapRefsDeep(v, remapTables)));
   if (value === null || typeof value !== 'object' || value instanceof Blob) return value;
 
@@ -300,7 +309,7 @@ function remapRefsDeep(value, remapTables) {
  * @param {Record<string, any>} entity
  * @returns {Record<string, any>}
  */
-function _stripSystemFields(entity) {
+export function _stripSystemFields(entity) {
   const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = entity;
   return rest;
 }
@@ -312,7 +321,7 @@ function _stripSystemFields(entity) {
  * @param {MergePayload} payload
  * @returns {Promise<void>}
  */
-async function _mergeSettings(payload) {
+export async function _mergeSettings(payload) {
   const importedSettings = Array.isArray(payload.data.settings) ? payload.data.settings : [];
   if (!importedSettings.length) return;
   const existingSettings = await getAll('settings');
@@ -339,7 +348,7 @@ async function _mergeSettings(payload) {
  * @param {MergePlan} plan
  * @returns {Promise<void>}
  */
-async function applyJsonMergePlan(payload, plan) {
+export async function applyJsonMergePlan(payload, plan) {
   /** @type {Record<string, Record<string, string>>} */
   const remap = {};
   for (const store of MERGE_STORE_ORDER) remap[store] = {};
@@ -420,7 +429,7 @@ async function applyJsonMergePlan(payload, plan) {
    ============================================================ */
 
 /** @param {MergePayload} payload */
-async function mergeJsonImport(payload) {
+export async function mergeJsonImport(payload) {
   try {
     const plan = await detectJsonMergePlan(payload);
     const hasConflicts = Object.keys(plan.conflictsByStore).length > 0;

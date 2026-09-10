@@ -93,7 +93,7 @@
    constant instead of repeating the raw string, so a typo becomes an
    immediate ReferenceError instead of a silently-mismatched comparison that
    falls through to the default entity-form/detail path. */
-const FORM_TYPE = /** @type {const} */ ({
+export const FORM_TYPE = /** @type {const} */ ({
   PICKER:    '__picker__',
   PLC_SLOT:  '__plc_slot__',
   PLANT:     '__plant__',
@@ -103,21 +103,21 @@ const FORM_TYPE = /** @type {const} */ ({
 /** @typedef {EntityType | typeof FORM_TYPE[keyof typeof FORM_TYPE]} FormType */
 
 /* ---- PARTS LIBRARY CONSTANTS ---- */
-const PART_IO_TYPES      = ['Input', 'Output', 'Combo', 'N/A'];
-const PART_SIGNAL_RANGES = ['4-20mA', '0-20mA', '0-10V', '1-5V', 'RTD', 'Thermocouple', 'Other'];
-const PART_PLATFORMS     = ['1769', '1768', '5069', '1756', '1734', 'Other'];
-const PART_ISOLATION     = ['Non-isolated', 'Isolated', 'Individually-isolated', 'N/A'];
-const PART_CARD_TYPES    = ['Controller', 'Analog', 'Digital', 'Communication', 'Specialty', 'Motion'];
+export const PART_IO_TYPES      = ['Input', 'Output', 'Combo', 'N/A'];
+export const PART_SIGNAL_RANGES = ['4-20mA', '0-20mA', '0-10V', '1-5V', 'RTD', 'Thermocouple', 'Other'];
+export const PART_PLATFORMS     = ['1769', '1768', '5069', '1756', '1734', 'Other'];
+export const PART_ISOLATION     = ['Non-isolated', 'Isolated', 'Individually-isolated', 'N/A'];
+export const PART_CARD_TYPES    = ['Controller', 'Analog', 'Digital', 'Communication', 'Specialty', 'Motion'];
 
 /* ---- SHARED FIELD ARRAYS ---- */
 /** @type {readonly FieldDef[]} */
-const PHYS_SIZE_FIELDS = [
+export const PHYS_SIZE_FIELDS = [
   { key: 'physH', label: 'Height (in)', type: 'text', section: 'Physical Sizing' },
   { key: 'physW', label: 'Width (in)',  type: 'text', section: 'Physical Sizing' },
   { key: 'physD', label: 'Depth (in)', type: 'text', section: 'Physical Sizing' },
 ];
 /** @type {readonly FieldDef[]} */
-const CLEARANCE_FIELDS = [
+export const CLEARANCE_FIELDS = [
   { key: 'clrTop',    label: 'Top (in)',    type: 'text', section: 'Clearance' },
   { key: 'clrBottom', label: 'Bottom (in)', type: 'text', section: 'Clearance' },
   { key: 'clrFront',  label: 'Front (in)',  type: 'text', section: 'Clearance' },
@@ -127,7 +127,7 @@ const CLEARANCE_FIELDS = [
 ];
 
 /** @type {readonly FieldDef[]} */
-const SERIAL_FIELDS = [
+export const SERIAL_FIELDS = [
   { key: 'protocol', label: 'Protocol',   type: 'enum', options: ['RS232','RS422','RS485','Modbus RTU','Other'], required: true },
   { key: 'baudRate', label: 'Baud Rate', type: 'enum', section: 'Serial Configuration',
     options: ['1200','2400','4800','9600','19200','38400','57600','115200'] },
@@ -142,7 +142,7 @@ const SERIAL_FIELDS = [
 // so adding a card type here is sufficient to make it selectable; there is
 // no second place that also needs updating.
 /** @type {Record<string, readonly FieldDef[]>} */
-const PLC_CARD_TYPE_FIELDS = {
+export const PLC_CARD_TYPE_FIELDS = {
   // Network connectivity for Controller/Communication is handled per-port via
   // networkPorts[]. Card-level networkId and address fields have been removed.
   Controller:    [],
@@ -156,38 +156,38 @@ const PLC_CARD_TYPE_FIELDS = {
 
 // Card type classification sets — used across form, detail, and operations to
 // decide which sub-panels (IO points/power bus vs. network address) to show.
-const CARD_TYPE_IO_TYPES       = new Set(['Analog', 'Digital']);
-const CARD_TYPE_NET_TYPES      = new Set(['Controller', 'Communication']);
+export const CARD_TYPE_IO_TYPES       = new Set(['Analog', 'Digital']);
+export const CARD_TYPE_NET_TYPES      = new Set(['Controller', 'Communication']);
 // Specialty is included here because it has physical terminals even though it
 // has no IO points or power bus of its own.
-const CARD_TYPE_TERMINAL_TYPES = new Set(['Analog', 'Digital', 'Specialty']);
+export const CARD_TYPE_TERMINAL_TYPES = new Set(['Analog', 'Digital', 'Specialty']);
 
 // Asset classes whose network connection is modeled as a multi-port Network Ports
 // table (like PLC Controller/Communication cards) rather than a single Network
 // field. Extend this set — not scattered per-file class checks — to add the UI to
 // another asset class.
-const ASSET_CLASS_NETWORK_PORTS = new Set(['Field Device', 'HMI']);
+export const ASSET_CLASS_NETWORK_PORTS = new Set(['Field Device', 'HMI']);
 
 /* ---- ICON SVG CONSTANTS ---- */
-const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-const ICON_TRASH   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
-const ICON_BACK    = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
-const ICON_PLUS    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-const ICON_CHEVRON = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-const ICON_CHECK   = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
-const ICON_CIRCLE  = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
+export const ICON_RM      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+export const ICON_TRASH   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+export const ICON_BACK    = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+export const ICON_PLUS    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+export const ICON_CHEVRON = `<svg class="det-toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+export const ICON_CHECK   = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+export const ICON_CIRCLE  = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
 // Notes/attachments indicator for checklist detail toggle
-const ICON_NOTE      = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+export const ICON_NOTE      = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 // Duplicate/copy icon — shared between the entity "Duplicate" button and the slot duplicate action
-const ICON_DUPLICATE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+export const ICON_DUPLICATE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 // Drag-handle grip (6-dot) for drag-to-reorder slot rows
-const ICON_GRIP      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>`;
+export const ICON_GRIP      = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>`;
 // Plain up/down chevrons — no embedded class so they work as generic action button icons
-const ICON_CHEVRON_UP   = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
-const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+export const ICON_CHEVRON_UP   = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+export const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
 /** @type {Record<EntityType, EntityConfig>} */
-const ENTITY = {
+export const ENTITY = {
   areas: {
     label: 'Area', plural: 'Areas', store: 'areas',
     color: '#7c3aed', bgColor: '#ede9fe', badgeClass: 'badge-area',
@@ -461,7 +461,7 @@ const ENTITY = {
   },
 };
 
-const ASSIGN_STORE_MAP = {
+export const ASSIGN_STORE_MAP = {
   Plant: null,
   Area: 'areas',
   Panel: 'panels',
@@ -482,7 +482,7 @@ const ASSIGN_STORE_MAP = {
    guard): called from init() only when the URL has ?debug=1. See
    PLC_CARD_TYPE_FIELDS and assets.classFields above for two real gaps this
    check found and fixed while it was being written. */
-function assertEntityConfigComplete() {
+export function assertEntityConfigComplete() {
   /** @type {string[]} */
   const problems = [];
   const assetClassField = /** @type {EnumFieldDef | undefined} */

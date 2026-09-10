@@ -1,8 +1,8 @@
 // @ts-check
 // IndexedDB layer for Plant Asset Manager
-const DB_NAME = 'PlantAssetDB';
-const DB_VERSION = 3;
-const STORES = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary']);
+export const DB_NAME = 'PlantAssetDB';
+export const DB_VERSION = 3;
+export const STORES = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary']);
 
 /** @typedef {typeof STORES[number]} StoreName */
 
@@ -18,10 +18,10 @@ const STORES = /** @type {const} */ (['areas', 'panels', 'power', 'safety', 'net
  */
 
 /** @type {IDBDatabase | null} */
-let _db = null;
+export let _db = null;
 
 /** @returns {Promise<IDBDatabase>} */
-async function initDB() {
+export async function initDB() {
   if (_db) return _db;
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -44,7 +44,7 @@ async function initDB() {
  * @param {IDBTransactionMode} [mode]
  * @returns {IDBObjectStore}
  */
-function tx(name, mode = 'readonly') {
+export function tx(name, mode = 'readonly') {
   return /** @type {IDBDatabase} */ (_db).transaction(name, mode).objectStore(name);
 }
 
@@ -52,7 +52,7 @@ function tx(name, mode = 'readonly') {
  * @param {StoreName} name
  * @returns {Promise<DbRecord[]>}
  */
-async function getAll(name) {
+export async function getAll(name) {
   return new Promise((res, rej) => {
     const req = tx(name).getAll();
     req.onsuccess = () => res(req.result ?? []);
@@ -65,7 +65,7 @@ async function getAll(name) {
  * @param {string} id
  * @returns {Promise<DbRecord | null>}
  */
-async function getById(name, id) {
+export async function getById(name, id) {
   return new Promise((res, rej) => {
     const req = tx(name).get(id);
     req.onsuccess = () => res(req.result ?? null);
@@ -80,7 +80,7 @@ async function getById(name, id) {
  * @param {DbRecord} item
  * @returns {Promise<DbRecord>}
  */
-async function upsert(name, item) {
+export async function upsert(name, item) {
   return new Promise((res, rej) => {
     if (!item.id)        item.id        = crypto.randomUUID();
     if (!item.createdAt) item.createdAt = new Date().toISOString();
@@ -96,7 +96,7 @@ async function upsert(name, item) {
  * @param {string} id
  * @returns {Promise<void>}
  */
-async function remove(name, id) {
+export async function remove(name, id) {
   return new Promise((res, rej) => {
     const req = tx(name, 'readwrite').delete(id);
     req.onsuccess = () => res();
@@ -108,7 +108,7 @@ async function remove(name, id) {
  * @param {StoreName} name
  * @returns {Promise<void>}
  */
-async function clearStore(name) {
+export async function clearStore(name) {
   return new Promise((res, rej) => {
     const req = tx(name, 'readwrite').clear();
     req.onsuccess = () => res();
@@ -120,7 +120,7 @@ async function clearStore(name) {
  * @param {string} key
  * @returns {Promise<any>}
  */
-async function getSetting(key) {
+export async function getSetting(key) {
   const s = await getById('settings', key);
   return s?.value ?? null;
 }
@@ -130,7 +130,7 @@ async function getSetting(key) {
  * @param {any} value
  * @returns {Promise<void>}
  */
-async function setSetting(key, value) {
+export async function setSetting(key, value) {
   return new Promise((res, rej) => {
     const req = tx('settings', 'readwrite').put({ id: key, value });
     req.onsuccess = () => res();

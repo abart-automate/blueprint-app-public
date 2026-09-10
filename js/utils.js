@@ -1,4 +1,10 @@
 // @ts-check
+
+import { ENTITY } from './entity-config.js';
+import { state } from './state.js';
+import { renderDetailPlaceholder } from './app.js';
+/** @import { DbRecord, StoreName } from './db.js' */
+/** @import { EntityType, EnumFieldDef, FieldDef, ItemTableDef } from './entity-config.js' */
 /* ============================================================
    UTILITIES
    Pure helper functions with no side effects beyond what they
@@ -39,10 +45,10 @@
 
 /* ---- MEDIA TYPE CONSTANTS ---- */
 
-const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/quicktime'];
-const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
-const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
+export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const ACCEPTED_VIDEO_TYPES = ['video/mp4','video/quicktime'];
+export const ACCEPTED_MEDIA_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
+export const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
 
 /* ---- EXHAUSTIVENESS CHECK ---- */
 
@@ -55,7 +61,7 @@ const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
  * @param {never} value
  * @returns {never}
  */
-function assertNever(value) {
+export function assertNever(value) {
   throw new Error(`Unhandled case: ${JSON.stringify(value)}`);
 }
 
@@ -65,7 +71,7 @@ function assertNever(value) {
  * @param {unknown} str
  * @returns {string}
  */
-function esc(str) {
+export function esc(str) {
   if (str == null) return '';
   return String(str)
     .replace(/&/g, '&amp;')
@@ -82,7 +88,7 @@ function esc(str) {
  * @param {string | undefined | null} id
  * @returns {DbRecord | null}
  */
-function resolveRef(storeName, id) {
+export function resolveRef(storeName, id) {
   return state.refs?.[storeName]?.[id ?? ''] ?? null;
 }
 
@@ -91,7 +97,7 @@ function resolveRef(storeName, id) {
  * @param {string | undefined | null} id
  * @returns {string}
  */
-function resolveRefName(storeName, id) {
+export function resolveRefName(storeName, id) {
   return resolveRef(storeName, id)?.name ?? '';
 }
 
@@ -114,7 +120,7 @@ function resolveRefName(storeName, id) {
  * @param {Record<string, any> | undefined | null} item - An asset, or a PLC slot object
  * @returns {NetworkPortEntry[]}
  */
-function getEntityNetworkPorts(item) {
+export function getEntityNetworkPorts(item) {
   if (item?.switchNetworks?.length) return item.switchNetworks;
   if (item?.networkPorts?.length) return item.networkPorts;
   if (item?.networkId) return [{ networkId: item.networkId, ipAddress: item.ipAddress, nodeAddress: item.nodeAddress }];
@@ -133,7 +139,7 @@ function getEntityNetworkPorts(item) {
  *   unrelated network connections would be misleading.
  * @returns {string[]}
  */
-function formatNetworkPortLabels(ports, contextNetworkId) {
+export function formatNetworkPortLabels(ports, contextNetworkId) {
   const relevant = contextNetworkId ? ports.filter(p => p.networkId === contextNetworkId) : ports;
   return relevant.map(p => {
     const net = state.refs.networks?.[p.networkId];
@@ -152,7 +158,7 @@ function formatNetworkPortLabels(ports, contextNetworkId) {
  * @param {{ name?: string }} b
  * @returns {number}
  */
-const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+export const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
 
 /* ---- FIELD / ENTITY HELPERS ---- */
 
@@ -161,7 +167,7 @@ const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefine
  * @param {Record<string, any> | undefined | null} item
  * @returns {FieldDef[]}
  */
-function getEffectiveFields(type, item) {
+export function getEffectiveFields(type, item) {
   const cfg           = ENTITY[type];
   const base          = cfg.fields || [];
   const proto         = cfg.protocolFields?.[item?.networkType ?? ''] || [];
@@ -178,7 +184,7 @@ function getEffectiveFields(type, item) {
  * @param {Record<string, any> | undefined | null} item
  * @returns {ItemTableDef[]}
  */
-function itemTables(type, item) {
+export function itemTables(type, item) {
   const cfg = ENTITY[type];
   return [
     ...(cfg.itemTables || []),
@@ -196,7 +202,7 @@ function itemTables(type, item) {
  * @param {string} subclass   - The asset's subclass/subtype string
  * @returns {boolean}
  */
-function isSwitchAsset(assetClass, subclass) {
+export function isSwitchAsset(assetClass, subclass) {
   return assetClass === 'Network Switch' && !!subclass;
 }
 
@@ -210,7 +216,7 @@ function isSwitchAsset(assetClass, subclass) {
  * @param {Record<string, any> | undefined | null} item - Current entity data (provides assetClass context)
  * @returns {readonly string[]}
  */
-function resolveFieldOptions(f, item) {
+export function resolveFieldOptions(f, item) {
   if (f.key === 'assetSubclass') {
     return ENTITY.assets.classSubclasses?.[item?.assetClass ?? ''] || [];
   }
@@ -225,7 +231,7 @@ function resolveFieldOptions(f, item) {
  * @param {T[]} slots
  * @returns {(T & { slotNumber: number })[]}
  */
-function renumberSlots(slots) {
+export function renumberSlots(slots) {
   return slots.map((s, i) => ({ ...s, slotNumber: i }));
 }
 
@@ -234,7 +240,7 @@ function renumberSlots(slots) {
  * @param {string | undefined | null} networkId
  * @returns {readonly FieldDef[]}
  */
-function getNetworkAddrFields(networkId) {
+export function getNetworkAddrFields(networkId) {
   const net = state.refs.networks?.[networkId ?? ''];
   return ENTITY.assets.networkTypeFields?.[net?.networkType ?? ''] || [];
 }
@@ -249,7 +255,7 @@ function getNetworkAddrFields(networkId) {
  * @param {Record<string, any>} item
  * @returns {{ portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string }}
  */
-function buildLegacyNetworkPortRow(item) {
+export function buildLegacyNetworkPortRow(item) {
   /** @type {{ portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string }} */
   const row = { portNumber: 1, networkId: item.networkId };
   for (const key of /** @type {const} */ (['ipAddress', 'subnetMask', 'gateway', 'nodeAddress'])) {
@@ -262,7 +268,7 @@ function buildLegacyNetworkPortRow(item) {
  * @param {string | undefined | null} ipRange
  * @returns {string}
  */
-function getIpPrefix(ipRange) {
+export function getIpPrefix(ipRange) {
   if (!ipRange) return '';
   const parts = ipRange.split('/')[0].split('.');
   return parts.length >= 3 ? parts.slice(0, 3).join('.') + '.' : '';
@@ -270,13 +276,13 @@ function getIpPrefix(ipRange) {
 
 /* ---- COMPLETENESS ---- */
 
-const COMPLETION_THRESHOLD = 75;
+export const COMPLETION_THRESHOLD = 75;
 
 /**
  * @param {number} pct
  * @returns {string}
  */
-function completenessColor(pct) {
+export function completenessColor(pct) {
   return pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
 }
 
@@ -285,7 +291,7 @@ function completenessColor(pct) {
  * @param {Record<string, any>} item
  * @returns {number}
  */
-function calcCompleteness(type, item) {
+export function calcCompleteness(type, item) {
   const cfg = ENTITY[type];
   let total = 0, filled = 0;
   for (const f of getEffectiveFields(type, item)) {
@@ -319,7 +325,7 @@ function calcCompleteness(type, item) {
  * @param {DbRecord} area
  * @returns {number}
  */
-function calcAreaCompleteness(area) {
+export function calcAreaCompleteness(area) {
   const panelItems = (state.cache.panels || []).filter(p => p.areaId === area.id);
   const panelIds = new Set(panelItems.map(p => p.id));
   const allItems = /** @type {Array<{ type: EntityType, item: DbRecord }>} */ ([
@@ -337,7 +343,7 @@ function calcAreaCompleteness(area) {
  * @param {string} panelId
  * @returns {number | null}
  */
-function calcPanelDevicesCompleteness(panelId) {
+export function calcPanelDevicesCompleteness(panelId) {
   const allItems = /** @type {Array<{ type: EntityType, item: DbRecord }>} */ ([
     ...(state.cache.power    || []).filter(p => p.panelId === panelId).map(p => ({ type: 'power',    item: p })),
     ...(state.cache.safety   || []).filter(s => s.panelId === panelId).map(s => ({ type: 'safety',   item: s })),
@@ -355,7 +361,7 @@ function calcPanelDevicesCompleteness(panelId) {
  * @param {string} [marginTop]
  * @returns {string}
  */
-function buildProgressRow(label, pct, color, marginTop = '') {
+export function buildProgressRow(label, pct, color, marginTop = '') {
   const style = marginTop ? ` style="margin-top:${marginTop}"` : '';
   return `<div class="det-completeness-row"${style}>
            <span class="det-completeness-label">${label}</span>
@@ -369,7 +375,7 @@ function buildProgressRow(label, pct, color, marginTop = '') {
  * @param {DbRecord} item
  * @returns {string}
  */
-function buildDetailCompletenessHtml(type, item) {
+export function buildDetailCompletenessHtml(type, item) {
   if (type === 'areas') {
     const pct = calcAreaCompleteness(item);
     const color = completenessColor(pct);
@@ -408,7 +414,7 @@ function buildDetailCompletenessHtml(type, item) {
  */
 
 /** @returns {ChecklistItem[]} */
-function calcChecklistAutoItems() {
+export function calcChecklistAutoItems() {
   /** @type {ChecklistItem[]} */
   const items = [];
   for (const [type, cfg] of Object.entries(ENTITY)) {
@@ -445,7 +451,7 @@ function calcChecklistAutoItems() {
  * @param {number} [size]
  * @returns {string}
  */
-function entityIcon(type, size = 22) {
+export function entityIcon(type, size = 22) {
   /** @type {Record<string, string>} */
   const icons = {
     areas:    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -467,7 +473,7 @@ function entityIcon(type, size = 22) {
  * @param {File} file
  * @returns {Promise<BlobMediaItem>}
  */
-async function processMediaFile(file) {
+export async function processMediaFile(file) {
   if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
     throw new Error(
       `Unsupported file: ${file.name} (${file.type || 'unknown type'})\n` +
@@ -507,7 +513,7 @@ async function processMediaFile(file) {
  * @param {string} dataUrl
  * @returns {BlobMediaItem}
  */
-function base64ToMediaItem(dataUrl) {
+export function base64ToMediaItem(dataUrl) {
   const [header, b64] = dataUrl.split(',');
   const mimeType = (header.match(/:(.*?);/) || [])[1] || 'image/jpeg';
   const bytes = atob(b64);
@@ -519,12 +525,12 @@ function base64ToMediaItem(dataUrl) {
 /* ---- OBJECT URL LIFECYCLE ---- */
 
 /** @type {string[]} */
-const _mediaUrls = [];
+export const _mediaUrls = [];
 // Index into _mediaUrls where the current form session's URLs begin.
 // Set by markFormMediaStart() each time a sheet form opens so that
 // revokeFormMediaUrls() can revoke only form-specific entries, leaving
 // detail-panel blob URLs intact for the still-visible detail panel.
-let _formMediaStart = 0;
+export let _formMediaStart = 0;
 
 /**
  * Creates and tracks a blob object URL. Call revokeAllMediaUrls() when done.
@@ -532,7 +538,7 @@ let _formMediaStart = 0;
  * @param {NormalizedMediaItem} mediaItem
  * @returns {string}
  */
-function createMediaUrl(mediaItem) {
+export function createMediaUrl(mediaItem) {
   if (!('blob' in mediaItem) || !mediaItem.blob) return mediaItem._legacySrc ?? '';
   const url = URL.createObjectURL(mediaItem.blob);
   _mediaUrls.push(url);
@@ -546,7 +552,7 @@ function createMediaUrl(mediaItem) {
  * Revoking an already-revoked or untracked URL is a safe no-op.
  * @param {string} url
  */
-function revokeTrackedMediaUrl(url) {
+export function revokeTrackedMediaUrl(url) {
   const i = _mediaUrls.indexOf(url);
   if (i !== -1) _mediaUrls.splice(i, 1);
   URL.revokeObjectURL(url);
@@ -559,7 +565,7 @@ function revokeTrackedMediaUrl(url) {
  * such as those from getCardThumbSrc() (URL.revokeObjectURL called directly; no pool op).
  * @param {Element} containerEl
  */
-function revokeBlobUrlsInContainer(containerEl) {
+export function revokeBlobUrlsInContainer(containerEl) {
   containerEl.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').forEach(el => {
     revokeTrackedMediaUrl(/** @type {HTMLImageElement | HTMLVideoElement} */ (el).src);
   });
@@ -567,19 +573,19 @@ function revokeBlobUrlsInContainer(containerEl) {
 
 // Records the pool boundary just before a sheet form opens.
 // Any URLs pushed to _mediaUrls after this point belong to the form session.
-function markFormMediaStart() {
+export function markFormMediaStart() {
   _formMediaStart = _mediaUrls.length;
 }
 
 // Revoke only blob URLs created since the last markFormMediaStart() call.
 // Detail-panel blob URLs (added before the form opened) are left intact so
 // thumbnails in the still-visible detail panel are not invalidated.
-function revokeFormMediaUrls() {
+export function revokeFormMediaUrls() {
   _mediaUrls.splice(_formMediaStart).forEach(u => URL.revokeObjectURL(u));
 }
 
 // Revoke every tracked blob URL — call when the detail panel closes or all data is cleared.
-function revokeAllMediaUrls() {
+export function revokeAllMediaUrls() {
   _mediaUrls.forEach(u => URL.revokeObjectURL(u));
   _mediaUrls.length = 0;
   _formMediaStart = 0;
@@ -592,7 +598,7 @@ function revokeAllMediaUrls() {
  * @param {AnyMediaValue} mediaValue
  * @returns {string | null}
  */
-function getCardThumbSrc(mediaValue) {
+export function getCardThumbSrc(mediaValue) {
   const item = Array.isArray(mediaValue) ? mediaValue[0] : mediaValue;
   if (!item) return null;
   if (typeof item === 'string') return item;
@@ -608,7 +614,7 @@ function getCardThumbSrc(mediaValue) {
  * @param {StoredMediaValue} value
  * @returns {NormalizedMediaItem[]}
  */
-function normalizeMediaItems(value) {
+export function normalizeMediaItems(value) {
   if (!value) return [];
   const arr = Array.isArray(value) ? value : [value];
   return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
@@ -623,7 +629,7 @@ function normalizeMediaItems(value) {
  * @param {NormalizedMediaItem[] | undefined | null} items
  * @returns {Promise<NormalizedMediaItem[]>}
  */
-async function freshenMediaItems(items) {
+export async function freshenMediaItems(items) {
   if (!items?.length) return [];
   return Promise.all(items.map(async mi => {
     if (!mi?.blob || mi._legacySrc) return mi;
@@ -648,7 +654,7 @@ async function freshenMediaItems(items) {
  * These thresholds mirror the CSS @media breakpoints in style.css.
  * @returns {'mobile' | 'tablet' | 'desktop'}
  */
-function getLayoutMode() {
+export function getLayoutMode() {
   if (window.innerWidth >= 1200) return 'desktop';
   if (window.innerWidth >= 768)  return 'tablet';
   return 'mobile';
@@ -665,7 +671,7 @@ function getLayoutMode() {
  * Called once from init() and re-evaluates on every window resize (debounced
  * to 100 ms to avoid thrashing layout during continuous drag).
  */
-function initLayoutDetection() {
+export function initLayoutDetection() {
   function applyLayout() {
     const mode = getLayoutMode();
     document.body.dataset.layout = mode;
@@ -702,7 +708,7 @@ function initLayoutDetection() {
  * @param {string | undefined | null} selectedVal
  * @returns {string}
  */
-function buildEnumOptions(options, selectedVal) {
+export function buildEnumOptions(options, selectedVal) {
   return options
     .map(o => `<option value="${esc(o)}"${o === selectedVal ? ' selected' : ''}>${esc(o)}</option>`)
     .join('');
@@ -714,7 +720,7 @@ function buildEnumOptions(options, selectedVal) {
  * @param {string | undefined | null} selectedId
  * @returns {string}
  */
-function buildRefOptions(items, selectedId) {
+export function buildRefOptions(items, selectedId) {
   return items
     .map(i => `<option value="${esc(i.id)}"${i.id === selectedId ? ' selected' : ''}>${esc(i.name)}</option>`)
     .join('');
@@ -727,7 +733,7 @@ function buildRefOptions(items, selectedId) {
  * @param {DbRecord[]} networks
  * @returns {string}
  */
-function buildNetworkOptions(selectedId, networks) {
+export function buildNetworkOptions(selectedId, networks) {
   return buildRefOptions(networks, selectedId);
 }
 
@@ -742,7 +748,7 @@ function buildNetworkOptions(selectedId, networks) {
  * @param {string} inputSel
  * @param {string} [changeSel]
  */
-function attachFieldEmptyToggle(container, inputSel, changeSel = inputSel) {
+export function attachFieldEmptyToggle(container, inputSel, changeSel = inputSel) {
   container.addEventListener('input', e => {
     const f = /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */
       (/** @type {Element | null} */ (e.target)?.closest(inputSel) ?? null);
@@ -762,7 +768,7 @@ function attachFieldEmptyToggle(container, inputSel, changeSel = inputSel) {
  * Accepts { blob, mimeType } or a legacy { _legacySrc } item.
  * @param {NormalizedMediaItem} mediaItem
  */
-function openMediaLightbox(mediaItem) {
+export function openMediaLightbox(mediaItem) {
   let lb = /** @type {HTMLElement | null} */ (document.querySelector('.lightbox'));
   if (!lb) {
     lb = document.createElement('div');
@@ -797,7 +803,7 @@ function openMediaLightbox(mediaItem) {
 }
 
 /** @param {HTMLElement} lb */
-function _closeLightbox(lb) {
+export function _closeLightbox(lb) {
   const video = lb.querySelector('video');
   if (video) video.pause();
   // Revoke blob URL before removing the element from DOM.

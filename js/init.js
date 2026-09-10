@@ -1,4 +1,12 @@
 // @ts-check
+
+import { getSetting, initDB } from './db.js';
+import { ENTITY, assertEntityConfigComplete } from './entity-config.js';
+import { initEl, state } from './state.js';
+import { esc, initLayoutDetection } from './utils.js';
+import { wireEvents } from './events.js';
+import { navigate, renderHome, renderPage } from './app.js';
+/** @import { EntityConfig } from './entity-config.js' */
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
@@ -6,7 +14,7 @@
    ============================================================ */
 
 /** @returns {Promise<void>} */
-async function init() {
+export async function init() {
   try {
     /* Populate the el DOM-reference cache first, before anything else touches
        el.*. See state.js for why this is an explicit call rather than a
@@ -57,7 +65,7 @@ async function init() {
  * CSS default (--list-pane-w-default: 320px) if nothing is stored yet.
  * @returns {Promise<void>}
  */
-async function applyPersistedListPaneWidth() {
+export async function applyPersistedListPaneWidth() {
   const w = await getSetting('listPaneWidth');
   if (w && Number.isFinite(Number(w))) {
     document.documentElement.style.setProperty('--list-pane-w', Number(w) + 'px');
@@ -83,7 +91,7 @@ async function applyPersistedListPaneWidth() {
  * the user's in-progress edits must not be discarded by a background refresh.
  * @returns {void}
  */
-function initVisibilityRefresh() {
+export function initVisibilityRefresh() {
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;
     // Don't interrupt an in-progress edit in the detail panel or form sheet.
@@ -104,21 +112,18 @@ function initVisibilityRefresh() {
    PWA INSTALL PROMPT (Android / Chrome only)
    ============================================================ */
 
-/** @type {any} */
-let _deferredInstallPrompt = null;
-
 /** @returns {void} */
-function initInstallPrompt() {
+export function initInstallPrompt() {
   if (window.matchMedia('(display-mode: standalone)').matches) return;
 
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
-    _deferredInstallPrompt = e;
+    state.deferredInstallPrompt = e;
     if (state.page === 'home') renderHome();
   });
 
   window.addEventListener('appinstalled', () => {
-    _deferredInstallPrompt = null;
+    state.deferredInstallPrompt = null;
     if (state.page === 'home') renderHome();
   });
 }
@@ -128,7 +133,7 @@ function initInstallPrompt() {
    ============================================================ */
 
 /** @returns {void} */
-function initOfflineIndicator() {
+export function initOfflineIndicator() {
   const bar = document.createElement('div');
   bar.id = 'offline-bar';
   bar.className = 'offline-bar';
@@ -160,7 +165,7 @@ function initOfflineIndicator() {
    ============================================================ */
 
 /** @param {CustomEvent} e */
-function initUpdateBanner(e) {
+export function initUpdateBanner(e) {
   if (document.getElementById('update-banner')) return;
   const banner = document.createElement('div');
   banner.id = 'update-banner';
@@ -189,5 +194,3 @@ function initUpdateBanner(e) {
 }
 
 window.addEventListener('pwa-updated', /** @type {EventListener} */ (initUpdateBanner));
-
-init();

@@ -1,4 +1,9 @@
 // @ts-check
+/** @import { DbRecord, StoreName } from './db.js' */
+/** @import { FormType } from './entity-config.js' */
+/** @import { NormalizedMediaItem } from './utils.js' */
+
+import { getAll } from './db.js';
 /* ============================================================
    APPLICATION STATE & DOM REFERENCES
    Central state object, DOM element cache, toast/confirm UI,
@@ -70,10 +75,14 @@
  * @property {Partial<Record<StoreName, Record<string, DbRecord>>>} refs
  *
  * @property {any} pickerMeta
+ *
+ * @property {any} deferredInstallPrompt - The captured `beforeinstallprompt` event, held here
+ *   (rather than as a module-level `let` in init.js) so ES-module consumers can read AND clear
+ *   it via ordinary property mutation instead of reassigning a read-only imported binding.
  */
 
 /** @type {State} */
-const state = {
+export const state = {
   // --- Navigation ---
   page: 'home',
 
@@ -116,6 +125,9 @@ const state = {
 
   // --- Picker ---
   pickerMeta: null,
+
+  // --- PWA install prompt ---
+  deferredInstallPrompt: null,
 };
 
 /* ---- DOM REFERENCES ---- */
@@ -127,7 +139,7 @@ const state = {
  * @param {string} id
  * @returns {HTMLElement | null}
  */
-const $ = id => document.getElementById(id);
+export const $ = id => document.getElementById(id);
 
 /**
  * @typedef {{
@@ -160,9 +172,9 @@ const $ = id => document.getElementById(id);
  * missing, converting "silently null forever" into a fail-fast startup
  * error with the offending id named.
  */
-let el = /** @type {ElRefs} */ (/** @type {unknown} */ (null));
+export let el = /** @type {ElRefs} */ (/** @type {unknown} */ (null));
 
-function initEl() {
+export function initEl() {
   const refs = {
     header:       $('app-header'),
     main:         $('app-main'),
@@ -202,13 +214,13 @@ function initEl() {
 /* ---- TOAST ---- */
 
 /** @type {ReturnType<typeof setTimeout> | undefined} */
-let toastTimer;
+export let toastTimer;
 
 /**
  * @param {string} msg
  * @param {string} [type]
  */
-function showToast(msg, type = '') {
+export function showToast(msg, type = '') {
   el.toast.textContent = msg;
   el.toast.className = 'toast show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
@@ -230,7 +242,7 @@ function showToast(msg, type = '') {
  * @param {{ yesLabel?: string, noLabel?: string, yesClass?: string }} [opts]
  * @returns {Promise<boolean>}
  */
-function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' } = {}) {
+export function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass = 'btn-danger' } = {}) {
   return new Promise(resolve => {
     el.confirmT.textContent  = title;
     el.confirmM.textContent  = msg;
@@ -261,7 +273,7 @@ function confirm(title, msg, { yesLabel = 'Delete', noLabel = 'Cancel', yesClass
  * @param {{ cancelLabel: string, midLabel: string, midClass: string, yesLabel: string, yesClass: string }} opts
  * @returns {Promise<'cancel' | 'mid' | 'yes'>}
  */
-function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel, yesClass }) {
+export function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel, yesClass }) {
   return new Promise(resolve => {
     el.confirmT.textContent      = title;
     el.confirmM.textContent      = msg;
@@ -300,7 +312,7 @@ function confirmThreeWay(title, msg, { cancelLabel, midLabel, midClass, yesLabel
  * @param {string} msg
  * @returns {Promise<'save' | 'discard' | null>}
  */
-function confirmUnsaved(title, msg) {
+export function confirmUnsaved(title, msg) {
   return confirmThreeWay(title, msg, {
     cancelLabel: 'Cancel',
     midLabel:    'Save Changes', midClass: 'btn-primary',
@@ -316,7 +328,7 @@ function confirmUnsaved(title, msg) {
  * @param {string} [defaultValue]
  * @returns {Promise<string | null>}
  */
-function promptInput(title, msg, defaultValue = '') {
+export function promptInput(title, msg, defaultValue = '') {
   return new Promise(resolve => {
     el.promptT.textContent = title;
     el.promptM.textContent = msg;
@@ -353,7 +365,7 @@ function promptInput(title, msg, defaultValue = '') {
 /* ---- CACHE & REFS ---- */
 
 /** @param {StoreName[]} storeNames */
-async function loadCache(storeNames) {
+export async function loadCache(storeNames) {
   await Promise.all(storeNames.map(async name => {
     const records = await getAll(name);
     state.cache[name] = records;
@@ -361,6 +373,6 @@ async function loadCache(storeNames) {
   }));
 }
 
-async function refreshAll() {
+export async function refreshAll() {
   await loadCache(['areas','panels','power','safety','networks','assets']);
 }

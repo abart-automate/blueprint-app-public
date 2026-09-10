@@ -1,4 +1,13 @@
 // @ts-check
+
+import { getAll, getSetting } from './db.js';
+import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
+import { showToast } from './state.js';
+import { calcChecklistAutoItems, getEffectiveFields } from './utils.js';
+import { getRunningBuild } from './app.js';
+/** @import { DbRecord } from './db.js' */
+/** @import { EntityType, EnumFieldDef, FieldDef } from './entity-config.js' */
+/** @import { ChecklistItem } from './utils.js' */
 // ZIP Export Module for Blueprint App
 // Exports object hierarchy: Areas > Panels > (Power/Safety/Assets)
 // Unassigned items go in "Field Folder" directories
@@ -10,7 +19,7 @@
  */
 
 /** @returns {Promise<void>} */
-async function exportToZip() {
+export async function exportToZip() {
   try {
     // Show progress modal
     showExportProgress('Starting export...');
@@ -121,7 +130,7 @@ async function exportToZip() {
 }
 
 /** @returns {Promise<void>} */
-async function exportExcel() {
+export async function exportExcel() {
   try {
     if (typeof XLSX === 'undefined') {
       throw new Error('XLSX library is not loaded');
@@ -233,7 +242,7 @@ async function exportExcel() {
  * @param {any[]} customItems
  * @returns {any}
  */
-function buildChecklistSheet(autoItems, customItems) {
+export function buildChecklistSheet(autoItems, customItems) {
   /** @type {any[][]} */
   const rows = [['Label', 'Type', 'Status', 'Done', 'Total', 'Progress', 'Notes']];
   for (const item of autoItems) {
@@ -256,7 +265,7 @@ function buildChecklistSheet(autoItems, customItems) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildAssetClassSheet(assets, assetClass, refs) {
+export function buildAssetClassSheet(assets, assetClass, refs) {
   // See ENTITY.assets.classSubdataKeys (entity-config.js) — array-valued keys
   // handled by a dedicated sub-data sheet are excluded from the main class sheet.
   const excludeKeys = ENTITY.assets.classSubdataKeys?.[assetClass] || [];
@@ -268,7 +277,7 @@ function buildAssetClassSheet(assets, assetClass, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildSwitchNetworksSheet(switchAssets, refs) {
+export function buildSwitchNetworksSheet(switchAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Network ID', 'Network Name'];
   const rows = [];
   for (const asset of switchAssets) {
@@ -285,7 +294,7 @@ function buildSwitchNetworksSheet(switchAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildSwitchPortsSheet(switchAssets, refs) {
+export function buildSwitchPortsSheet(switchAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Port Name', 'Network ID', 'Network Name', 'Connected Asset ID', 'Connected Asset Name'];
   const rows = [];
   for (const asset of switchAssets) {
@@ -316,7 +325,7 @@ function buildSwitchPortsSheet(switchAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildAssetNetworkPortsSheet(assets, refs) {
+export function buildAssetNetworkPortsSheet(assets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Port #', 'Network ID', 'Network Name', 'Protocol', 'IP Address', 'Subnet Mask', 'Gateway', 'Node Address'];
   const rows = [];
   for (const asset of assets) {
@@ -337,7 +346,7 @@ function buildAssetNetworkPortsSheet(assets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPlcSlotsSheet(plcAssets, refs) {
+export function buildPlcSlotsSheet(plcAssets, refs) {
   // Network ID / address columns removed — connection details now live per-port
   // in the Network Ports JSON column and have their own dedicated sheet.
   const headers = [
@@ -373,7 +382,7 @@ function buildPlcSlotsSheet(plcAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildFieldDeviceParametersSheet(fieldDeviceAssets, refs) {
+export function buildFieldDeviceParametersSheet(fieldDeviceAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Section', 'Parameter', 'Value'];
   const rows = [];
   for (const asset of fieldDeviceAssets) {
@@ -389,7 +398,7 @@ function buildFieldDeviceParametersSheet(fieldDeviceAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPowerWiringSheet(powerItems, refs) {
+export function buildPowerWiringSheet(powerItems, refs) {
   const headers = ['Power ID', 'Power Name', 'Section', 'Terminal', 'Label'];
   const rows = [];
   const tableDefs = [
@@ -411,7 +420,7 @@ function buildPowerWiringSheet(powerItems, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildFieldDeviceWiringSheet(fieldDeviceAssets, refs) {
+export function buildFieldDeviceWiringSheet(fieldDeviceAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Section', 'Terminal', 'Label'];
   const rows = [];
   for (const asset of fieldDeviceAssets) {
@@ -434,7 +443,7 @@ function buildFieldDeviceWiringSheet(fieldDeviceAssets, refs) {
  * @param {(item: any, idx: number, slot: any) => any[]} rowFn - trailing row columns
  * @returns {any[][]}
  */
-function flattenPlcSlotSubTable(plcAssets, cardTypes, subKey, rowFn) {
+export function flattenPlcSlotSubTable(plcAssets, cardTypes, subKey, rowFn) {
   /** @type {any[][]} */
   const rows = [];
   for (const asset of plcAssets) {
@@ -453,7 +462,7 @@ function flattenPlcSlotSubTable(plcAssets, cardTypes, subKey, rowFn) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPlcDigitalWiringSheet(plcAssets, refs) {
+export function buildPlcDigitalWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label'];
   const rows = flattenPlcSlotSubTable(plcAssets, ['Digital'], 'ioPoints',
     (pt, idx) => [idx + 1, pt.label || '']);
@@ -465,7 +474,7 @@ function buildPlcDigitalWiringSheet(plcAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPlcAnalogWiringSheet(plcAssets, refs) {
+export function buildPlcAnalogWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'IO Point #', 'Label', 'Signal Type', 'Wiring Type'];
   const rows = flattenPlcSlotSubTable(plcAssets, ['Analog'], 'ioPoints',
     (pt, idx) => [idx + 1, pt.label || '', pt.signalType || '', pt.wiringType || '']);
@@ -480,7 +489,7 @@ function buildPlcAnalogWiringSheet(plcAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPlcTerminalWiringSheet(plcAssets, refs) {
+export function buildPlcTerminalWiringSheet(plcAssets, refs) {
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Card Type', 'Terminal', 'Wire Label'];
   const rows = flattenPlcSlotSubTable(plcAssets, ['Analog', 'Digital', 'Specialty'], 'terminalWiring',
     (row, idx, slot) => [slot.cardType || '', row.terminal || '', row.label || '']);
@@ -495,7 +504,7 @@ function buildPlcTerminalWiringSheet(plcAssets, refs) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function buildPlcNetworkPortsSheet(plcAssets, refs) {
+export function buildPlcNetworkPortsSheet(plcAssets, refs) {
   // Address columns (Protocol, IP Address, Node Address) are included for human readability.
   // Full fidelity (including subnet mask, gateway, etc.) is preserved in the PLC Slots JSON column.
   const headers = ['Asset ID', 'Asset Name', 'Slot #', 'Slot Name', 'Port #', 'Network ID', 'Network Name', 'Protocol', 'IP Address', 'Node Address'];
@@ -511,7 +520,7 @@ function buildPlcNetworkPortsSheet(plcAssets, refs) {
  * @param {any[]} sheetMeta
  * @returns {Promise<any>}
  */
-async function postProcessXlsx(array, sheetMeta) {
+export async function postProcessXlsx(array, sheetMeta) {
   /** @param {unknown} s */
   function xmlEsc(s) {
     return String(s)
@@ -605,7 +614,7 @@ async function postProcessXlsx(array, sheetMeta) {
  * @param {string[]} [excludeKeys]
  * @returns {string[]}
  */
-function getDefaultHeaders(store, excludeKeys = []) {
+export function getDefaultHeaders(store, excludeKeys = []) {
   const excludeSet = new Set([...excludeKeys, 'images', 'namedPhotos']);
   const fields = ENTITY[store]?.fields || [];
   return [...new Set(['id', ...fields.map(f => f.key)])].filter(k => !excludeSet.has(k));
@@ -616,7 +625,7 @@ function getDefaultHeaders(store, excludeKeys = []) {
  * @param {any[][]} rows
  * @returns {any}
  */
-function buildSubDataSheet(headers, rows) {
+export function buildSubDataSheet(headers, rows) {
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws['!cols'] = headers.map(h => ({
     wch: Math.max(h.length + 4, 14),
@@ -633,7 +642,7 @@ function buildSubDataSheet(headers, rows) {
  * @param {{ excludeKeys?: string[] }} [options]
  * @returns {any}
  */
-function buildWorksheet(items, store, refs, options = {}) {
+export function buildWorksheet(items, store, refs, options = {}) {
   const HIDDEN_KEYS = new Set(['id', 'createdAt', 'updatedAt']);
   const { excludeKeys = [] } = options;
   const orderedKeys = (items?.length)
@@ -674,7 +683,7 @@ function buildWorksheet(items, store, refs, options = {}) {
  * @param {string[]} [excludeKeys]
  * @returns {string[]}
  */
-function getExportHeaders(items, store, excludeKeys = []) {
+export function getExportHeaders(items, store, excludeKeys = []) {
   const preferredOrder = [
     'id', 'name', 'description', 'assetClass', 'assetSubclass',
     'panelId', 'areaId', 'assignedToType', 'assignedToId',
@@ -710,7 +719,7 @@ function getExportHeaders(items, store, excludeKeys = []) {
  * @param {any} value
  * @returns {any}
  */
-function serializeExportValue(value) {
+export function serializeExportValue(value) {
   if (value == null) return '';
   if (Array.isArray(value)) return value.length === 0 ? '' : JSON.stringify(value);
   if (typeof value === 'object') return Object.keys(value).length === 0 ? '' : JSON.stringify(value);
@@ -725,7 +734,7 @@ function serializeExportValue(value) {
  * @param {RefsMaps} refs
  * @returns {any}
  */
-function resolveExportValue(store, key, value, item, refs) {
+export function resolveExportValue(store, key, value, item, refs) {
   if (value == null || value === '') return '';
 
   const fieldDef = findFieldDef(store, key, item);
@@ -752,7 +761,7 @@ function resolveExportValue(store, key, value, item, refs) {
  * @param {DbRecord | null} item
  * @returns {string}
  */
-function getFieldLabel(store, key, item) {
+export function getFieldLabel(store, key, item) {
   const fieldDef = findFieldDef(store, key, item);
   return fieldDef?.label || prettifyKey(key);
 }
@@ -776,7 +785,7 @@ function getFieldLabel(store, key, item) {
  * @param {DbRecord | null | undefined} item
  * @returns {FieldDef | null}
  */
-function findFieldDef(store, key, item) {
+export function findFieldDef(store, key, item) {
   if (!ENTITY[store]) return null;
   return getEffectiveFields(store, item).find(f => f.key === key) || null;
 }
@@ -785,7 +794,7 @@ function findFieldDef(store, key, item) {
  * @param {string} key
  * @returns {string}
  */
-function prettifyKey(key) {
+export function prettifyKey(key) {
   return key
     .replace(/([A-Z])/g, ' $1')
     .replace(/Id$/, '')
@@ -796,7 +805,7 @@ function prettifyKey(key) {
 }
 
 /** @type {Record<string, EntityType>} */
-const REF_FIELD_MAP = {
+export const REF_FIELD_MAP = {
   areaId:    'areas',
   panelId:   'panels',
   powerId:   'power',
@@ -808,7 +817,7 @@ const REF_FIELD_MAP = {
  * @param {DbRecord[]} items
  * @returns {Map<string, DbRecord>}
  */
-function buildMap(items) {
+export function buildMap(items) {
   return new Map(items.map(item => [/** @type {string} */ (item.id), item]));
 }
 
@@ -816,7 +825,7 @@ function buildMap(items) {
  * @param {string} name
  * @returns {string}
  */
-function sanitizeSheetName(name) {
+export function sanitizeSheetName(name) {
   const safe = name.replace(/[:\\/?*\[\]]/g, '_');
   return safe.substring(0, 31);
 }
@@ -826,7 +835,7 @@ function sanitizeSheetName(name) {
  * @param {string} filename
  * @returns {void}
  */
-function downloadBlob(blob, filename) {
+export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -848,7 +857,7 @@ function downloadBlob(blob, filename) {
  * @param {number} totalItems
  * @returns {Promise<number>}
  */
-async function processArea(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
+export async function processArea(area, areaFolder, panelByArea, power, safety, assets, processedCount, totalItems) {
   const panels = panelByArea.get(area.id ?? '') || [];
 
   // Process panels in this area
@@ -939,7 +948,7 @@ async function processArea(area, areaFolder, panelByArea, power, safety, assets,
  * @param {any} value
  * @returns {{ blob: Blob, ext: string }}
  */
-function _mediaItemToExport(value) {
+export function _mediaItemToExport(value) {
   if (typeof value === 'string') return { blob: base64ToBlob(value), ext: 'jpg' };
   const ext = value.mimeType === 'video/mp4' ? 'mp4' : value.mimeType === 'video/quicktime' ? 'mov' : 'jpg';
   return { blob: value.blob, ext };
@@ -951,7 +960,7 @@ function _mediaItemToExport(value) {
  * @param {any} photosFolder
  * @returns {void}
  */
-function _exportMedia(entity, photosFolder) {
+export function _exportMedia(entity, photosFolder) {
   if (entity.namedPhotos) {
     for (const [slotName, slotValue] of Object.entries(entity.namedPhotos)) {
       const items = Array.isArray(slotValue) ? slotValue : (slotValue ? [slotValue] : []);
@@ -975,7 +984,7 @@ function _exportMedia(entity, photosFolder) {
  * @param {any} panelFolder
  * @returns {Promise<void>}
  */
-async function processPanel(panel, panelFolder) {
+export async function processPanel(panel, panelFolder) {
   const data = { ...panel };
   delete data.namedPhotos;
   delete data.images;
@@ -988,7 +997,7 @@ async function processPanel(panel, panelFolder) {
  * @param {any} itemFolder
  * @returns {Promise<void>}
  */
-async function processObject(item, itemFolder) {
+export async function processObject(item, itemFolder) {
   const data = { ...item };
   delete data.namedPhotos;
   delete data.images;
@@ -1001,7 +1010,7 @@ async function processObject(item, itemFolder) {
  * @param {DbRecord[]} siblings
  * @returns {string}
  */
-function generateObjectFolderName(item, siblings) {
+export function generateObjectFolderName(item, siblings) {
   let baseName = item.name || `Unnamed-${item.id}`;
   baseName = sanitizeFilename(baseName);
 
@@ -1021,7 +1030,7 @@ function generateObjectFolderName(item, siblings) {
  * @param {string} name
  * @returns {string}
  */
-function sanitizeFilename(name) {
+export function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
@@ -1029,7 +1038,7 @@ function sanitizeFilename(name) {
  * @param {string} base64
  * @returns {Blob}
  */
-function base64ToBlob(base64) {
+export function base64ToBlob(base64) {
   const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');
   const byteCharacters = atob(cleanBase64);
   const byteNumbers = new Array(byteCharacters.length);
@@ -1044,7 +1053,7 @@ function base64ToBlob(base64) {
  * @param {string} message
  * @returns {void}
  */
-function showExportProgress(message) {
+export function showExportProgress(message) {
   hideExportProgress();
 
   const backdrop = document.createElement('div');
@@ -1092,7 +1101,7 @@ function showExportProgress(message) {
  * @param {string | null} [message]
  * @returns {void}
  */
-function updateProgress(current, total, message = null) {
+export function updateProgress(current, total, message = null) {
   const container = document.getElementById('export-progress-modal');
   if (!container) return;
 
@@ -1110,7 +1119,7 @@ function updateProgress(current, total, message = null) {
 }
 
 /** @returns {void} */
-function hideExportProgress() {
+export function hideExportProgress() {
   const modal = document.getElementById('export-progress-modal');
   if (modal) modal.remove();
 }

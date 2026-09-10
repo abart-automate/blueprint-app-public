@@ -37,38 +37,17 @@
 // gated-activation pattern below (waiting worker + SKIP_WAITING message on
 // user consent) is adopted for predictability of *when* control transfers,
 // not because that was an active bug for this app's architecture.
-const SW_BUILD = '20260910T1946Z-94d5b84';
+const SW_BUILD = '20260910T2014Z-b2c26d8';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 
-// All static files that make up the app shell — must stay in sync with
-// index.html's <script> tags. Keep this list matching index.html by hand;
-// nothing auto-derives it.
-const APP_SHELL = [
-  './',
-  './index.html',
-  './css/style.css',
-  './js/db.js',
-  './js/entity-config.js',
-  './js/state.js',
-  './js/utils.js',
-  './js/renderers/tables.js',
-  './js/renderers/form.js',
-  './js/renderers/detail.js',
-  './js/events.js',
-  './js/operations.js',
-  './js/parts-library.js',
-  './js/app.js',
-  './js/export.js',
-  './js/import.js',
-  './js/json-merge.js',
-  './js/init.js',
-  './js/vendor/jszip.min.js',
-  './js/vendor/xlsx.full.min.js',
-  './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
-];
+// The app shell — every hashed build asset (JS/CSS bundle, HTML, icons,
+// manifest, vendor scripts) plus its precache revision. Injected at build
+// time by vite-plugin-pwa's `injectManifest` strategy, which replaces this
+// exact placeholder expression with a literal array derived from the real
+// Vite output — so unlike the hand-maintained list this used to be, it can
+// never drift out of sync with what actually got built.
+const APP_SHELL = self.__WB_MANIFEST.map(entry => (typeof entry === 'string' ? entry : entry.url));
 
 // Pre-cache the full app shell on install. Deliberately does NOT call
 // self.skipWaiting() here — a new worker parks in the `waiting` state until
