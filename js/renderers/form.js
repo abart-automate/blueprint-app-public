@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    FORM RENDERER
    Renders the bottom-sheet form for creating/editing entities,
@@ -12,6 +13,7 @@
                _renderNetworkPortsTable.
    ============================================================ */
 
+/** @returns {Promise<void>} */
 async function renderForm() {
   if (state.formType === FORM_TYPE.PLANT) return;
   if (state.formType === FORM_TYPE.PLC_SLOT) return renderSlotForm();
@@ -39,10 +41,11 @@ function toggleConditionalSection(wrapIds, condition, renderFns = []) {
 
 /* ---- PLC SLOT FORM ---- */
 
+/** @returns {Promise<void>} */
 async function renderSlotForm() {
-  const { rackId, slotNumber } = state.formPreset;
+  const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
   const rack     = state.refs.assets?.[rackId];
-  const existing = rack?.slots?.find(s => s.slotNumber === slotNumber) || null;
+  const existing = rack?.slots?.find(/** @param {any} s */ s => s.slotNumber === slotNumber) || null;
   await refreshAll();
 
   const cardTypeOpts = Object.keys(PLC_CARD_TYPE_FIELDS)
@@ -84,8 +87,8 @@ async function renderSlotForm() {
   attachFieldEmptyToggle(el.formBody, '.f-input, .f-textarea', '.f-select');
 
   const renderSlotCardTypeFields = async () => {
-    const cardType  = $('f-cardType')?.value;
-    const fields    = PLC_CARD_TYPE_FIELDS[cardType] || [];
+    const cardType  = _field('f-cardType')?.value;
+    const fields    = PLC_CARD_TYPE_FIELDS[cardType ?? ''] || [];
     const container = $('slot-cardtype-container');
     if (!container) return;
     if (!fields.length) { container.innerHTML = ''; } else {
@@ -95,17 +98,17 @@ async function renderSlotForm() {
     }
     const ioWrap = $('io-points-wrap');
     if (ioWrap) {
-      const isIo = CARD_TYPE_IO_TYPES.has(cardType);
+      const isIo = CARD_TYPE_IO_TYPES.has(cardType ?? '');
       ioWrap.style.display = isIo ? '' : 'none';
       if (isIo) {
         renderIoPointsTable();
-        const ioCountEl = $('f-ioPointCount');
+        const ioCountEl = _field('f-ioPointCount');
         if (ioCountEl) ioCountEl.addEventListener('change', syncIoPointCount);
       }
     }
     const pbWrap = $('power-bus-wrap');
     if (pbWrap) {
-      const isIo = CARD_TYPE_IO_TYPES.has(cardType);
+      const isIo = CARD_TYPE_IO_TYPES.has(cardType ?? '');
       pbWrap.style.display = isIo ? '' : 'none';
       if (isIo) renderPowerBusTableForm();
     }
@@ -115,7 +118,7 @@ async function renderSlotForm() {
     // via the default wiring-table-terminalWiring container id.
     const twWrap = $('terminal-wiring-wrap');
     if (twWrap) {
-      const hasTerminal = CARD_TYPE_TERMINAL_TYPES.has(cardType);
+      const hasTerminal = CARD_TYPE_TERMINAL_TYPES.has(cardType ?? '');
       twWrap.style.display = hasTerminal ? '' : 'none';
       if (hasTerminal) renderItemTableForm('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label');
     }
@@ -124,13 +127,13 @@ async function renderSlotForm() {
     // Uses renderNetworkPortsTable in form mode (no args): reads/writes state.formSlotNetworkPorts.
     const npWrap = $('network-ports-wrap');
     if (npWrap) {
-      const hasNetPorts = CARD_TYPE_NET_TYPES.has(cardType);
+      const hasNetPorts = CARD_TYPE_NET_TYPES.has(cardType ?? '');
       npWrap.style.display = hasNetPorts ? '' : 'none';
       if (hasNetPorts) renderNetworkPortsTableForm();
     }
   };
 
-  $('f-cardType').addEventListener('change', renderSlotCardTypeFields);
+  /** @type {HTMLElement} */ ($('f-cardType')).addEventListener('change', renderSlotCardTypeFields);
   await renderSlotCardTypeFields();
 }
 
@@ -139,9 +142,11 @@ async function renderSlotForm() {
 // Two-pass render: (1) base fields rendered synchronously into formBody HTML,
 // then (2) dynamic sections (class fields, subclass fields, switch tables, PLC card
 // type fields) are wired and rendered via event-driven async callbacks after mount.
+/** @returns {Promise<void>} */
 async function renderEntityForm() {
-  const { formType: type, formId: id } = state;
-  const cfg      = ENTITY[type];
+  const type = /** @type {EntityType} */ (state.formType);
+  const id   = state.formId;
+  const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
   const rawExisting = id ? await getById(type, id) : null;
   const existing = rawExisting ?? (
     !id && state.formPreset?.copyFrom ? state.formPreset.copyFrom :
@@ -155,10 +160,12 @@ async function renderEntityForm() {
   const FORM_PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Clearance']);
   let html = '';
   let physicalHtml = '';
+  /** @type {string | undefined} */
   let currentSection = undefined;
+  /** @type {string | undefined} */
   let physicalSection = undefined;
   for (const f of cfg.fields) {
-    if (type === 'assets' && FORM_PHYSICAL_SECTIONS.has(f.section)) {
+    if (type === 'assets' && f.section && FORM_PHYSICAL_SECTIONS.has(f.section)) {
       if (f.section !== physicalSection) {
         physicalSection = f.section;
         physicalHtml += `<div class="form-section-hdr">${esc(f.section)}</div>`;
@@ -231,8 +238,8 @@ async function renderEntityForm() {
   }
 
   if (type === 'assets') {
-    const currentAssetClass = $('f-assetClass')?.value;
-    renderClassItemTables(currentAssetClass);
+    const currentAssetClass = _field('f-assetClass')?.value;
+    renderClassItemTables(currentAssetClass ?? '');
   }
 
   if (cfg.requiredPhotoSlots) {
@@ -249,7 +256,7 @@ async function renderEntityForm() {
   }
 
   if (!cfg.noImages) {
-    const grid = $('img-preview-grid');
+    const grid = /** @type {HTMLElement} */ ($('img-preview-grid'));
     const reGallery = () => renderMediaGallery(grid, state.formImages, {
       onAdd:    items => { state.formImages.push(...items); reGallery(); },
       onRemove: i     => { state.formImages.splice(i, 1); reGallery(); },
@@ -257,21 +264,22 @@ async function renderEntityForm() {
     reGallery();
   }
 
-  const assignTypeSelect = $('f-assign-type');
+  const assignTypeSelect = _field('f-assign-type');
   if (assignTypeSelect) {
     assignTypeSelect.addEventListener('change', () => populateAssignId(type, assignTypeSelect.value, existing?.assignedToId));
     populateAssignId(type, assignTypeSelect.value, existing?.assignedToId);
   }
 
   if (type === 'networks') {
-    const typeSelect = $('f-networkType');
+    const typeSelect = _field('f-networkType');
     const renderProtocolFields = async () => {
       const networkType = typeSelect?.value;
-      const protoFields = ENTITY.networks.protocolFields?.[networkType] || [];
+      const protoFields = ENTITY.networks.protocolFields?.[networkType ?? ''] || [];
       const container   = $('protocol-fields-container');
       if (!container) return;
       if (!protoFields.length) { container.innerHTML = ''; return; }
       let ph = '';
+      /** @type {string | undefined} */
       let lastSection;
       for (const f of protoFields) {
         if (f.section !== lastSection) {
@@ -288,11 +296,11 @@ async function renderEntityForm() {
 
   if (type === 'assets') {
     const updateSwitchTables = () => {
-      const assetClass = $('f-assetClass')?.value;
-      const subclass   = $('f-assetSubclass')?.value;
+      const assetClass = _field('f-assetClass')?.value;
+      const subclass   = _field('f-assetSubclass')?.value;
       toggleConditionalSection(
         ['switch-networks-wrap', 'switch-ports-wrap'],
-        isSwitchAsset(assetClass, subclass),
+        isSwitchAsset(assetClass ?? '', subclass ?? ''),
         [renderSwitchNetworksTableForm, renderSwitchPortsTableForm]
       );
     };
@@ -302,21 +310,23 @@ async function renderEntityForm() {
     );
 
     const updateAssetNetworkPorts = () => {
-      const assetClass = $('f-assetClass')?.value;
+      const assetClass = _field('f-assetClass')?.value;
       toggleConditionalSection(
         ['asset-network-ports-wrap'],
-        ASSET_CLASS_NETWORK_PORTS.has(assetClass),
+        ASSET_CLASS_NETWORK_PORTS.has(assetClass ?? ''),
         [rerenderAssetNetworkPorts]
       );
     };
 
     const renderSubclassFields = async () => {
-      const subclass  = $('f-assetSubclass')?.value;
-      const fields    = ENTITY.assets.subclassFields?.[subclass] || [];
+      const subclass  = _field('f-assetSubclass')?.value;
+      const fields    = ENTITY.assets.subclassFields?.[subclass ?? ''] || [];
       const container = $('subclass-fields-container');
       if (!container) return;
       if (!fields.length) { container.innerHTML = ''; updateSwitchTables(); updateAssetNetworkPorts(); return; }
-      let ph = '', lastSection;
+      let ph = '';
+      /** @type {string | undefined} */
+      let lastSection;
       for (const f of fields) {
         if (f.section !== lastSection) {
           lastSection = f.section;
@@ -330,27 +340,27 @@ async function renderEntityForm() {
     };
 
     const renderClassSubclassField = async () => {
-      const assetClass  = $('f-assetClass')?.value;
-      let   subclasses  = ENTITY.assets.classSubclasses?.[assetClass] || [];
-      const subclassSel = $('f-assetSubclass');
+      const assetClass  = _field('f-assetClass')?.value;
+      let   subclasses  = ENTITY.assets.classSubclasses?.[assetClass ?? ''] || [];
+      const subclassSel = _field('f-assetSubclass');
       if (!subclassSel) return;
       const currentSub = existing?.assetSubclass || '';
       if (currentSub && id && !subclasses.includes(currentSub)) subclasses = [...subclasses, currentSub];
       subclassSel.innerHTML = '<option value=""></option>' +
         subclasses.map(s => `<option value="${s}"${s === currentSub ? ' selected' : ''}>${esc(s)}</option>`).join('');
-      const wrap = subclassSel.closest('.fg');
+      const wrap = /** @type {HTMLElement | null} */ (subclassSel.closest('.fg'));
       if (wrap) wrap.style.display = subclasses.length ? '' : 'none';
 
       const classIsLocked = !id && (
         state.formPreset?.extra?.assetClass ||
         state.formPreset?.field === 'assetClass'
       );
-      const classWrap = $('f-assetClass')?.closest('.fg');
+      const classWrap = /** @type {HTMLElement | null} */ (_field('f-assetClass')?.closest('.fg') ?? null);
       if (classWrap) classWrap.style.display = classIsLocked ? 'none' : '';
       const subclassIsLocked = !id && state.formPreset?.extra?.assetSubclass;
       if (wrap) wrap.style.display = (subclassIsLocked || !subclasses.length) ? 'none' : '';
 
-      const classFieldDefs = ENTITY.assets.classFields?.[assetClass] || [];
+      const classFieldDefs = ENTITY.assets.classFields?.[assetClass ?? ''] || [];
       const classCont = $('class-fields-container');
       if (classCont) {
         if (!classFieldDefs.length) {
@@ -363,11 +373,11 @@ async function renderEntityForm() {
       }
 
       await renderSubclassFields();
-      renderClassItemTables(assetClass);
+      renderClassItemTables(assetClass ?? '');
     };
 
-    $('f-assetSubclass')?.addEventListener('change', renderSubclassFields);
-    $('f-assetClass')?.addEventListener('change', renderClassSubclassField);
+    _field('f-assetSubclass')?.addEventListener('change', renderSubclassFields);
+    _field('f-assetClass')?.addEventListener('change', renderClassSubclassField);
     await renderClassSubclassField();
   }
 
@@ -377,8 +387,8 @@ async function renderEntityForm() {
   // - Area changed (no panel): panel dropdown is filtered to panels in that area.
   // syncAreaFromPanel also calls filterPanelsByArea so panel options always match the area.
   {
-    const panelSel = $('f-panelId');
-    const areaSel  = $('f-areaId');
+    const panelSel = _field('f-panelId');
+    const areaSel  = _field('f-areaId');
     if (panelSel && areaSel) {
       const syncAreaFromPanel = () => {
         const panel = state.refs.panels?.[panelSel.value];
@@ -399,7 +409,7 @@ async function renderEntityForm() {
   }
 
   if (type === 'safety') {
-    const panelSel = $('f-panelId');
+    const panelSel = _field('f-panelId');
     if (panelSel) {
       panelSel.addEventListener('change', () => filterPowerByPanel(panelSel.value, existing?.powerId));
       if (panelSel.value) filterPowerByPanel(panelSel.value, existing?.powerId);
@@ -409,6 +419,12 @@ async function renderEntityForm() {
 
 /* ---- FORM FIELD BUILDER ---- */
 
+/**
+ * @param {FieldDef} f
+ * @param {Record<string, any> | null} existing
+ * @param {EntityType} type
+ * @returns {Promise<string>}
+ */
 async function buildFormField(f, existing, type) {
   const presetVal = !existing
     ? (state.formPreset?.field === f.key ? state.formPreset.value : (state.formPreset?.extra?.[f.key] ?? null))
@@ -442,17 +458,31 @@ async function buildFormField(f, existing, type) {
 
   if (f.type === 'ref') {
     let items = state.cache[f.refStore] || [];
-    if (f.refFilter) items = items.filter(f.refFilter);
+    // refFilter/readOnly aren't part of RefFieldDef's current typedef — like the
+    // 'assign-type'/'assign-id' field-type branches below and rel.filter in
+    // operations.js, no current entity-config.js ref field sets either, but the
+    // checks are kept defensive via a cast rather than widening the typedef for
+    // properties nothing currently uses.
+    const refFilter = /** @type {any} */ (f).refFilter;
+    if (refFilter) items = items.filter(refFilter);
+    const readOnly = /** @type {any} */ (f).readOnly;
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
-      <select id="f-${f.key}" class="f-select${emptyCls}"${f.readOnly ? ' disabled' : ''}>
+      <select id="f-${f.key}" class="f-select${emptyCls}"${readOnly ? ' disabled' : ''}>
         <option value="">— Unassigned —</option>
         ${buildRefOptions(items, val)}
       </select>
     </div>`;
   }
 
-  if (f.type === 'assign-type') {
+  // 'assign-type'/'assign-id' aren't part of FieldDef's current discriminated
+  // union — no entity-config.js field currently uses them (same defensive
+  // dead-code pattern documented in utils.js's calcCompleteness() and
+  // operations.js's saveEntityForm()/deleteItem()) — cast f.type to compare
+  // against them without widening the typedef for branches nothing currently
+  // exercises.
+  const fType = /** @type {string} */ (f.type);
+  if (fType === 'assign-type') {
     const preset   = state.formPreset?.field === 'assignedToType' ? state.formPreset.value : null;
     const current  = existing?.assignedToType || preset || '';
     const typeCls  = !current ? ' field-empty' : '';
@@ -460,12 +490,12 @@ async function buildFormField(f, existing, type) {
       <label class="fg-label">${esc(f.label)}</label>
       <select id="f-assign-type" class="f-select${typeCls}">
         <option value="">— Select type —</option>
-        ${buildEnumOptions(f.options, current)}
+        ${buildEnumOptions(/** @type {any} */ (f).options, current)}
       </select>
     </div>`;
   }
 
-  if (f.type === 'assign-id') {
+  if (fType === 'assign-id') {
     return `<div class="fg" id="fg-assign-id" style="display:none">
       <label class="fg-label" id="label-assign-id">Assigned Item</label>
       <select id="f-assign-id" class="f-select field-empty">
@@ -479,9 +509,15 @@ async function buildFormField(f, existing, type) {
 
 /* ---- ASSIGN-ID DROPDOWN ---- */
 
+/**
+ * @param {EntityType} type
+ * @param {string | undefined} assignType
+ * @param {string | undefined | null} currentId
+ * @returns {Promise<void>}
+ */
 async function populateAssignId(type, assignType, currentId) {
   const fg  = $('fg-assign-id');
-  const sel = $('f-assign-id');
+  const sel = _field('f-assign-id');
   const lbl = $('label-assign-id');
   if (!fg || !sel) return;
 
@@ -493,12 +529,12 @@ async function populateAssignId(type, assignType, currentId) {
   fg.style.display = 'block';
   if (lbl) lbl.textContent = assignType;
 
-  const storeName = ASSIGN_STORE_MAP[assignType];
+  const storeName = /** @type {Record<string, string | null>} */ (ASSIGN_STORE_MAP)[assignType];
   if (!storeName) { fg.style.display = 'none'; return; }
 
-  const items = state.cache[storeName] || [];
+  const items = /** @type {Record<string, DbRecord[]>} */ (state.cache)[storeName] || [];
   sel.innerHTML = `<option value="">— Select —</option>` + items.map(i => {
-    const sub = ENTITY[storeName]?.getSubtitle(i, state.refs);
+    const sub = /** @type {Record<string, EntityConfig>} */ (ENTITY)[storeName]?.getSubtitle(i, state.refs);
     const label = sub ? `${i.name} (${sub})` : i.name;
     return `<option value="${i.id}" ${i.id === currentId ? 'selected' : ''}>${esc(label)}</option>`;
   }).join('');
@@ -509,8 +545,12 @@ async function populateAssignId(type, assignType, currentId) {
 // Rebuilds the panel dropdown filtered to panels in the given area.
 // Called when the area changes (no panel set) or on panel clear.
 // currentPanelId keeps the previously-selected option selected after re-render.
+/**
+ * @param {string} areaId
+ * @param {string | undefined} currentPanelId
+ */
 function filterPanelsByArea(areaId, currentPanelId) {
-  const sel = $('f-panelId');
+  const sel = _field('f-panelId');
   if (!sel) return;
   const all      = state.cache['panels'] || [];
   const filtered = areaId ? all.filter(p => p.areaId === areaId) : all;
@@ -519,8 +559,13 @@ function filterPanelsByArea(areaId, currentPanelId) {
   ).join('');
 }
 
+/**
+ * @param {string} panelId
+ * @param {string | undefined | null} currentPowerId
+ * @returns {Promise<void>}
+ */
 async function filterPowerByPanel(panelId, currentPowerId) {
-  const sel = $('f-powerId');
+  const sel = _field('f-powerId');
   if (!sel) return;
   const all = state.cache['power'] || [];
   const filtered = panelId ? all.filter(p => p.panelId === panelId) : all;
