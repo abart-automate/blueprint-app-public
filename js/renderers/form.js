@@ -4,7 +4,7 @@
    PLC slots, and the plant settings form.
    Depends on: state, ENTITY, ASSIGN_STORE_MAP, PLC_CARD_TYPE_FIELDS,
                ASSET_CLASS_NETWORK_PORTS,
-               esc, getIpPrefix, getById, refreshAll,
+               esc, getById, refreshAll,
                renderMediaSlot, renderMediaGallery, renderItemTable,
                renderClassItemTables, renderIoPointsTable, syncIoPointCount,
                renderSwitchNetworksTableForm, renderSwitchPortsTableForm,
@@ -16,25 +16,6 @@ async function renderForm() {
   if (state.formType === FORM_TYPE.PLANT) return;
   if (state.formType === FORM_TYPE.PLC_SLOT) return renderSlotForm();
   return renderEntityForm();
-}
-
-/* ---- SHARED: NETWORK ADDRESS FIELDS ---- */
-
-async function renderNetworkAddressFields(existing, type) {
-  const networkId = $('f-networkId')?.value;
-  const network   = state.refs.networks?.[networkId];
-  const fields    = ENTITY.assets.networkTypeFields?.[network?.networkType] || [];
-  const container = $('network-address-container');
-  if (!container) return;
-  if (!fields.length) { container.innerHTML = ''; return; }
-  let ph = `<div class="form-section-hdr">Network Address</div>`;
-  for (const f of fields) ph += await buildFormField(f, existing, type);
-  container.innerHTML = ph;
-  const ipInput = $('f-ipAddress');
-  if (ipInput && !ipInput.value) {
-    const prefix = getIpPrefix(network?.ipRange);
-    if (prefix) ipInput.value = prefix;
-  }
 }
 
 /* ---- PLC SLOT FORM ---- */
@@ -180,7 +161,6 @@ async function renderEntityForm() {
   if (type === 'assets') {
     html += `<div id="class-fields-container"></div>`;
     html += `<div id="subclass-fields-container"></div>`;
-    html += `<div id="network-address-container"></div>`;
     html += `
       <div id="switch-networks-wrap" style="display:none">
         <div class="form-section-hdr">VLANs</div>
@@ -194,12 +174,7 @@ async function renderEntityForm() {
         <div class="form-section-hdr">Network Ports</div>
         <div id="asset-network-ports-container"></div>
       </div>
-      <div id="card-type-fields-container"></div>
-      <div id="class-item-tables-container"></div>
-      <div id="io-points-wrap" style="display:none">
-        <div class="form-section-hdr">IO Points</div>
-        <div id="io-points-container"></div>
-      </div>`;
+      <div id="class-item-tables-container"></div>`;
     html += physicalHtml;
   }
 
@@ -293,8 +268,6 @@ async function renderEntityForm() {
   }
 
   if (type === 'assets') {
-    const _renderNetAddr = () => renderNetworkAddressFields(existing, type);
-
     const updateSwitchTables = () => {
       const assetClass = $('f-assetClass')?.value;
       const subclass   = $('f-assetSubclass')?.value;
@@ -336,49 +309,8 @@ async function renderEntityForm() {
         ph += await buildFormField(f, existing, type);
       }
       container.innerHTML = ph;
-      if ($('f-networkId')) {
-        $('f-networkId').addEventListener('change', _renderNetAddr);
-        await _renderNetAddr();
-      }
-      const cardTypeEl = $('f-cardType');
-      if (cardTypeEl) {
-        cardTypeEl.addEventListener('change', renderCardTypeFields);
-        await renderCardTypeFields();
-      }
       updateSwitchTables();
       updateAssetNetworkPorts();
-    };
-
-    const renderCardTypeFields = async () => {
-      const cardType  = $('f-cardType')?.value;
-      const fields    = ENTITY.assets.cardTypeFields?.[cardType] || [];
-      const container = $('card-type-fields-container');
-      if (!container) return;
-      if (!fields.length) { container.innerHTML = ''; } else {
-        let ph = '', lastSection;
-        for (const f of fields) {
-          if (f.section !== lastSection) {
-            lastSection = f.section;
-            ph += `<div class="form-section-hdr">${esc(f.section)}</div>`;
-          }
-          ph += await buildFormField(f, existing, type);
-        }
-        container.innerHTML = ph;
-        if (cardType === 'Controller') {
-          $('f-networkId')?.addEventListener('change', _renderNetAddr);
-          await _renderNetAddr();
-        }
-      }
-      const ioWrap = $('io-points-wrap');
-      if (ioWrap) {
-        const isIo = CARD_TYPE_IO_TYPES.has(cardType);
-        ioWrap.style.display = isIo ? '' : 'none';
-        if (isIo) {
-          renderIoPointsTable();
-          const ioCountEl = $('f-ioPointCount');
-          if (ioCountEl) ioCountEl.addEventListener('change', syncIoPointCount);
-        }
-      }
     };
 
     const renderClassSubclassField = async () => {
@@ -411,8 +343,6 @@ async function renderEntityForm() {
           let ph = '';
           for (const f of classFieldDefs) ph += await buildFormField(f, existing, type);
           classCont.innerHTML = ph;
-          $('f-networkId')?.addEventListener('change', _renderNetAddr);
-          await _renderNetAddr();
         }
       }
 

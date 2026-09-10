@@ -161,12 +161,11 @@ async function saveEntityForm() {
   const oldPanelAreaId = (type === 'panels' && state.formId) ? item.areaId : undefined;
 
   // Pre-seed type discriminators from the DOM so getEffectiveFields resolves conditional field
-  // sets (classFields, subclassFields, protocolFields, networkTypeFields) correctly when item
-  // starts empty for new entities. The main loop overwrites these again — no data is lost.
+  // sets (classFields, subclassFields, protocolFields) correctly when item starts empty for
+  // new entities. The main loop overwrites these again — no data is lost.
   if (type === 'assets') {
     if ($('f-assetClass'))    item.assetClass    = $('f-assetClass').value    || '';
     if ($('f-assetSubclass')) item.assetSubclass = $('f-assetSubclass').value || '';
-    if ($('f-networkId'))     item.networkId     = $('f-networkId').value     || '';
   }
   if (type === 'networks') {
     if ($('f-networkType'))   item.networkType   = $('f-networkType').value   || '';
