@@ -1,8 +1,41 @@
+// @ts-check
 /* ============================================================
    UTILITIES
    Pure helper functions with no side effects beyond what they
    explicitly return or render. Depends on: state, ENTITY.
    ============================================================ */
+
+/**
+ * The 3 shapes a stored media value can be found in, historically:
+ *   - A raw base64 data-URL string (oldest format, pre-blob storage).
+ *   - A { blob, mimeType } item (current format) — carries an optional
+ *     `_legacySrc?: undefined` so it unions cleanly with the normalized
+ *     legacy shape below (same object shape either way; only base64 strings
+ *     actually change shape during normalization).
+ *   - An array of either of the above (namedPhotos slots, and the
+ *     "Other Media" gallery, both support multiple items per field).
+ * normalizeMediaItems() is the one sanctioned entry point that turns any of
+ * these into a uniform NormalizedMediaItem[] — every other module should
+ * consume its output, not this raw union, directly.
+ * @typedef {{ blob: Blob, mimeType: string, _legacySrc?: undefined }} BlobMediaItem
+ * @typedef {string} LegacyBase64MediaItem
+ * @typedef {BlobMediaItem | LegacyBase64MediaItem} RawMediaItem
+ * @typedef {RawMediaItem | RawMediaItem[] | undefined | null} StoredMediaValue
+ */
+
+/**
+ * The shape a legacy base64 RawMediaItem is normalized into by
+ * normalizeMediaItems() — downstream code never branches on typeof again.
+ * @typedef {{ _legacySrc: string, mimeType: string, blob?: undefined }} NormalizedLegacyItem
+ * @typedef {BlobMediaItem | NormalizedLegacyItem} NormalizedMediaItem
+ */
+
+/**
+ * Some call sites (e.g. getCardThumbSrc, used for both freshly-uploaded and
+ * already-normalized items) legitimately see either raw or normalized shapes.
+ * @typedef {RawMediaItem | NormalizedMediaItem} MediaItemLike
+ * @typedef {MediaItemLike | MediaItemLike[] | undefined | null} AnyMediaValue
+ */
 
 /* ---- MEDIA TYPE CONSTANTS ---- */
 
@@ -13,6 +46,10 @@ const ACCEPTED_MEDIA_ACCEPT = ACCEPTED_MEDIA_TYPES.join(',');
 
 /* ---- HTML ESCAPING ---- */
 
+/**
+ * @param {unknown} str
+ * @returns {string}
+ */
 function esc(str) {
   if (str == null) return '';
   return String(str)
@@ -24,16 +61,28 @@ function esc(str) {
 
 /* ---- REF RESOLUTION ---- */
 
-// Consolidated from 4+ duplicated patterns scattered across app.js.
+/**
+ * Consolidated from 4+ duplicated patterns scattered across app.js.
+ * @param {StoreName} storeName
+ * @param {string | undefined | null} id
+ * @returns {DbRecord | null}
+ */
 function resolveRef(storeName, id) {
-  return state.refs?.[storeName]?.[id] ?? null;
+  return state.refs?.[storeName]?.[id ?? ''] ?? null;
 }
 
+/**
+ * @param {StoreName} storeName
+ * @param {string | undefined | null} id
+ * @returns {string}
+ */
 function resolveRefName(storeName, id) {
   return resolveRef(storeName, id)?.name ?? '';
 }
 
 /* ---- NETWORK CONNECTION HELPERS ---- */
+
+/** @typedef {{ networkId: string, ipAddress?: string, nodeAddress?: string }} NetworkPortEntry */
 
 /**
  * Normalizes "what network port(s) is this thing connected to" across the
@@ -47,8 +96,8 @@ function resolveRefName(storeName, id) {
  * Call with either an asset record or a PLC slot object (slot.networkPorts
  * follows the same shape, so this works unchanged for both).
  *
- * @param {object} item - An asset, or a PLC slot object
- * @returns {Array<{networkId: string, ipAddress?: string, nodeAddress?: string}>}
+ * @param {Record<string, any> | undefined | null} item - An asset, or a PLC slot object
+ * @returns {NetworkPortEntry[]}
  */
 function getEntityNetworkPorts(item) {
   if (item?.switchNetworks?.length) return item.switchNetworks;
@@ -62,7 +111,7 @@ function getEntityNetworkPorts(item) {
  * "Network Name — address" label parts, resolving each entry's network via
  * state.refs and dropping any entry whose network no longer exists.
  *
- * @param {Array<{networkId, ipAddress, nodeAddress}>} ports
+ * @param {NetworkPortEntry[]} ports
  * @param {string} [contextNetworkId] - When given, only entries connected to
  *   this specific network are included — e.g. when rendering a card inside
  *   that network's own detail page, where showing a device's *other*
@@ -81,29 +130,44 @@ function formatNetworkPortLabels(ports, contextNetworkId) {
 
 /* ---- SORTING ---- */
 
-// Case-insensitive alphabetical comparator for items with a name field.
-// Used by list views and child sections to ensure consistent A→Z display.
+/**
+ * Case-insensitive alphabetical comparator for items with a name field.
+ * Used by list views and child sections to ensure consistent A→Z display.
+ * @param {{ name?: string }} a
+ * @param {{ name?: string }} b
+ * @returns {number}
+ */
 const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
 
 /* ---- FIELD / ENTITY HELPERS ---- */
 
+/**
+ * @param {EntityType} type
+ * @param {Record<string, any> | undefined | null} item
+ * @returns {FieldDef[]}
+ */
 function getEffectiveFields(type, item) {
   const cfg           = ENTITY[type];
   const base          = cfg.fields || [];
-  const proto         = cfg.protocolFields?.[item?.networkType] || [];
-  const classF        = cfg.classFields?.[item?.assetClass] || [];
-  const subclassF     = cfg.subclassFields?.[item?.assetSubclass] || [];
-  const cardTypeF     = cfg.cardTypeFields?.[item?.cardType] || [];
+  const proto         = cfg.protocolFields?.[item?.networkType ?? ''] || [];
+  const classF        = cfg.classFields?.[item?.assetClass ?? ''] || [];
+  const subclassF     = cfg.subclassFields?.[item?.assetSubclass ?? ''] || [];
+  const cardTypeF     = cfg.cardTypeFields?.[item?.cardType ?? ''] || [];
   const linkedNetType = state.refs?.networks?.[item?.networkId]?.networkType;
-  const networkTypeF  = type === 'assets' ? (cfg.networkTypeFields?.[linkedNetType] || []) : [];
+  const networkTypeF  = type === 'assets' ? (cfg.networkTypeFields?.[linkedNetType ?? ''] || []) : [];
   return [...base, ...proto, ...classF, ...subclassF, ...cardTypeF, ...networkTypeF];
 }
 
+/**
+ * @param {EntityType} type
+ * @param {Record<string, any> | undefined | null} item
+ * @returns {ItemTableDef[]}
+ */
 function itemTables(type, item) {
   const cfg = ENTITY[type];
   return [
     ...(cfg.itemTables || []),
-    ...(cfg.classItemTables?.[item?.assetClass] || []),
+    ...(cfg.classItemTables?.[item?.assetClass ?? ''] || []),
   ];
 }
 
@@ -127,28 +191,37 @@ function isSwitchAsset(assetClass, subclass) {
  * via ENTITY.assets.classSubclasses. All other enum fields return their static
  * f.options list.
  *
- * @param {object} f    - Field config (key, type, options, …)
- * @param {object} item - Current entity data (provides assetClass context)
- * @returns {string[]}
+ * @param {FieldDef} f    - Field config (key, type, options, …)
+ * @param {Record<string, any> | undefined | null} item - Current entity data (provides assetClass context)
+ * @returns {readonly string[]}
  */
 function resolveFieldOptions(f, item) {
   if (f.key === 'assetSubclass') {
-    return ENTITY.assets.classSubclasses?.[item?.assetClass] || [];
+    return ENTITY.assets.classSubclasses?.[item?.assetClass ?? ''] || [];
   }
-  return f.options || [];
+  return ('options' in f ? f.options : null) || [];
 }
 
-// Reassigns slotNumber on every slot to match its position in the array.
-// Call after any add, delete, reorder, or duplicate so the invariant
-// slotNumber === array-index is always true before persisting.
+/**
+ * Reassigns slotNumber on every slot to match its position in the array.
+ * Call after any add, delete, reorder, or duplicate so the invariant
+ * slotNumber === array-index is always true before persisting.
+ * @template {Record<string, any>} T
+ * @param {T[]} slots
+ * @returns {(T & { slotNumber: number })[]}
+ */
 function renumberSlots(slots) {
   return slots.map((s, i) => ({ ...s, slotNumber: i }));
 }
 
-// Returns the networkTypeFields config for the network with the given id.
+/**
+ * Returns the networkTypeFields config for the network with the given id.
+ * @param {string | undefined | null} networkId
+ * @returns {readonly FieldDef[]}
+ */
 function getNetworkAddrFields(networkId) {
-  const net = state.refs.networks?.[networkId];
-  return ENTITY.assets.networkTypeFields?.[net?.networkType] || [];
+  const net = state.refs.networks?.[networkId ?? ''];
+  return ENTITY.assets.networkTypeFields?.[net?.networkType ?? ''] || [];
 }
 
 // Backward-compat helper: an asset saved before the Network Ports migration
@@ -157,14 +230,23 @@ function getNetworkAddrFields(networkId) {
 // fields so the value isn't silently dropped the first time the record is
 // opened — saving then persists it into networkPorts[] and clears the legacy
 // fields (see saveEntityForm / saveDetailChanges).
+/**
+ * @param {Record<string, any>} item
+ * @returns {{ portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string }}
+ */
 function buildLegacyNetworkPortRow(item) {
+  /** @type {{ portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string }} */
   const row = { portNumber: 1, networkId: item.networkId };
-  for (const key of ['ipAddress', 'subnetMask', 'gateway', 'nodeAddress']) {
+  for (const key of /** @type {const} */ (['ipAddress', 'subnetMask', 'gateway', 'nodeAddress'])) {
     if (item[key]) row[key] = item[key];
   }
   return row;
 }
 
+/**
+ * @param {string | undefined | null} ipRange
+ * @returns {string}
+ */
 function getIpPrefix(ipRange) {
   if (!ipRange) return '';
   const parts = ipRange.split('/')[0].split('.');
@@ -175,15 +257,30 @@ function getIpPrefix(ipRange) {
 
 const COMPLETION_THRESHOLD = 75;
 
+/**
+ * @param {number} pct
+ * @returns {string}
+ */
 function completenessColor(pct) {
   return pct >= COMPLETION_THRESHOLD ? 'var(--success)' : 'var(--danger)';
 }
 
+/**
+ * @param {EntityType} type
+ * @param {Record<string, any>} item
+ * @returns {number}
+ */
 function calcCompleteness(type, item) {
   const cfg = ENTITY[type];
   let total = 0, filled = 0;
   for (const f of getEffectiveFields(type, item)) {
-    if (f.type === 'assign-type' || f.type === 'assign-id') continue; // UI-only; exclude from score
+    // f.type is widened to string here on purpose: 'assign-type'/'assign-id'
+    // aren't produced by any current entity-config.js field def (confirmed by
+    // search — FieldDef's union is accurately closed to the 4 real variants),
+    // but form.js/detail.js/operations.js still branch on these two type
+    // strings too, so this guard is kept defensive rather than deleted.
+    const fType = /** @type {string} */ (f.type);
+    if (fType === 'assign-type' || fType === 'assign-id') continue; // UI-only; exclude from score
     total++;
     const val = item[f.key];
     if (val !== undefined && val !== null && String(val).trim() !== '') filled++;
@@ -197,36 +294,52 @@ function calcCompleteness(type, item) {
   }
   for (const t of itemTables(type, item)) {
     total++;
-    if ((item[t.key] || []).some(r => r.terminal || r.label)) filled++;
+    const rows = /** @type {any[]} */ (item[t.key] || []);
+    if (rows.some(r => r.terminal || r.label)) filled++;
   }
   return total === 0 ? 100 : Math.round((filled / total) * 100);
 }
 
+/**
+ * @param {DbRecord} area
+ * @returns {number}
+ */
 function calcAreaCompleteness(area) {
   const panelItems = (state.cache.panels || []).filter(p => p.areaId === area.id);
   const panelIds = new Set(panelItems.map(p => p.id));
-  const allItems = [
+  const allItems = /** @type {Array<{ type: EntityType, item: DbRecord }>} */ ([
     ...panelItems.map(p => ({ type: 'panels', item: p })),
     ...(state.cache.power    || []).filter(p => panelIds.has(p.panelId)).map(p => ({ type: 'power',    item: p })),
     ...(state.cache.safety   || []).filter(s => panelIds.has(s.panelId)).map(s => ({ type: 'safety',   item: s })),
     ...(state.cache.networks || []).filter(n => n.assignedToType === 'Area' && n.assignedToId === area.id).map(n => ({ type: 'networks', item: n })),
     ...(state.cache.assets   || []).filter(a => panelIds.has(a.panelId)).map(a => ({ type: 'assets',   item: a })),
-  ];
+  ]);
   if (!allItems.length) return 0;
   return Math.round(allItems.reduce((sum, { type, item }) => sum + calcCompleteness(type, item), 0) / allItems.length);
 }
 
+/**
+ * @param {string} panelId
+ * @returns {number | null}
+ */
 function calcPanelDevicesCompleteness(panelId) {
-  const allItems = [
+  const allItems = /** @type {Array<{ type: EntityType, item: DbRecord }>} */ ([
     ...(state.cache.power    || []).filter(p => p.panelId === panelId).map(p => ({ type: 'power',    item: p })),
     ...(state.cache.safety   || []).filter(s => s.panelId === panelId).map(s => ({ type: 'safety',   item: s })),
     ...(state.cache.networks || []).filter(n => n.assignedToType === 'Panel' && n.assignedToId === panelId).map(n => ({ type: 'networks', item: n })),
     ...(state.cache.assets   || []).filter(a => a.panelId === panelId).map(a => ({ type: 'assets',   item: a })),
-  ];
+  ]);
   if (!allItems.length) return null;
   return Math.round(allItems.reduce((sum, { type, item }) => sum + calcCompleteness(type, item), 0) / allItems.length);
 }
 
+/**
+ * @param {string} label
+ * @param {number | null} pct
+ * @param {string} color
+ * @param {string} [marginTop]
+ * @returns {string}
+ */
 function buildProgressRow(label, pct, color, marginTop = '') {
   const style = marginTop ? ` style="margin-top:${marginTop}"` : '';
   return `<div class="det-completeness-row"${style}>
@@ -236,6 +349,11 @@ function buildProgressRow(label, pct, color, marginTop = '') {
          <div class="det-progress-wrap"><div class="det-progress-fill" style="width:${pct}%;background:${color}"></div></div>`;
 }
 
+/**
+ * @param {EntityType} type
+ * @param {DbRecord} item
+ * @returns {string}
+ */
 function buildDetailCompletenessHtml(type, item) {
   if (type === 'areas') {
     const pct = calcAreaCompleteness(item);
@@ -248,7 +366,7 @@ function buildDetailCompletenessHtml(type, item) {
   if (type === 'panels') {
     const panelPct = calcCompleteness('panels', item);
     const panelColor = completenessColor(panelPct);
-    const devPct = calcPanelDevicesCompleteness(item.id);
+    const devPct = calcPanelDevicesCompleteness(item.id ?? '');
     const devRow = devPct !== null
       ? buildProgressRow('Devices', devPct, completenessColor(devPct), '12px')
       : `<div class="det-completeness-row" style="margin-top:12px">
@@ -269,17 +387,27 @@ function buildDetailCompletenessHtml(type, item) {
     </div>`;
 }
 
+/**
+ * @typedef {{ key: string, label: string, done: number, total: number }} ChecklistSubItem
+ * @typedef {ChecklistSubItem & { subItems?: ChecklistSubItem[] }} ChecklistItem
+ */
+
+/** @returns {ChecklistItem[]} */
 function calcChecklistAutoItems() {
+  /** @type {ChecklistItem[]} */
   const items = [];
   for (const [type, cfg] of Object.entries(ENTITY)) {
     if (type === 'assets' || type === 'areas') continue;
-    const all = state.cache[type] || [];
+    const t = /** @type {EntityType} */ (type);
+    const all = state.cache[t] || [];
     if (!all.length) continue;
-    const done = all.filter(i => calcCompleteness(type, i) >= COMPLETION_THRESHOLD).length;
-    items.push({ key: type, label: cfg.plural, done, total: all.length });
+    const done = all.filter(i => calcCompleteness(t, i) >= COMPLETION_THRESHOLD).length;
+    items.push({ key: t, label: cfg.plural, done, total: all.length });
   }
-  const assetClassOptions = ENTITY.assets.fields.find(f => f.key === 'assetClass').options;
+  const assetClassField = /** @type {EnumFieldDef | undefined} */ (ENTITY.assets.fields.find(f => f.key === 'assetClass'));
+  const assetClassOptions = assetClassField?.options || [];
   const allAssets = state.cache.assets || [];
+  /** @type {ChecklistSubItem[]} */
   const subItems = [];
   for (const cls of assetClassOptions) {
     const clsItems = allAssets.filter(a => a.assetClass === cls);
@@ -297,7 +425,13 @@ function calcChecklistAutoItems() {
 
 /* ---- ENTITY ICONS ---- */
 
+/**
+ * @param {string} type
+ * @param {number} [size]
+ * @returns {string}
+ */
 function entityIcon(type, size = 22) {
+  /** @type {Record<string, string>} */
   const icons = {
     areas:    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     panels:   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
@@ -311,9 +445,13 @@ function entityIcon(type, size = 22) {
 
 /* ---- MEDIA PROCESSING ---- */
 
-// Validates file type and returns { blob, mimeType }.
-// Images are resized to max 1400px and re-encoded as JPEG blobs.
-// Throws a user-readable Error for unsupported types.
+/**
+ * Validates file type and returns { blob, mimeType }.
+ * Images are resized to max 1400px and re-encoded as JPEG blobs.
+ * Throws a user-readable Error for unsupported types.
+ * @param {File} file
+ * @returns {Promise<BlobMediaItem>}
+ */
 async function processMediaFile(file) {
   if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
     throw new Error(
@@ -337,16 +475,23 @@ async function processMediaFile(file) {
         const h = Math.round(img.height * scale);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        canvas.toBlob(blob => resolve({ blob, mimeType: 'image/jpeg' }), 'image/jpeg', 0.82);
+        /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d')).drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (blob) resolve({ blob, mimeType: 'image/jpeg' });
+          else reject(new Error(`Failed to encode image: ${file.name}`));
+        }, 'image/jpeg', 0.82);
       };
-      img.src = e.target.result;
+      img.src = /** @type {string} */ (e.target?.result);
     };
     reader.readAsDataURL(file);
   });
 }
 
-// Converts a legacy base64 data URL to a { blob, mimeType } media item.
+/**
+ * Converts a legacy base64 data URL to a { blob, mimeType } media item.
+ * @param {string} dataUrl
+ * @returns {BlobMediaItem}
+ */
 function base64ToMediaItem(dataUrl) {
   const [header, b64] = dataUrl.split(',');
   const mimeType = (header.match(/:(.*?);/) || [])[1] || 'image/jpeg';
@@ -358,6 +503,7 @@ function base64ToMediaItem(dataUrl) {
 
 /* ---- OBJECT URL LIFECYCLE ---- */
 
+/** @type {string[]} */
 const _mediaUrls = [];
 // Index into _mediaUrls where the current form session's URLs begin.
 // Set by markFormMediaStart() each time a sheet form opens so that
@@ -365,10 +511,14 @@ const _mediaUrls = [];
 // detail-panel blob URLs intact for the still-visible detail panel.
 let _formMediaStart = 0;
 
-// Creates and tracks a blob object URL. Call revokeAllMediaUrls() when done.
-// If mediaItem has a _legacySrc (base64 string), returns it directly without creating a URL.
+/**
+ * Creates and tracks a blob object URL. Call revokeAllMediaUrls() when done.
+ * If mediaItem has a _legacySrc (base64 string), returns it directly without creating a URL.
+ * @param {NormalizedMediaItem} mediaItem
+ * @returns {string}
+ */
 function createMediaUrl(mediaItem) {
-  if (mediaItem._legacySrc) return mediaItem._legacySrc;
+  if (!('blob' in mediaItem) || !mediaItem.blob) return mediaItem._legacySrc ?? '';
   const url = URL.createObjectURL(mediaItem.blob);
   _mediaUrls.push(url);
   return url;
@@ -377,20 +527,26 @@ function createMediaUrl(mediaItem) {
 // Revoke a single tracked blob URL and remove it from the pool.
 // Call this before discarding an <img>/<video> that used createMediaUrl() so the
 // pool does not grow unboundedly when a gallery is re-rendered on every add/remove.
-// Revoking an already-revoked or untracked URL is a safe no-op.
+/**
+ * Revoking an already-revoked or untracked URL is a safe no-op.
+ * @param {string} url
+ */
 function revokeTrackedMediaUrl(url) {
   const i = _mediaUrls.indexOf(url);
   if (i !== -1) _mediaUrls.splice(i, 1);
   URL.revokeObjectURL(url);
 }
 
-// Revoke all blob URLs currently referenced by <img>/<video> elements inside containerEl.
-// Call this immediately before any innerHTML assignment that destroys blob-src elements.
-// Safe for both tracked URLs (removed from _mediaUrls pool + revoked) and untracked URLs
-// such as those from getCardThumbSrc() (URL.revokeObjectURL called directly; no pool op).
+/**
+ * Revoke all blob URLs currently referenced by <img>/<video> elements inside containerEl.
+ * Call this immediately before any innerHTML assignment that destroys blob-src elements.
+ * Safe for both tracked URLs (removed from _mediaUrls pool + revoked) and untracked URLs
+ * such as those from getCardThumbSrc() (URL.revokeObjectURL called directly; no pool op).
+ * @param {Element} containerEl
+ */
 function revokeBlobUrlsInContainer(containerEl) {
   containerEl.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').forEach(el => {
-    revokeTrackedMediaUrl(el.src);
+    revokeTrackedMediaUrl(/** @type {HTMLImageElement | HTMLVideoElement} */ (el).src);
   });
 }
 
@@ -414,31 +570,44 @@ function revokeAllMediaUrls() {
   _formMediaStart = 0;
 }
 
-// Returns a displayable src string for use in card thumbnail <img> elements.
-// Handles legacy base64 strings, new {blob,mimeType} items, and arrays (namedPhotos slots).
-// Object URLs created here are untracked — acceptable for short-lived card list renders.
+/**
+ * Returns a displayable src string for use in card thumbnail <img> elements.
+ * Handles legacy base64 strings, new {blob,mimeType} items, and arrays (namedPhotos slots).
+ * Object URLs created here are untracked — acceptable for short-lived card list renders.
+ * @param {AnyMediaValue} mediaValue
+ * @returns {string | null}
+ */
 function getCardThumbSrc(mediaValue) {
   const item = Array.isArray(mediaValue) ? mediaValue[0] : mediaValue;
   if (!item) return null;
   if (typeof item === 'string') return item;
   if (item._legacySrc) return item._legacySrc;
   if (item.mimeType?.startsWith('video/')) return null;
+  if (!item.blob) return null;
   return URL.createObjectURL(item.blob);
 }
 
-// Normalises a stored media value into Array<{blob,mimeType}>.
-// Handles: undefined, legacy base64 string, single blob item, or array of either.
+/**
+ * Normalises a stored media value into NormalizedMediaItem[].
+ * Handles: undefined, legacy base64 string, single blob item, or array of either.
+ * @param {StoredMediaValue} value
+ * @returns {NormalizedMediaItem[]}
+ */
 function normalizeMediaItems(value) {
   if (!value) return [];
   const arr = Array.isArray(value) ? value : [value];
   return arr.map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
 }
 
-// Converts IDB-backed blobs to fresh in-memory blobs before writing back to IndexedDB.
-// WebKit/Safari cannot reliably re-store blobs retrieved from IndexedDB via structured
-// clone — they write back as zero-byte blobs, causing broken thumbnails after a
-// close-and-reopen cycle. Reading via arrayBuffer() + new Blob() produces a true
-// in-memory copy that the structured clone algorithm handles correctly.
+/**
+ * Converts IDB-backed blobs to fresh in-memory blobs before writing back to IndexedDB.
+ * WebKit/Safari cannot reliably re-store blobs retrieved from IndexedDB via structured
+ * clone — they write back as zero-byte blobs, causing broken thumbnails after a
+ * close-and-reopen cycle. Reading via arrayBuffer() + new Blob() produces a true
+ * in-memory copy that the structured clone algorithm handles correctly.
+ * @param {NormalizedMediaItem[] | undefined | null} items
+ * @returns {Promise<NormalizedMediaItem[]>}
+ */
 async function freshenMediaItems(items) {
   if (!items?.length) return [];
   return Promise.all(items.map(async mi => {
@@ -462,6 +631,7 @@ async function freshenMediaItems(items) {
  * 'desktop' → ≥ 1200 px  Three-column layout; detail is a permanent side pane.
  *
  * These thresholds mirror the CSS @media breakpoints in style.css.
+ * @returns {'mobile' | 'tablet' | 'desktop'}
  */
 function getLayoutMode() {
   if (window.innerWidth >= 1200) return 'desktop';
@@ -501,6 +671,7 @@ function initLayoutDetection() {
 
   applyLayout();
 
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
   let _resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
@@ -510,59 +681,84 @@ function initLayoutDetection() {
 
 /* ---- OPTION BUILDERS ---- */
 
-// Builds <option> HTML for a list of string values (enum fields).
+/**
+ * Builds <option> HTML for a list of string values (enum fields).
+ * @param {readonly string[]} options
+ * @param {string | undefined | null} selectedVal
+ * @returns {string}
+ */
 function buildEnumOptions(options, selectedVal) {
   return options
     .map(o => `<option value="${esc(o)}"${o === selectedVal ? ' selected' : ''}>${esc(o)}</option>`)
     .join('');
 }
 
-// Builds <option> HTML for a list of {id, name} ref objects.
+/**
+ * Builds <option> HTML for a list of {id, name} ref objects.
+ * @param {DbRecord[]} items
+ * @param {string | undefined | null} selectedId
+ * @returns {string}
+ */
 function buildRefOptions(items, selectedId) {
   return items
     .map(i => `<option value="${esc(i.id)}"${i.id === selectedId ? ' selected' : ''}>${esc(i.name)}</option>`)
     .join('');
 }
 
-// Builds <option> HTML from a pre-filtered array of network objects.
-// Callers are responsible for filtering (Ethernet-only, assigned-only, etc.).
+/**
+ * Builds <option> HTML from a pre-filtered array of network objects.
+ * Callers are responsible for filtering (Ethernet-only, assigned-only, etc.).
+ * @param {string | undefined | null} selectedId
+ * @param {DbRecord[]} networks
+ * @returns {string}
+ */
 function buildNetworkOptions(selectedId, networks) {
   return buildRefOptions(networks, selectedId);
 }
 
 /* ---- FIELD-EMPTY TOGGLE ---- */
 
-// Attaches delegated input/change listeners that toggle the 'field-empty' class
-// based on whether the matched element has a value. changeSel defaults to inputSel
-// when both events should use the same selector (e.g. detail view); pass separate
-// selectors when input and select controls use different class names (e.g. form view).
+/**
+ * Attaches delegated input/change listeners that toggle the 'field-empty' class
+ * based on whether the matched element has a value. changeSel defaults to inputSel
+ * when both events should use the same selector (e.g. detail view); pass separate
+ * selectors when input and select controls use different class names (e.g. form view).
+ * @param {Element} container
+ * @param {string} inputSel
+ * @param {string} [changeSel]
+ */
 function attachFieldEmptyToggle(container, inputSel, changeSel = inputSel) {
   container.addEventListener('input', e => {
-    const f = e.target.closest(inputSel);
+    const f = /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */
+      (/** @type {Element | null} */ (e.target)?.closest(inputSel) ?? null);
     if (f) f.classList.toggle('field-empty', !f.value);
   });
   container.addEventListener('change', e => {
-    const f = e.target.closest(changeSel);
+    const f = /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */
+      (/** @type {Element | null} */ (e.target)?.closest(changeSel) ?? null);
     if (f) f.classList.toggle('field-empty', !f.value);
   });
 }
 
 /* ---- LIGHTBOX ---- */
 
-// Opens a fullscreen lightbox for an image or video media item.
-// Accepts { blob, mimeType } or a legacy { _legacySrc } item.
+/**
+ * Opens a fullscreen lightbox for an image or video media item.
+ * Accepts { blob, mimeType } or a legacy { _legacySrc } item.
+ * @param {NormalizedMediaItem} mediaItem
+ */
 function openMediaLightbox(mediaItem) {
-  let lb = document.querySelector('.lightbox');
+  let lb = /** @type {HTMLElement | null} */ (document.querySelector('.lightbox'));
   if (!lb) {
     lb = document.createElement('div');
     lb.className = 'lightbox';
     const closeBtn = document.createElement('button');
     closeBtn.className = 'lightbox-close';
     closeBtn.textContent = '✕';
-    closeBtn.onclick = () => _closeLightbox(lb);
-    lb.onclick = e => { if (e.target === lb) _closeLightbox(lb); };
+    closeBtn.onclick = () => _closeLightbox(/** @type {HTMLElement} */ (lb));
+    lb.onclick = e => { if (e.target === lb) _closeLightbox(/** @type {HTMLElement} */ (lb)); };
     lb.appendChild(closeBtn);
-    document.querySelector('#app').appendChild(lb);
+    /** @type {Element} */ (document.querySelector('#app')).appendChild(lb);
   }
   // Revoke the outgoing lightbox blob URL before replacing it — the lightbox lives in #app,
   // not inside el.detail, so revokeBlobUrlsInContainer(el.detail) never reaches it.
@@ -585,6 +781,7 @@ function openMediaLightbox(mediaItem) {
   lb.classList.add('open');
 }
 
+/** @param {HTMLElement} lb */
 function _closeLightbox(lb) {
   const video = lb.querySelector('video');
   if (video) video.pause();
