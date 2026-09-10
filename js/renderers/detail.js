@@ -793,7 +793,7 @@ async function renderEntityDetail(savedScroll) {
     const childStore = /** @type {string} */ (list.dataset.childStore);
     list.querySelectorAll('.card').forEach(card0 => {
       const card = /** @type {HTMLElement} */ (card0);
-      card.addEventListener('click', () => openDetail(childStore, /** @type {string} */ (card.dataset.id)));
+      card.addEventListener('click', () => openDetail(/** @type {EntityType} */ (childStore), /** @type {string} */ (card.dataset.id)));
     });
     list.querySelectorAll('.card-delete-btn').forEach(btn0 => {
       const btn = /** @type {HTMLElement} */ (btn0);
@@ -812,7 +812,7 @@ async function renderEntityDetail(savedScroll) {
     const row = /** @type {HTMLElement} */ (row0);
     row.addEventListener('click', e => {
       if (/** @type {Element | null} */ (e.target)?.closest('.slot-action-btn, .wiring-rm-btn, .rack-slot-grip')) return;
-      openSlotDetail(row.dataset.rackId, Number(row.dataset.slotNum));
+      openSlotDetail(/** @type {string} */ (row.dataset.rackId), Number(row.dataset.slotNum));
     });
   });
 
@@ -821,7 +821,7 @@ async function renderEntityDetail(savedScroll) {
     const btn = /** @type {HTMLElement} */ (btn0);
     btn.addEventListener('click', () => {
       const rack = state.refs.assets?.[/** @type {string} */ (btn.dataset.rackId)];
-      openSlotForm(btn.dataset.rackId, rack?.slots?.length ?? 0);
+      openSlotForm(/** @type {string} */ (btn.dataset.rackId), rack?.slots?.length ?? 0);
     });
   });
 
@@ -1008,9 +1008,9 @@ async function renderEntityDetail(savedScroll) {
       const presetVal    = btn.dataset.presetVal;
       const extraPresets = btn.dataset.extraPresets ? JSON.parse(btn.dataset.extraPresets) : {};
       if (childType === 'assets' || childType === 'power' || childType === 'safety' || childType === 'panels') {
-        openAssignOrCreate(childType, presetField, presetVal);
+        openAssignOrCreate(childType, /** @type {string} */ (presetField), /** @type {string} */ (presetVal));
       } else {
-        openSheet(/** @type {string} */ (childType), undefined, { field: presetField, value: presetVal, extra: extraPresets });
+        openSheet(/** @type {EntityType} */ (childType), undefined, { field: presetField, value: presetVal, extra: extraPresets });
       }
     });
   });

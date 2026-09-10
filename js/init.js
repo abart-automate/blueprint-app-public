@@ -100,6 +100,7 @@ function initVisibilityRefresh() {
    PWA INSTALL PROMPT (Android / Chrome only)
    ============================================================ */
 
+/** @type {any} */
 let _deferredInstallPrompt = null;
 
 function initInstallPrompt() {

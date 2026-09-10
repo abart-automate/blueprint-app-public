@@ -9,7 +9,7 @@ function wireEvents() {
   // Bottom nav — navigate is async; fire-and-forget is intentional here
   el.nav.addEventListener('click', e => {
     const btn = /** @type {Element | null} */ (e.target)?.closest('.nav-btn');
-    if (btn) navigate(/** @type {HTMLElement} */ (btn).dataset.page);
+    if (btn) navigate(/** @type {string} */ (/** @type {HTMLElement} */ (btn).dataset.page));
   });
 
   // Back button — closeDetail is async; must await so the confirm dialog
@@ -23,7 +23,7 @@ function wireEvents() {
   // Add button — hidden on home and checklist pages (those have no add-entity action)
   el.addBtn.addEventListener('click', () => {
     if (state.page !== 'home' && state.page !== 'checklist') {
-      openSheet(state.page);
+      openSheet(/** @type {EntityType} */ (state.page));
     }
   });
 
