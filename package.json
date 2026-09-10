@@ -1,0 +1,14 @@
+{
+  "name": "blueprint-app-public",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Installable PWA for documenting industrial plant assets.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

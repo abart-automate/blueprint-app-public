@@ -1,3 +1,6 @@
 #claude ignore
 
 .claude/
+
+# npm / TypeScript tooling
+node_modules/

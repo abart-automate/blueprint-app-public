@@ -13,4 +13,21 @@
 # "Update Now" banner stops firing — the exact bug this hook exists to
 # prevent — so if you're setting this repo up on a new machine, run that
 # command once before your first commit.
-exec node "$(git rev-parse --show-toplevel)/scripts/stamp-sw-build.js"
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+# Type-checks whichever .js files have opted in via a leading `// @ts-check`
+# (see tsconfig.json — checkJs is off globally, so untyped files are silently
+# skipped; only files being actively migrated are gated here). Skipped
+# entirely — with a warning, not a hard failure — on a fresh clone that
+# hasn't run `npm install` yet, so this hook never blocks on network access.
+if [ -f "$repo_root/node_modules/.bin/tsc" ]; then
+  if ! "$repo_root/node_modules/.bin/tsc" --noEmit -p "$repo_root"; then
+    echo "pre-commit: TypeScript check failed (tsc --noEmit). Fix the errors above, or use 'git commit --no-verify' to bypass intentionally." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: TypeScript not installed (run 'npm install') — skipping typecheck." >&2
+fi
+
+exec node "$repo_root/scripts/stamp-sw-build.js"

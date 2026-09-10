@@ -35,6 +35,28 @@
 /** @typedef {{ key: string, label: string, placeholder1?: string, placeholder2?: string }} ItemTableDef */
 
 /**
+ * Minimal shape of an Asset record as read by getChildren[].countFn's
+ * PLC-cross-reference lookups (Power/Safety Circuit/Network children counting
+ * assets wired via a PLC slot's powerBus/networkPorts, not just the asset's
+ * own top-level ref fields). Not the full Asset record shape — real per-field
+ * typing for assets is deferred to the entity-config.ts union-type work the
+ * TypeScript migration plan describes.
+ * @typedef {{
+ *   assetClass?: string,
+ *   powerId?: string,
+ *   safetyId?: string,
+ *   networkId?: string,
+ *   switchNetworks?: Array<{ networkId?: string }>,
+ *   networkPorts?: Array<{ networkId?: string }>,
+ *   slots?: Array<{
+ *     cardType?: string,
+ *     powerBus?: Array<{ type?: string, refId?: string }>,
+ *     networkPorts?: Array<{ networkId?: string }>,
+ *   }>,
+ * }} AssetChildLookup
+ */
+
+/**
  * The per-entity-type config object. `fields` plus the various conditional
  * lookup tables (protocolFields, classFields, cardTypeFields, etc.) together
  * form the "schema of schema" the form/detail renderers, XLSX export/import,
@@ -51,7 +73,7 @@
  * @property {ItemTableDef[]} [itemTables]
  * @property {readonly FieldDef[]} fields
  * @property {(item: any, refs?: any) => string} getSubtitle
- * @property {{ label: string, store: EntityType, field: string, countFn?: (all: any[], id: string) => number }[]} getChildren
+ * @property {{ label: string, store: EntityType, field: string, countFn?: (all: AssetChildLookup[], id: string) => number }[]} getChildren
  * @property {Record<string, readonly FieldDef[]>} [protocolFields]
  * @property {Record<string, readonly FieldDef[]>} [networkTypeFields]
  * @property {Record<string, readonly FieldDef[]>} [cardTypeFields]
@@ -321,7 +343,7 @@ const ENTITY = {
     },
     getChildren: [
       { label: 'Assets', store: 'assets', field: 'networkId',
-        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || a.networkPorts?.some(p => p.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkPorts?.some(p => p.networkId === id)))).length },
+        countFn: (all, id) => all.filter(a => a.networkId === id || a.switchNetworks?.some(sn => sn.networkId === id) || a.networkPorts?.some(p => p.networkId === id) || (a.assetClass === 'PLC' && a.slots?.some(s => !!s.cardType && CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkPorts?.some(p => p.networkId === id)))).length },
     ],
   },
 
