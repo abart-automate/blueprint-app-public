@@ -450,13 +450,6 @@ async function _forceSeedPartsLibrary() {
   }
 }
 
-async function seedPartsLibrary() {
-  const existing = await getAll('partsLibrary');
-  if (existing.length > 0) return;
-  await _forceSeedPartsLibrary();
-  state.cache.partsLibrary = await getAll('partsLibrary');
-}
-
 /* ---- PAGE RENDERING ---- */
 
 async function renderPartsLibraryPage() {

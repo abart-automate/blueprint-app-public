@@ -277,14 +277,6 @@ async function renderSlotDetail(savedScroll) {
   if (scrollEl) scrollEl.scrollTop = savedScroll;
 }
 
-// Returns HTML string of <span class="sn-det-field"> pills for fields that have a value in data.
-function buildFieldPills(fields, data) {
-  return fields
-    .filter(f => data[f.key])
-    .map(f => `<span class="sn-det-field">${esc(f.label)}<strong>${esc(data[f.key])}</strong></span>`)
-    .join('');
-}
-
 /**
  * Builds a single PLC slot row for the Cards section of the PLC detail panel.
  *

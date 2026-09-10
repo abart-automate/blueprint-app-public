@@ -25,6 +25,7 @@ const state = {
   detailSlotIoPoints:    [],   // Array of IO point rows for an in-edit PLC slot card
   detailSlotPowerBus:    [],   // Array of power-bus entries for an in-edit PLC slot card
   detailSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication card
+  detailAssetNetworkPorts:[],  // Array of network port entries for an in-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS)
 
   // --- Active form ---
   formType:            null,
@@ -38,6 +39,8 @@ const state = {
   formIoPoints:        [],
   formPowerBus:        [],
   formSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication slot form
+  formAssetNetworkPorts:[],  // Array of network port entries for an in-edit HMI/Field Device asset form
+
   // --- Data cache (populated by refreshAll / loadCache) ---
   cache: { partsLibrary: [] },
   refs:  {},
