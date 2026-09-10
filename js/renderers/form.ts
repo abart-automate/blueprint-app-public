@@ -1,4 +1,5 @@
-// @ts-check
+import type { DbRecord } from '../db.js';
+import type { EntityConfig, EntityType, FieldDef } from '../entity-config.js';
 
 import { getById } from '../db.js';
 import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
@@ -6,8 +7,6 @@ import { $, el, refreshAll, state } from '../state.js';
 import { attachFieldEmptyToggle, buildEnumOptions, buildRefOptions, esc, isSwitchAsset } from '../utils.js';
 import { _renderNetworkPortsTable, renderClassItemTables, renderIoPointsTable, renderItemTableForm, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableForm, renderPowerBusTableForm, renderSwitchNetworksTableForm, renderSwitchPortsTableForm, syncIoPointCount } from './tables.js';
 import { _field } from '../operations.js';
-/** @import { DbRecord } from '../db.js' */
-/** @import { EntityConfig, EntityType, FieldDef } from '../entity-config.js' */
 /* ============================================================
    FORM RENDERER
    Renders the bottom-sheet form for creating/editing entities,
@@ -22,8 +21,7 @@ import { _field } from '../operations.js';
                _renderNetworkPortsTable.
    ============================================================ */
 
-/** @returns {Promise<void>} */
-export async function renderForm() {
+export async function renderForm(): Promise<void> {
   if (state.formType === FORM_TYPE.PLANT) return;
   if (state.formType === FORM_TYPE.PLC_SLOT) return renderSlotForm();
   return renderEntityForm();
@@ -36,11 +34,8 @@ export async function renderForm() {
  * sub-table(s)" pattern in renderEntityForm (the switch VLAN/port tables,
  * the asset-level Network Ports table) — the DOM-toggle logic was
  * previously duplicated per section.
- * @param {string[]} wrapIds
- * @param {boolean} condition
- * @param {Array<() => void>} [renderFns]
  */
-export function toggleConditionalSection(wrapIds, condition, renderFns = []) {
+export function toggleConditionalSection(wrapIds: string[], condition: boolean, renderFns: Array<() => void> = []): void {
   for (const id of wrapIds) {
     const wrap = $(id);
     if (wrap) wrap.style.display = condition ? '' : 'none';
@@ -50,11 +45,10 @@ export function toggleConditionalSection(wrapIds, condition, renderFns = []) {
 
 /* ---- PLC SLOT FORM ---- */
 
-/** @returns {Promise<void>} */
-export async function renderSlotForm() {
-  const { rackId, slotNumber } = /** @type {{ rackId: string, slotNumber: number }} */ (state.formPreset);
+export async function renderSlotForm(): Promise<void> {
+  const { rackId, slotNumber } = state.formPreset as { rackId: string, slotNumber: number };
   const rack     = state.refs.assets?.[rackId];
-  const existing = rack?.slots?.find(/** @param {any} s */ s => s.slotNumber === slotNumber) || null;
+  const existing = rack?.slots?.find((s: any) => s.slotNumber === slotNumber) || null;
   await refreshAll();
 
   const cardTypeOpts = Object.keys(PLC_CARD_TYPE_FIELDS)
@@ -142,7 +136,7 @@ export async function renderSlotForm() {
     }
   };
 
-  /** @type {HTMLElement} */ ($('f-cardType')).addEventListener('change', renderSlotCardTypeFields);
+  ($('f-cardType') as HTMLElement).addEventListener('change', renderSlotCardTypeFields);
   await renderSlotCardTypeFields();
 }
 
@@ -151,11 +145,10 @@ export async function renderSlotForm() {
 // Two-pass render: (1) base fields rendered synchronously into formBody HTML,
 // then (2) dynamic sections (class fields, subclass fields, switch tables, PLC card
 // type fields) are wired and rendered via event-driven async callbacks after mount.
-/** @returns {Promise<void>} */
-export async function renderEntityForm() {
-  const type = /** @type {EntityType} */ (state.formType);
+export async function renderEntityForm(): Promise<void> {
+  const type = state.formType as EntityType;
   const id   = state.formId;
-  const cfg  = /** @type {Record<string, EntityConfig>} */ (ENTITY)[type];
+  const cfg  = ENTITY[type];
   const rawExisting = id ? await getById(type, id) : null;
   const existing = rawExisting ?? (
     !id && state.formPreset?.copyFrom ? state.formPreset.copyFrom :
@@ -169,10 +162,8 @@ export async function renderEntityForm() {
   const FORM_PHYSICAL_SECTIONS = new Set(['Physical Sizing', 'Clearance']);
   let html = '';
   let physicalHtml = '';
-  /** @type {string | undefined} */
-  let currentSection = undefined;
-  /** @type {string | undefined} */
-  let physicalSection = undefined;
+  let currentSection: string | undefined = undefined;
+  let physicalSection: string | undefined = undefined;
   for (const f of cfg.fields) {
     if (type === 'assets' && f.section && FORM_PHYSICAL_SECTIONS.has(f.section)) {
       if (f.section !== physicalSection) {
@@ -265,7 +256,7 @@ export async function renderEntityForm() {
   }
 
   if (!cfg.noImages) {
-    const grid = /** @type {HTMLElement} */ ($('img-preview-grid'));
+    const grid = $('img-preview-grid') as HTMLElement;
     const reGallery = () => renderMediaGallery(grid, state.formImages, {
       onAdd:    items => { state.formImages.push(...items); reGallery(); },
       onRemove: i     => { state.formImages.splice(i, 1); reGallery(); },
@@ -288,8 +279,7 @@ export async function renderEntityForm() {
       if (!container) return;
       if (!protoFields.length) { container.innerHTML = ''; return; }
       let ph = '';
-      /** @type {string | undefined} */
-      let lastSection;
+      let lastSection: string | undefined;
       for (const f of protoFields) {
         if (f.section !== lastSection) {
           lastSection = f.section;
@@ -334,8 +324,7 @@ export async function renderEntityForm() {
       if (!container) return;
       if (!fields.length) { container.innerHTML = ''; updateSwitchTables(); updateAssetNetworkPorts(); return; }
       let ph = '';
-      /** @type {string | undefined} */
-      let lastSection;
+      let lastSection: string | undefined;
       for (const f of fields) {
         if (f.section !== lastSection) {
           lastSection = f.section;
@@ -357,14 +346,14 @@ export async function renderEntityForm() {
       if (currentSub && id && !subclasses.includes(currentSub)) subclasses = [...subclasses, currentSub];
       subclassSel.innerHTML = '<option value=""></option>' +
         subclasses.map(s => `<option value="${s}"${s === currentSub ? ' selected' : ''}>${esc(s)}</option>`).join('');
-      const wrap = /** @type {HTMLElement | null} */ (subclassSel.closest('.fg'));
+      const wrap = subclassSel.closest('.fg') as HTMLElement | null;
       if (wrap) wrap.style.display = subclasses.length ? '' : 'none';
 
       const classIsLocked = !id && (
         state.formPreset?.extra?.assetClass ||
         state.formPreset?.field === 'assetClass'
       );
-      const classWrap = /** @type {HTMLElement | null} */ (_field('f-assetClass')?.closest('.fg') ?? null);
+      const classWrap = (_field('f-assetClass')?.closest('.fg') ?? null) as HTMLElement | null;
       if (classWrap) classWrap.style.display = classIsLocked ? 'none' : '';
       const subclassIsLocked = !id && state.formPreset?.extra?.assetSubclass;
       if (wrap) wrap.style.display = (subclassIsLocked || !subclasses.length) ? 'none' : '';
@@ -428,13 +417,7 @@ export async function renderEntityForm() {
 
 /* ---- FORM FIELD BUILDER ---- */
 
-/**
- * @param {FieldDef} f
- * @param {Record<string, any> | null} existing
- * @param {EntityType} type
- * @returns {Promise<string>}
- */
-export async function buildFormField(f, existing, type) {
+export async function buildFormField(f: FieldDef, existing: Record<string, any> | null, type: EntityType): Promise<string> {
   const presetVal = !existing
     ? (state.formPreset?.field === f.key ? state.formPreset.value : (state.formPreset?.extra?.[f.key] ?? null))
     : null;
@@ -472,9 +455,9 @@ export async function buildFormField(f, existing, type) {
     // operations.js, no current entity-config.js ref field sets either, but the
     // checks are kept defensive via a cast rather than widening the typedef for
     // properties nothing currently uses.
-    const refFilter = /** @type {any} */ (f).refFilter;
+    const refFilter = (f as any).refFilter;
     if (refFilter) items = items.filter(refFilter);
-    const readOnly = /** @type {any} */ (f).readOnly;
+    const readOnly = (f as any).readOnly;
     return `<div class="fg">
       <label class="fg-label">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>
       <select id="f-${f.key}" class="f-select${emptyCls}"${readOnly ? ' disabled' : ''}>
@@ -490,7 +473,7 @@ export async function buildFormField(f, existing, type) {
   // operations.js's saveEntityForm()/deleteItem()) — cast f.type to compare
   // against them without widening the typedef for branches nothing currently
   // exercises.
-  const fType = /** @type {string} */ (f.type);
+  const fType = f.type as string;
   if (fType === 'assign-type') {
     const preset   = state.formPreset?.field === 'assignedToType' ? state.formPreset.value : null;
     const current  = existing?.assignedToType || preset || '';
@@ -499,7 +482,7 @@ export async function buildFormField(f, existing, type) {
       <label class="fg-label">${esc(f.label)}</label>
       <select id="f-assign-type" class="f-select${typeCls}">
         <option value="">— Select type —</option>
-        ${buildEnumOptions(/** @type {any} */ (f).options, current)}
+        ${buildEnumOptions((f as any).options, current)}
       </select>
     </div>`;
   }
@@ -518,13 +501,7 @@ export async function buildFormField(f, existing, type) {
 
 /* ---- ASSIGN-ID DROPDOWN ---- */
 
-/**
- * @param {EntityType} type
- * @param {string | undefined} assignType
- * @param {string | undefined | null} currentId
- * @returns {Promise<void>}
- */
-export async function populateAssignId(type, assignType, currentId) {
+export async function populateAssignId(type: EntityType, assignType: string | undefined, currentId: string | undefined | null): Promise<void> {
   const fg  = $('fg-assign-id');
   const sel = _field('f-assign-id');
   const lbl = $('label-assign-id');
@@ -538,12 +515,12 @@ export async function populateAssignId(type, assignType, currentId) {
   fg.style.display = 'block';
   if (lbl) lbl.textContent = assignType;
 
-  const storeName = /** @type {Record<string, string | null>} */ (ASSIGN_STORE_MAP)[assignType];
+  const storeName = (ASSIGN_STORE_MAP as Record<string, string | null>)[assignType];
   if (!storeName) { fg.style.display = 'none'; return; }
 
-  const items = /** @type {Record<string, DbRecord[]>} */ (state.cache)[storeName] || [];
+  const items = (state.cache as Record<string, DbRecord[]>)[storeName] || [];
   sel.innerHTML = `<option value="">— Select —</option>` + items.map(i => {
-    const sub = /** @type {Record<string, EntityConfig>} */ (ENTITY)[storeName]?.getSubtitle(i, state.refs);
+    const sub = (ENTITY as Record<string, EntityConfig>)[storeName]?.getSubtitle(i, state.refs);
     const label = sub ? `${i.name} (${sub})` : i.name;
     return `<option value="${i.id}" ${i.id === currentId ? 'selected' : ''}>${esc(label)}</option>`;
   }).join('');
@@ -554,11 +531,7 @@ export async function populateAssignId(type, assignType, currentId) {
 // Rebuilds the panel dropdown filtered to panels in the given area.
 // Called when the area changes (no panel set) or on panel clear.
 // currentPanelId keeps the previously-selected option selected after re-render.
-/**
- * @param {string} areaId
- * @param {string | undefined} currentPanelId
- */
-export function filterPanelsByArea(areaId, currentPanelId) {
+export function filterPanelsByArea(areaId: string, currentPanelId: string | undefined): void {
   const sel = _field('f-panelId');
   if (!sel) return;
   const all      = state.cache['panels'] || [];
@@ -568,12 +541,7 @@ export function filterPanelsByArea(areaId, currentPanelId) {
   ).join('');
 }
 
-/**
- * @param {string} panelId
- * @param {string | undefined | null} currentPowerId
- * @returns {Promise<void>}
- */
-export async function filterPowerByPanel(panelId, currentPowerId) {
+export async function filterPowerByPanel(panelId: string, currentPowerId: string | undefined | null): Promise<void> {
   const sel = _field('f-powerId');
   if (!sel) return;
   const all = state.cache['power'] || [];
