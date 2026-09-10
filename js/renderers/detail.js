@@ -25,8 +25,6 @@ async function renderSlotDetail(savedScroll) {
   const slot = rack.slots?.find(s => s.slotNumber === slotNumber);
   if (!slot) { closeDetail(); return; } // empty slot — shouldn't normally reach here
 
-  const network = slot.networkId ? state.refs.networks?.[slot.networkId] : null;
-
   /* ------------------------------------------------------------------
      Reset all detail edit state from the saved slot data.
      ------------------------------------------------------------------ */
@@ -1025,7 +1023,8 @@ function getSlotLinkedRacks(parentType, parentId) {
     .map(rack => {
       const slots = rack.slots.filter(slot => {
         if (parentType === 'networks')
-          return CARD_TYPE_NET_TYPES.has(slot.cardType) && slot.networkId === parentId;
+          return CARD_TYPE_NET_TYPES.has(slot.cardType) &&
+            getEntityNetworkPorts(slot).some(p => p.networkId === parentId);
         if (parentType === 'power')
           return slot.powerBus?.some(pb => pb.type === 'Power' && pb.refId === parentId);
         if (parentType === 'safety')
@@ -1037,7 +1036,7 @@ function getSlotLinkedRacks(parentType, parentId) {
     .filter(Boolean);
 }
 
-function slotLinkedRackCardHTML(rack, slots) {
+function slotLinkedRackCardHTML(rack, slots, contextNetworkId) {
   const cfg = ENTITY.assets;
   const firstMedia = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
   const thumbSrc = getCardThumbSrc(firstMedia);
@@ -1047,9 +1046,8 @@ function slotLinkedRackCardHTML(rack, slots) {
   const panelName = rack.panelId ? state.refs.panels?.[rack.panelId]?.name : '';
   const slotLines = slots.map(s => {
     const label = `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
-    const net = state.refs.networks?.[s.networkId];
-    const addr = s.ipAddress || s.nodeAddress || '';
-    const netPart = net ? (addr ? ` — ${net.name} — ${addr}` : ` — ${net.name}`) : '';
+    const netParts = formatNetworkPortLabels(getEntityNetworkPorts(s), contextNetworkId);
+    const netPart = netParts.length ? ` — ${netParts.join(', ')}` : '';
     return esc(label + netPart);
   });
   return `
@@ -1104,7 +1102,7 @@ async function buildChildSections(type, id, item) {
     const cardOpts = type === 'networks' && child.store === 'assets' ? { contextNetworkId: id } : {};
     const rows = [
       ...filtered.map(ci => cardHTML(child.store, ci, cardOpts)),
-      ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots)),
+      ...slotLinked.map(({ rack, slots }) => slotLinkedRackCardHTML(rack, slots, cardOpts.contextNetworkId)),
     ].join('');
     const count = filtered.length + slotLinked.length;
     const title   = count > 0 ? `${esc(child.label)} (${count})` : esc(child.label);

@@ -313,15 +313,18 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
 
   const makeNetOpts = (selectedId) => buildNetworkOptions(selectedId, assignedNets);
 
+  const isEthernetMatch = (ports, networkId) => ports.some(p =>
+    state.refs.networks?.[p.networkId]?.networkType === 'Ethernet' &&
+    (!networkId || p.networkId === networkId)
+  );
+
   const makeDeviceOpts = (networkId, selectedId) => {
     const opts = [];
     for (const a of (state.cache.assets || [])) {
       if (a.id === excludeId) continue;
       if (a.assetClass === 'PLC') {
         const matchingSlots = (a.slots || []).filter(s =>
-          CARD_TYPE_NET_TYPES.has(s.cardType) &&
-          state.refs.networks?.[s.networkId]?.networkType === 'Ethernet' &&
-          (!networkId || s.networkId === networkId)
+          CARD_TYPE_NET_TYPES.has(s.cardType) && isEthernetMatch(getEntityNetworkPorts(s), networkId)
         );
         for (const s of matchingSlots) {
           const val   = `${a.id}|${s.slotNumber}`;
@@ -329,9 +332,7 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
           opts.push(`<option value="${val}"${val === selectedId ? ' selected' : ''}>${esc(label)}</option>`);
         }
       } else {
-        const assetNet = state.refs.networks?.[a.networkId];
-        if (!assetNet || assetNet.networkType !== 'Ethernet') continue;
-        if (networkId && a.networkId !== networkId) continue;
+        if (!isEthernetMatch(getEntityNetworkPorts(a), networkId)) continue;
         opts.push(`<option value="${a.id}"${a.id === selectedId ? ' selected' : ''}>${esc(a.name)}</option>`);
       }
     }
@@ -381,17 +382,24 @@ function _renderSwitchPortsTable(containerId, networks, ports, rerender, onDirty
       const idx      = +sel.dataset.idx;
       const newNetId = sel.value;
       const p        = ports[idx];
-      // Clear the device selection when network changes and it no longer matches
+      // Clear the device selection when network changes and it no longer matches.
+      // Only acts when we have positive evidence of a mismatch (the asset/slot
+      // has network ports and none of them match) — if it has no port info at
+      // all, leave the assignment alone rather than guessing.
       if (p.assetId) {
         const asset = state.refs.assets?.[p.assetId];
         if (asset?.assetClass === 'PLC') {
           const slot = asset.slots?.find(s => s.slotNumber === p.slotNumber);
-          if (slot?.networkId && slot.networkId !== newNetId) {
+          const slotPorts = slot ? getEntityNetworkPorts(slot) : [];
+          if (slotPorts.length && !slotPorts.some(sp => sp.networkId === newNetId)) {
             p.assetId    = '';
             p.slotNumber = null;
           }
-        } else if (asset?.networkId && asset.networkId !== newNetId) {
-          p.assetId = '';
+        } else if (asset) {
+          const assetPorts = getEntityNetworkPorts(asset);
+          if (assetPorts.length && !assetPorts.some(ap => ap.networkId === newNetId)) {
+            p.assetId = '';
+          }
         }
       }
       p.networkId = newNetId;

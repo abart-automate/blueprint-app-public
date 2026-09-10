@@ -1098,52 +1098,16 @@ function _cardLocationLine(type, item, cfg) {
 
 function _cardNetworkLine(type, item, contextNetworkId) {
   if (type !== 'assets') return '';
-  // TODO: dead code — slot.networkId is no longer populated since the PLC
-  // networkPorts[] migration (slots use slot.networkPorts[] now, like this
-  // function's own item.networkPorts branch below). Kept commented out
-  // rather than deleted pending a follow-up cleanup pass.
-  // if (item.assetClass === 'PLC') {
-  //   const parts = (item.slots || [])
-  //     .filter(s => CARD_TYPE_NET_TYPES.has(s.cardType) && s.networkId &&
-  //       (!contextNetworkId || s.networkId === contextNetworkId))
-  //     .map(s => {
-  //       const net = state.refs.networks?.[s.networkId];
-  //       if (!net) return '';
-  //       const addr = s.ipAddress || s.nodeAddress || '';
-  //       return addr ? `${net.name} — ${addr}` : net.name;
-  //     })
-  //     .filter(Boolean);
-  //   return parts.join(', ');
-  // }
-  if (item.switchNetworks?.length) {
-    const relevant = contextNetworkId
-      ? item.switchNetworks.filter(sn => sn.networkId === contextNetworkId)
-      : item.switchNetworks;
-    const parts = relevant.map(sn => {
-      const net = state.refs.networks?.[sn.networkId];
-      if (!net) return '';
-      const addr = sn.ipAddress || sn.nodeAddress || '';
-      return addr ? `${net.name} — ${addr}` : net.name;
-    }).filter(Boolean);
-    if (parts.length) return parts.join(', ');
+  if (item.assetClass === 'PLC') {
+    // A PLC rack has no network connection of its own — each Controller/
+    // Communication slot does, via slot.networkPorts[] — so aggregate across
+    // slots rather than reading getEntityNetworkPorts(item) directly.
+    const parts = (item.slots || [])
+      .filter(s => CARD_TYPE_NET_TYPES.has(s.cardType))
+      .flatMap(s => formatNetworkPortLabels(getEntityNetworkPorts(s), contextNetworkId));
+    return parts.join(', ');
   }
-  if (item.networkPorts?.length) {
-    const relevant = contextNetworkId
-      ? item.networkPorts.filter(p => p.networkId === contextNetworkId)
-      : item.networkPorts;
-    const parts = relevant.map(p => {
-      const net = state.refs.networks?.[p.networkId];
-      if (!net) return '';
-      const addr = p.ipAddress || p.nodeAddress || '';
-      return addr ? `${net.name} — ${addr}` : net.name;
-    }).filter(Boolean);
-    if (parts.length) return parts.join(', ');
-  }
-  if (!item.networkId) return '';
-  const net = state.refs.networks?.[item.networkId];
-  if (!net) return '';
-  const addr = item.ipAddress || item.nodeAddress || '';
-  return addr ? `${net.name} — ${addr}` : net.name;
+  return formatNetworkPortLabels(getEntityNetworkPorts(item), contextNetworkId).join(', ');
 }
 
 function _cardCountsHtml(item, cfg) {

@@ -33,6 +33,52 @@ function resolveRefName(storeName, id) {
   return resolveRef(storeName, id)?.name ?? '';
 }
 
+/* ---- NETWORK CONNECTION HELPERS ---- */
+
+/**
+ * Normalizes "what network port(s) is this thing connected to" across the
+ * three shapes currently in use, so every caller reads one canonical shape
+ * instead of re-deriving it:
+ *   - Network Switch assets: item.switchNetworks[] ({networkId, ipAddress?, nodeAddress?})
+ *   - HMI / Field Device assets, and PLC slots: item.networkPorts[] (same shape)
+ *   - Legacy pre-networkPorts-migration records: scalar item.networkId
+ *     (+ item.ipAddress/item.nodeAddress), wrapped into a single-entry array
+ *
+ * Call with either an asset record or a PLC slot object (slot.networkPorts
+ * follows the same shape, so this works unchanged for both).
+ *
+ * @param {object} item - An asset, or a PLC slot object
+ * @returns {Array<{networkId: string, ipAddress?: string, nodeAddress?: string}>}
+ */
+function getEntityNetworkPorts(item) {
+  if (item?.switchNetworks?.length) return item.switchNetworks;
+  if (item?.networkPorts?.length) return item.networkPorts;
+  if (item?.networkId) return [{ networkId: item.networkId, ipAddress: item.ipAddress, nodeAddress: item.nodeAddress }];
+  return [];
+}
+
+/**
+ * Formats a list of network-port entries (from getEntityNetworkPorts) into
+ * "Network Name — address" label parts, resolving each entry's network via
+ * state.refs and dropping any entry whose network no longer exists.
+ *
+ * @param {Array<{networkId, ipAddress, nodeAddress}>} ports
+ * @param {string} [contextNetworkId] - When given, only entries connected to
+ *   this specific network are included — e.g. when rendering a card inside
+ *   that network's own detail page, where showing a device's *other*
+ *   unrelated network connections would be misleading.
+ * @returns {string[]}
+ */
+function formatNetworkPortLabels(ports, contextNetworkId) {
+  const relevant = contextNetworkId ? ports.filter(p => p.networkId === contextNetworkId) : ports;
+  return relevant.map(p => {
+    const net = state.refs.networks?.[p.networkId];
+    if (!net) return '';
+    const addr = p.ipAddress || p.nodeAddress || '';
+    return addr ? `${net.name} — ${addr}` : net.name;
+  }).filter(Boolean);
+}
+
 /* ---- SORTING ---- */
 
 // Case-insensitive alphabetical comparator for items with a name field.
