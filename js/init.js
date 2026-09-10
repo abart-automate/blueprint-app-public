@@ -1,9 +1,11 @@
+// @ts-check
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
    events.js (wireEvents), app.js (navigate, esc)
    ============================================================ */
 
+/** @returns {Promise<void>} */
 async function init() {
   try {
     /* Populate the el DOM-reference cache first, before anything else touches
@@ -33,13 +35,13 @@ async function init() {
     initVisibilityRefresh();
 
     const hash = window.location.hash.replace('#', '') || 'home';
-    const startPage = (ENTITY[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
+    const startPage = (/** @type {Record<string, EntityConfig>} */ (ENTITY)[hash] || hash === 'home' || hash === 'checklist') ? hash : 'home';
     navigate(startPage);
     initInstallPrompt();
     initOfflineIndicator();
   } catch (err) {
     console.error('Init failed:', err);
-    document.querySelector('#app-main').innerHTML = `
+    /** @type {HTMLElement} */ (document.querySelector('#app-main')).innerHTML = `
       <div class="empty">
         <h3>Storage Error</h3>
         <p>Could not open IndexedDB. Please ensure you're using a modern browser and not in private/incognito mode.</p>
@@ -53,6 +55,7 @@ async function init() {
  * Reads the user's saved list-pane width from IndexedDB settings and
  * applies it as a CSS custom property on :root.  Falls back to the
  * CSS default (--list-pane-w-default: 320px) if nothing is stored yet.
+ * @returns {Promise<void>}
  */
 async function applyPersistedListPaneWidth() {
   const w = await getSetting('listPaneWidth');
@@ -78,6 +81,7 @@ async function applyPersistedListPaneWidth() {
  *
  * Both handlers guard against interrupting an open detail panel or bottom-sheet form;
  * the user's in-progress edits must not be discarded by a background refresh.
+ * @returns {void}
  */
 function initVisibilityRefresh() {
   document.addEventListener('visibilitychange', async () => {
@@ -103,6 +107,7 @@ function initVisibilityRefresh() {
 /** @type {any} */
 let _deferredInstallPrompt = null;
 
+/** @returns {void} */
 function initInstallPrompt() {
   if (window.matchMedia('(display-mode: standalone)').matches) return;
 
@@ -122,6 +127,7 @@ function initInstallPrompt() {
    OFFLINE INDICATOR
    ============================================================ */
 
+/** @returns {void} */
 function initOfflineIndicator() {
   const bar = document.createElement('div');
   bar.id = 'offline-bar';
@@ -142,7 +148,7 @@ function initOfflineIndicator() {
     <span>Offline</span>`;
   /* Insert before #app-header so the bar sits at the top of .app-content
      on all layout modes (mobile, tablet, desktop sidebar). */
-  document.getElementById('app-header').before(bar);
+  /** @type {HTMLElement} */ (document.getElementById('app-header')).before(bar);
   const update = () => { bar.style.display = navigator.onLine ? 'none' : 'flex'; };
   update();
   window.addEventListener('online', update);
@@ -153,6 +159,7 @@ function initOfflineIndicator() {
    PWA UPDATE BANNER
    ============================================================ */
 
+/** @param {CustomEvent} e */
 function initUpdateBanner(e) {
   if (document.getElementById('update-banner')) return;
   const banner = document.createElement('div');
@@ -164,8 +171,8 @@ function initUpdateBanner(e) {
     '<button id="update-later-btn">Later</button>' +
     '<button id="update-now-btn">Update Now</button>' +
     '</div>';
-  document.getElementById('app-header').before(banner);
-  document.getElementById('update-now-btn').onclick = function () {
+  /** @type {HTMLElement} */ (document.getElementById('app-header')).before(banner);
+  /** @type {HTMLElement} */ (document.getElementById('update-now-btn')).onclick = function () {
     // Send consent to the waiting worker; the actual reload happens via the
     // 'controllerchange' listener in index.html once it activates. Re-read
     // reg.waiting at click time (not a captured reference) in case state has
@@ -176,11 +183,11 @@ function initUpdateBanner(e) {
     if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
     else window.location.reload();
   };
-  document.getElementById('update-later-btn').onclick = function () {
+  /** @type {HTMLElement} */ (document.getElementById('update-later-btn')).onclick = function () {
     banner.remove();
   };
 }
 
-window.addEventListener('pwa-updated', initUpdateBanner);
+window.addEventListener('pwa-updated', /** @type {EventListener} */ (initUpdateBanner));
 
 init();
