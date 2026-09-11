@@ -13,8 +13,6 @@ import { ACCEPTED_MEDIA_ACCEPT, buildNetworkOptions, createMediaUrl, esc, getEnt
 
 /* ---- SHARED MEDIA RENDERER ---- */
 
-export const _CAMERA_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
-
 /**
  * Returns a .img-thumb DOM element for one media item.
  */
@@ -50,8 +48,8 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
  */
 export function _makeUploadInput(multiple: boolean, onFiles: (items: BlobMediaItem[]) => void): HTMLLabelElement {
   const label = document.createElement('label');
-  label.className = 'named-photo-upload';
-  label.innerHTML = `<input type="file" accept="${ACCEPTED_MEDIA_ACCEPT}"${multiple ? ' multiple' : ''}>${_CAMERA_ICON}<span>Tap to add</span>`;
+  label.className = 'wiring-add-btn';
+  label.innerHTML = `<input type="file" accept="${ACCEPTED_MEDIA_ACCEPT}"${multiple ? ' multiple' : ''}><span>+ Add Photo</span>`;
   const input = label.querySelector('input') as HTMLInputElement;
   input.addEventListener('change', async () => {
     const files = Array.from(input.files ?? []);
@@ -108,7 +106,7 @@ export function renderMediaGallery(
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,
     emptyHtml: `<div style="color:var(--muted);font-size:14px;padding:4px 0">No media added.</div>`,
-    uploadLabel: 'Tap to add media',
+    uploadLabel: '+ Add Media',
   });
 }
 

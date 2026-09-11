@@ -4,7 +4,7 @@ import type { EditHistoryEntry } from '../state.js';
 import type { NormalizedMediaItem } from '../utils.js';
 
 import { getById, setSetting, upsert } from '../db.js';
-import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_PLUS, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
+import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
 import { confirm, el, refreshAll, showToast, state } from '../state.js';
 import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
@@ -1084,7 +1084,6 @@ export async function buildChildSections(type: EntityType, id: string, item: any
   ];
   if (!allChildren.length) return '';
 
-  const plusIcon = ICON_PLUS;
   const chevron  = ICON_CHEVRON;
 
   let html = '';
@@ -1136,10 +1135,10 @@ export async function buildChildSections(type: EntityType, id: string, item: any
             <span class="section-label" style="margin:0">${title}</span>
             ${chevron}
           </button>
-          <button class="det-add-child-btn" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" data-extra-presets="${esc(JSON.stringify((child as any).extraPresets || {}))}" aria-label="Add ${esc(child.label)}">${plusIcon}</button>
         </div>
         <div class="det-section-body" style="display:none">
           ${bodyHtml}
+          <button class="wiring-add-btn" type="button" data-add-child="${child.store}" data-preset-field="${child.field}" data-preset-val="${id}" data-extra-presets="${esc(JSON.stringify((child as any).extraPresets || {}))}">+ Add ${esc(child.label)}</button>
         </div>
       </div>
     `;
