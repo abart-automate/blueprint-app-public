@@ -3,11 +3,11 @@ import type { EntityConfig, EntityType } from './entity-config.js';
 import { ENTITY } from './entity-config.js';
 import { $, el, state } from './state.js';
 import { processImportFile, saveForm } from './operations.js';
-import { closeDetail, closeSheet, initDetailResizeHandle, navigate, openSheet } from './app.js';
+import { closeDetail, closeSheet, initDetailResizeHandle, navigate, openSheet, toggleHistoryPanel } from './app.js';
 /* ============================================================
    EVENT WIRING
    Depends on: state.js, app.js (navigate, openSheet, closeDetail,
-   closeSheet, saveForm), operations.js (processImportFile)
+   closeSheet, saveForm, toggleHistoryPanel), operations.js (processImportFile)
    ============================================================ */
 
 export function wireEvents(): void {
@@ -38,6 +38,18 @@ export function wireEvents(): void {
 
   // Backdrop tap closes sheet
   el.backdrop.addEventListener('click', closeSheet);
+
+  // Recent Changes (autosave undo history) toggle — see B4 of the autosave plan
+  el.historyToggle.addEventListener('click', toggleHistoryPanel);
+
+  // Autosave data-loss guard (Risk 6): warn on tab close/refresh while a debounced
+  // detail-panel edit hasn't been written to IndexedDB yet.
+  window.addEventListener('beforeunload', e => {
+    if (state.hasPendingAutosave) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   // Hash change
   window.addEventListener('hashchange', () => {

@@ -36,7 +36,20 @@
         <button id="add-btn" class="icon-btn" style="visibility:hidden" aria-label="Add">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
+        <!-- Recent-changes (autosave undo) toggle — always visible, independent of
+             state.page/detailStack, unlike back-btn/add-btn above. See B4/Risk 8. -->
+        <button id="history-toggle" class="icon-btn history-toggle-btn" aria-label="Recent changes" title="Recent changes" aria-expanded="false">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+          <span id="history-badge" class="history-badge" hidden>0</span>
+        </button>
       </header>
+
+      <!-- Recent-changes dropdown panel — toggled by #history-toggle. Fixed-position so it
+           overlays the detail panel/nav regardless of #app-header's own stacking context. -->
+      <div id="history-panel" class="history-panel" hidden>
+        <div class="history-panel-hdr">Recent Changes</div>
+        <div id="history-panel-list" class="history-panel-list"></div>
+      </div>
 
       <!-- Split-pane body:
            Mobile/tablet → #app-main fills width; #detail-panel overlays it.
@@ -83,7 +96,7 @@
         <div id="confirm-msg" class="confirm-msg"></div>
         <div class="confirm-actions">
           <button id="confirm-no" class="btn btn-outline">Cancel</button>
-          <!-- confirm-save is hidden by default; shown only by confirmUnsaved() -->
+          <!-- confirm-save is hidden by default; shown only by confirmThreeWay()'s mid button -->
           <button id="confirm-save" class="btn btn-primary" style="display:none">Save Changes</button>
           <button id="confirm-yes" class="btn btn-danger">Delete</button>
         </div>

@@ -5,7 +5,7 @@ import { ENTITY, assertEntityConfigComplete } from './entity-config.js';
 import { initEl, state } from './state.js';
 import { esc, initLayoutDetection } from './utils.js';
 import { wireEvents } from './events.js';
-import { navigate, renderHome, renderPage } from './app.js';
+import { loadEditHistory, navigate, renderHome, renderPage } from './app.js';
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
@@ -27,6 +27,11 @@ export async function init(): Promise<void> {
     }
 
     await initDB();
+
+    /* Restore the persisted autosave undo history (js/app.js's editHistory —
+       see B4 of the autosave plan) so the Recent Changes badge/panel are
+       correct from the very first paint. */
+    await loadEditHistory();
 
     /* Detect viewport size and stamp body[data-layout] before any rendering
        so CSS and JS branches are consistent from the very first paint. */

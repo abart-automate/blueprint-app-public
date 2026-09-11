@@ -1,19 +1,23 @@
 import type { DbRecord } from '../db.js';
 import type { EntityConfig, EntityType, FieldDef, FormType } from '../entity-config.js';
+import type { EditHistoryEntry } from '../state.js';
 import type { NormalizedMediaItem } from '../utils.js';
 
-import { getById, upsert } from '../db.js';
+import { getById, setSetting, upsert } from '../db.js';
 import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_PLUS, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
 import { confirm, el, refreshAll, showToast, state } from '../state.js';
-import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
+import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
-import { deleteItem, duplicateItem } from '../operations.js';
-import { _clearDetailEditState, cardHTML, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm } from '../app.js';
+import { deleteItem, duplicateItem, validateRequiredFields, validateUniqueIp, validateUniqueName } from '../operations.js';
+import { cardHTML, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm, refreshHistoryUi } from '../app.js';
 /* ============================================================
    DETAIL VIEW RENDERERS
    Depends on: entity-config.js, state.js, utils.js, db.js, app.js (openDetail,
    closeDetail, openSheet, openSlotForm, openSlotDetail, openAssignOrCreate,
-   cardHTML, duplicateItem, deleteItem, upsert)
+   cardHTML, duplicateItem, deleteItem, upsert, refreshHistoryUi),
+   operations.js (validateRequiredFields, validateUniqueIp, validateUniqueName —
+   reused here so detail-panel autosave applies the same validation as the
+   bottom-sheet form; see B2/B3 of the autosave plan)
    ============================================================ */
 
 // preserveScroll: re-renders in place after a slot edit; saves/restores scroll to avoid jump.
@@ -41,6 +45,7 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
      ------------------------------------------------------------------ */
   state.detailChanges      = {};
   state.detailMediaDirty   = false;
+  resetAutosaveSession();
   state.detailSlotIoPoints = (slot.ioPoints  || []).map((r: any) => ({ ...r }));
   state.detailSlotPowerBus = (slot.powerBus  || []).map((e: any) => ({
     type:   e.type   || 'Power',
@@ -82,8 +87,9 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
 
   /* ------------------------------------------------------------------
      IO Points table — inline editable rows for Analog/Digital cards.
-     Changes are written into state.detailSlotIoPoints; a sentinel key
-     in state.detailChanges keeps hasUnsavedDetailChanges() accurate.
+     Changes are written into state.detailSlotIoPoints; a sentinel key in
+     state.detailChanges is kept for readability alongside the armAutosave()
+     call that actually drives the debounced autosave (see AUTOSAVE section).
      ------------------------------------------------------------------ */
   let ioCard = '';
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
@@ -176,10 +182,6 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
       ${terminalWiringCard}
       ${networkPortsCard}
     </div>
-    <div class="det-save-bar" id="det-save-bar">
-      <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
-      <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
-    </div>
   `;
 
   /* ------------------------------------------------------------------
@@ -192,7 +194,7 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
       'det-power-bus-container',
       state.detailSlotPowerBus,
       rerenderPB,
-      () => { state.detailChanges._pbDirty = true; }
+      () => { state.detailChanges._pbDirty = true; armAutosave(); }
     );
     rerenderPB();
   }
@@ -200,14 +202,14 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
   /* ------------------------------------------------------------------
      Mount terminal block wiring table into its placeholder container.
      Uses renderItemTable in detail mode: reads/writes state.detailItemTables['terminalWiring'].
-     The onDirty callback sets a sentinel so hasUnsavedDetailChanges() fires when
-     the user edits terminal wiring without touching any standard fields.
+     The onDirty callback arms autosave so terminal-wiring edits are saved even
+     when the user never touches any standard field.
      ------------------------------------------------------------------ */
   if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
     renderItemTableDetail('terminalWiring', 'Terminal Block Wiring', 'Terminal', 'Wire Label',
       'det-terminal-wiring-container',
       state.detailItemTables,
-      () => { state.detailChanges._termWiringDirty = true; },
+      () => { state.detailChanges._termWiringDirty = true; armAutosave(); },
     );
   }
 
@@ -222,13 +224,14 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
       'det-network-ports-container',
       state.detailSlotNetworkPorts,
       rerenderNP,
-      () => { state.detailChanges._netPortsDirty = true; }
+      () => { state.detailChanges._netPortsDirty = true; armAutosave(); }
     );
     rerenderNP();
   }
 
   /* ------------------------------------------------------------------
-     Wire all [data-edit-field] inputs → state.detailChanges
+     Wire all [data-edit-field] inputs → state.detailChanges, autosaved
+     via the debounced armAutosave() (see AUTOSAVE section below).
      ------------------------------------------------------------------ */
   el.detail.querySelectorAll('[data-edit-field]').forEach(control0 => {
     const control = control0 as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
@@ -236,13 +239,16 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
     const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
     control.addEventListener(ev, () => {
       state.detailChanges[key] = control.value;
+      control.classList.remove('field-invalid');
+      armAutosave();
     });
   });
 
   /* ------------------------------------------------------------------
      Wire IO point cells → state.detailSlotIoPoints.
-     Use _ioDirty sentinel so hasUnsavedDetailChanges() fires even when
-     the user only edits IO points and no standard fields.
+     _ioDirty sentinel is kept (harmless, stripped before persist) mainly
+     so a reader can see at a glance that IO edits are tracked, same as
+     the other table sentinels below.
      ------------------------------------------------------------------ */
   el.detail.querySelectorAll('[data-io-idx]').forEach(control0 => {
     const control = control0 as HTMLInputElement | HTMLSelectElement;
@@ -252,7 +258,8 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
     control.addEventListener(ev, () => {
       if (state.detailSlotIoPoints[idx]) {
         (state.detailSlotIoPoints[idx] as Record<string, any>)[field] = control.value;
-        state.detailChanges._ioDirty = true; // sentinel for navigation guard
+        state.detailChanges._ioDirty = true; // sentinel, retained for readability
+        armAutosave();
       }
     });
   });
@@ -264,15 +271,6 @@ export async function renderSlotDetail(savedScroll: number): Promise<void> {
      Button wiring
      ------------------------------------------------------------------ */
   (el.detail.querySelector('#det-back') as HTMLElement).addEventListener('click', closeDetail);
-
-  el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
-    renderDetail();
-  });
-
-  el.detail.querySelector('#det-save-changes')?.addEventListener('click', async () => {
-    const ok = await saveDetailChanges(FORM_TYPE.PLC_SLOT, id);
-    if (ok) renderDetail({ preserveScroll: true });
-  });
 
   // Collapsible section toggles
   el.detail.querySelectorAll('.det-section-toggle').forEach(btn0 => {
@@ -409,6 +407,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
      ------------------------------------------------------------------ */
   state.detailChanges   = {};
   state.detailMediaDirty = false;
+  resetAutosaveSession();
 
   // Load editable media state from the saved item
   state.detailImages = normalizeMediaItems(item.images);
@@ -639,10 +638,6 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
       ${otherPhotosCard}
       ${childSections}
     </div>
-    <div class="det-save-bar" id="det-save-bar">
-      <button class="btn btn-outline btn-sm" id="det-discard">Discard</button>
-      <button class="btn btn-primary btn-sm" id="det-save-changes">Save Changes</button>
-    </div>
   `;
 
   /* ------------------------------------------------------------------
@@ -656,6 +651,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
       renderItemTableDetail(t.key, t.label, t.placeholder1 || 'Terminal', t.placeholder2 || 'Label',
         containerId,
         state.detailItemTables,
+        () => armAutosave(),
       );
     }
   }
@@ -672,7 +668,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
         state.detailSwitchNetworks,
         state.detailSwitchPorts,
         rerenderSwitch,
-        () => { state.detailChanges._switchDirty = true; }, // sentinel so hasUnsavedDetailChanges fires
+        () => { state.detailChanges._switchDirty = true; armAutosave(); }, // sentinel, retained for readability
         item.assetSubclass
       );
       renderSwitchPortsTableDetail(
@@ -680,7 +676,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
         state.detailSwitchNetworks,
         state.detailSwitchPorts,
         rerenderSwitch,
-        () => { state.detailChanges._switchDirty = true; },
+        () => { state.detailChanges._switchDirty = true; armAutosave(); },
         item.id,           // exclude the switch itself from device options
         item.assetSubclass // drives Unmanaged auto-assignment logic
       );
@@ -694,7 +690,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
         'det-asset-network-ports-container',
         state.detailAssetNetworkPorts,
         rerenderNetPorts,
-        () => { state.detailChanges._netPortsDirty = true; } // sentinel so hasUnsavedDetailChanges fires
+        () => { state.detailChanges._netPortsDirty = true; armAutosave(); } // sentinel, retained for readability
       );
     };
     rerenderNetPorts();
@@ -702,8 +698,11 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
 
   /* ------------------------------------------------------------------
      Mount editable media galleries.
-     Callbacks mutate state.detailImages / state.detailNamedPhotos and
-     set detailMediaDirty so the navigation guard triggers correctly.
+     Unlike text fields, media add/remove commits immediately via
+     persistDetailMedia() rather than waiting on the autosave debounce —
+     see B3 of the autosave plan: a photo just taken should never be lost
+     to a closed tab, and undo (editHistory) deliberately never covers
+     images/namedPhotos, so there is nothing gained by delaying the write.
      ------------------------------------------------------------------ */
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
@@ -711,10 +710,10 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
       const container = document.getElementById(slotId);
       if (container) {
         // Self-referencing closure mirrors renderEntityForm's reSlot() pattern so
-        // thumbnails appear immediately without waiting for Save to trigger renderDetail().
+        // thumbnails appear immediately without waiting for a save round-trip.
         const reSlot = () => renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
-          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); state.detailMediaDirty = true; reSlot(); },
-          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   state.detailMediaDirty = true; reSlot(); },
+          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); reSlot(); void persistDetailMedia(type, id); },
+          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   reSlot(); void persistDetailMedia(type, id); },
         });
         reSlot();
       }
@@ -724,10 +723,10 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     const gallery = document.getElementById('det-gallery');
     if (gallery) {
       // Self-referencing closure mirrors renderEntityForm's reGallery() pattern —
-      // same reason: immediate thumbnail visibility without a Save round-trip.
+      // same reason: immediate thumbnail visibility without a save round-trip.
       const reGallery = () => renderMediaGallery(gallery, state.detailImages, {
-        onAdd:    items => { state.detailImages.push(...items); state.detailMediaDirty = true; reGallery(); },
-        onRemove: i     => { state.detailImages.splice(i, 1);  state.detailMediaDirty = true; reGallery(); },
+        onAdd:    items => { state.detailImages.push(...items); reGallery(); void persistDetailMedia(type, id); },
+        onRemove: i     => { state.detailImages.splice(i, 1);  reGallery(); void persistDetailMedia(type, id); },
       });
       reGallery();
     }
@@ -744,6 +743,8 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     const ev  = control.tagName === 'SELECT' ? 'change' : 'input';
     control.addEventListener(ev, () => {
       state.detailChanges[key] = control.value;
+      control.classList.remove('field-invalid');
+      armAutosave();
     });
   });
 
@@ -769,17 +770,6 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
      ------------------------------------------------------------------ */
   (el.detail.querySelector('#det-back') as HTMLElement).addEventListener('click', closeDetail);
   el.detail.querySelector('#det-duplicate')?.addEventListener('click', () => duplicateItem(type, id));
-
-  // Discard: re-render from saved state (resets all edit state via renderEntityDetail)
-  el.detail.querySelector('#det-discard')?.addEventListener('click', () => {
-    renderDetail();
-  });
-
-  // Save: commit all pending changes, then re-render to reflect committed values.
-  el.detail.querySelector('#det-save-changes')?.addEventListener('click', async () => {
-    const ok = await saveDetailChanges(type, id);
-    if (ok) renderDetail({ preserveScroll: true });
-  });
 
   // Child-entity card clicks / delete buttons
   el.detail.querySelectorAll('.child-card-list').forEach(list0 => {
@@ -1158,155 +1148,378 @@ export async function buildChildSections(type: EntityType, id: string, item: any
 }
 
 /* ============================================================
-   DETAIL SAVE — commits all pending edits to IndexedDB
+   DETAIL AUTOSAVE — replaces the old det-save-bar Save/Discard flow.
+   Field/table edits (wired above) call armAutosave(), which arms a
+   debounced tick (runAutosaveTick). Each tick rebuilds the record from
+   state.detailChanges/state.detail* (buildDetailItem/buildSlotDetailItem —
+   pure, DOM-free, unit-tested), validates it (validateDetailItem — reuses
+   operations.js's validateRequiredFields/validateUniqueIp/validateUniqueName,
+   per Risk 3 of the autosave plan), and if valid, persists it (persistDetailItem)
+   without a full refreshAll() (Risk 4) — only patching state.cache/state.refs.
+   Media (images/namedPhotos) is handled separately by persistDetailMedia(),
+   called immediately from the gallery/slot onAdd/onRemove callbacks above.
    ============================================================ */
 
+export type DetailValidationResult =
+  | { ok: true }
+  | { ok: false, kind: 'required' | 'conflict', field: FieldDef | null, message: string };
+
 /**
- * Saves all pending changes from the detail panel:
- *   - Field changes (state.detailChanges)
- *   - Media (state.detailImages, state.detailNamedPhotos)
- *   - Wiring tables (state.detailItemTables)
- *   - Switch network/port tables (state.detailSwitchNetworks/Ports, managed switches only)
- *
- * After a successful save, all detail edit state is reset and the panel re-renders
- * from the freshly saved item so inputs reflect the committed values.
+ * Pure builder: merges state.detailChanges + the state.detail* wiring/switch/
+ * network-port tables over the stored item. Does not touch images/namedPhotos
+ * (media commits separately and immediately — see persistDetailMedia below).
  */
-export async function saveDetailChanges(type: FormType, id: string): Promise<boolean> {
-  // Slot cards are sub-objects of a rack asset — delegate to the slot saver.
-  if (type === FORM_TYPE.PLC_SLOT) {
-    return saveSlotDetailChanges(id, state.detailSlotNumber as number);
-  }
+export function buildDetailItem(type: EntityType, item: DbRecord): DbRecord {
+  const updatedItem: DbRecord = { ...item, ...state.detailChanges };
 
-  const entityType = type as EntityType;
-  const cfg  = ENTITY[entityType];
-  const item = await getById(entityType, id);
-  if (!item) return false;
-
-  // Merge field-level changes over the saved item
-  const updatedItem = { ...item, ...state.detailChanges };
-
-  // Remove the internal sentinels used by switch-table / network-ports dirty tracking
+  // Remove the internal sentinels used only to mark state.detailChanges non-empty.
   delete updatedItem._switchDirty;
   delete updatedItem._netPortsDirty;
 
-  // Persist current media state. Freshen blobs before writing — IDB-backed blobs retrieved
-  // in a previous session cannot be reliably re-stored via structured clone in WebKit/Safari
-  // and come back as zero-byte blobs on the next read. freshenMediaItems() converts each
-  // blob to a fresh in-memory copy so the round-trip works correctly.
-  updatedItem.images = await freshenMediaItems(state.detailImages);
-  const _freshNamedPhotos: Record<string, NormalizedMediaItem[]> = {};
-  for (const [_slot, _items] of Object.entries(state.detailNamedPhotos)) {
-    _freshNamedPhotos[_slot] = await freshenMediaItems(_items);
-  }
-  updatedItem.namedPhotos = _freshNamedPhotos;
-
-  // Persist each editable wiring table key back into the item
   for (const [key, rows] of Object.entries(state.detailItemTables)) {
     updatedItem[key] = rows;
   }
 
-  // Persist switch tables for managed switch assets
-  if (entityType === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
+  if (type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
     updatedItem.switchNetworks = state.detailSwitchNetworks.filter(r => r.networkId);
     updatedItem.switchPorts    = state.detailSwitchPorts.filter(
       r => r.portName || r.networkId || r.assetId
     );
   }
 
-  // Persist network ports for asset classes with a Network Ports UI, and clear
-  // the legacy scalar fields they replace (mirrors the PLC slot migration).
-  if (entityType === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
+  if (type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
     updatedItem.networkPorts = state.detailAssetNetworkPorts.map(p => ({ ...p }));
     ['networkId', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress'].forEach(k => delete updatedItem[k]);
   }
 
-  // Required field validation (applied to merged item so new values are checked)
-  for (const f of getEffectiveFields(entityType, updatedItem)) {
-    if (f.required && !updatedItem[f.key]) {
-      showToast(`${f.label} is required`, 'error');
-      return false;
+  return updatedItem;
+}
+
+/**
+ * Pure validator: required-field check (as before) PLUS unique-name/IP checks
+ * reused from operations.js — the detail panel never ran these before autosave
+ * (a pre-existing gap noted in the plan's Risk 3), so this closes it rather than
+ * carrying it forward with autosave giving it more exposure.
+ */
+export function validateDetailItem(type: EntityType, item: DbRecord): DetailValidationResult {
+  if (type === 'assets') {
+    const ipError = validateUniqueIp(item, state.cache.assets || []);
+    if (ipError) {
+      const field = getEffectiveFields(type, item).find(f => f.key === 'ipAddress') || null;
+      return { ok: false, kind: 'conflict', field, message: ipError };
     }
   }
 
-  await upsert(entityType, updatedItem);
-  await refreshAll();
+  const nameError = validateUniqueName(type, item);
+  if (nameError) {
+    const field = getEffectiveFields(type, item).find(f => f.key === 'name') || null;
+    return { ok: false, kind: 'conflict', field, message: nameError };
+  }
 
-  // Clear edit state so hasUnsavedDetailChanges() returns false before any re-render.
-  _clearDetailEditState();
+  const missing = validateRequiredFields(type, item);
+  if (missing) {
+    return { ok: false, kind: 'required', field: missing, message: `${missing.label} is required` };
+  }
 
-  showToast(`${cfg.label} saved`, 'success');
-  // Callers are responsible for re-rendering (or navigating away) after a successful save.
-  return true;
+  return { ok: true };
 }
 
-/* ============================================================
-   SLOT DETAIL SAVE — commits inline slot card edits to IndexedDB
-   ============================================================ */
+/** Patches the single changed record into state.cache/state.refs — no full refreshAll(). */
+function patchCacheRecord(type: EntityType, saved: DbRecord): void {
+  const arr = state.cache[type] || [];
+  const idx = arr.findIndex(i => i.id === saved.id);
+  state.cache[type] = idx === -1 ? [...arr, saved] : arr.map((r, i) => (i === idx ? saved : r));
+  if (!state.refs[type]) state.refs[type] = {};
+  (state.refs[type] as Record<string, DbRecord>)[saved.id as string] = saved;
+}
+
+/** upsert() + patch cache — the thin persist step used by every autosave tick. */
+export async function persistDetailItem(type: EntityType, item: DbRecord): Promise<DbRecord> {
+  const saved = await upsert(type, item);
+  patchCacheRecord(type, saved);
+  return saved;
+}
 
 /**
- * Saves pending inline edits for a PLC slot card:
- *   - Standard fields (state.detailChanges → merged into the slot object)
- *   - IO point rows (state.detailSlotIoPoints, resized to match ioPointCount if changed)
- *
- * The slot is a sub-object of its parent rack asset; the full rack is re-upserted.
- * Returns true on success, false if the rack/slot cannot be found.
+ * Pure builder for a PLC slot card: merges state.detailChanges + the
+ * state.detailSlotIoPoints/PowerBus/NetworkPorts + detailItemTables.terminalWiring
+ * state over the stored slot. Mirrors buildDetailItem's role but returns the
+ * whole updated slots array (a slot has no id of its own — the parent rack
+ * asset is what gets upserted).
  */
-export async function saveSlotDetailChanges(rackId: string, slotNumber: number): Promise<boolean> {
-  const rack = await getById('assets', rackId);
-  if (!rack) return false;
-
+export function buildSlotDetailItem(rack: DbRecord, slotNumber: number): { updatedSlot: Record<string, any>, slots: any[] } | null {
   const slotIdx = (rack.slots || []).findIndex((s: any) => s.slotNumber === slotNumber);
-  if (slotIdx === -1) return false;
+  if (slotIdx === -1) return null;
 
   const slot        = rack.slots[slotIdx];
-  const updatedSlot = { ...slot, ...state.detailChanges };
+  const updatedSlot: Record<string, any> = { ...slot, ...state.detailChanges };
 
-  // Remove internal sentinels that must not be persisted
   delete updatedSlot._ioDirty;
   delete updatedSlot._pbDirty;
   delete updatedSlot._termWiringDirty;
   delete updatedSlot._netPortsDirty;
 
-  // Sync IO point array length to match ioPointCount (may have changed via field edit)
   if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
     const count = parseInt(updatedSlot.ioPointCount ?? slot.ioPointCount) || 0;
     const pts   = state.detailSlotIoPoints.slice(0, count);
     while (pts.length < count) pts.push({ label: 'Spare', signalType: '', wiringType: '' });
-    updatedSlot.ioPoints  = pts;
-    // Persist power bus (filter out empty entries with no device selected)
-    updatedSlot.powerBus  = state.detailSlotPowerBus.filter(e => e.refId);
+    updatedSlot.ioPoints = pts;
+    updatedSlot.powerBus = state.detailSlotPowerBus.filter(e => e.refId);
   }
 
-  // Persist terminal wiring for Analog/Digital/Specialty — filter out blank rows
   if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
     updatedSlot.terminalWiring = (state.detailItemTables.terminalWiring || [])
       .filter(r => r.terminal || r.label);
   }
 
-  // Persist network ports for Controller/Communication — keep all entries regardless
-  // of whether a network is selected so port numbers are not silently lost
   if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
     updatedSlot.networkPorts = state.detailSlotNetworkPorts.map(p => ({ ...p }));
-    // Remove legacy card-level network fields — connection details now live in networkPorts[].
-    // These keys can survive the { ...slot, ...detailChanges } merge from old saved data,
-    // so they must be explicitly deleted on every save for these card types.
     ['networkId', 'protocol', 'ipAddress', 'subnetMask', 'gateway', 'nodeAddress']
       .forEach(k => delete updatedSlot[k]);
   }
 
-  const updatedSlots = [...rack.slots];
-  updatedSlots[slotIdx] = updatedSlot;
+  const slots = [...rack.slots];
+  slots[slotIdx] = updatedSlot;
+  return { updatedSlot, slots };
+}
 
-  try {
-    await upsert('assets', { ...rack, slots: updatedSlots });
-    await refreshAll();
-    _clearDetailEditState();
-    showToast('Card saved', 'success');
-  } catch (err) {
-    // Prevent silent failure on DB errors — same pattern as saveSlotForm in operations.js.
-    showToast('Failed to save card', 'error');
-    console.error('[saveSlotDetailChanges]', err);
-    return false;
+/**
+ * Commits the detail panel's current media state (images + namedPhotos) to
+ * IndexedDB immediately — called from the gallery/slot onAdd/onRemove
+ * callbacks, independent of the text-field autosave debounce (see B3).
+ * Re-normalizes state.detailImages/detailNamedPhotos from the freshened,
+ * saved result so a later add doesn't re-freshen already-fresh blobs.
+ */
+export async function persistDetailMedia(type: EntityType, id: string): Promise<void> {
+  const item = await getById(type, id);
+  if (!item) return;
+  const cfg = ENTITY[type];
+
+  const updatedItem: DbRecord = { ...item };
+  updatedItem.images = await freshenMediaItems(state.detailImages);
+  if (cfg.requiredPhotoSlots) {
+    const freshNamedPhotos: Record<string, NormalizedMediaItem[]> = {};
+    for (const [slotKey, items] of Object.entries(state.detailNamedPhotos)) {
+      freshNamedPhotos[slotKey] = await freshenMediaItems(items);
+    }
+    updatedItem.namedPhotos = freshNamedPhotos;
   }
-  return true;
+
+  const saved = await persistDetailItem(type, updatedItem);
+  state.detailImages = normalizeMediaItems(saved.images);
+  if (cfg.requiredPhotoSlots) {
+    state.detailNamedPhotos = {};
+    for (const slotKey of cfg.requiredPhotoSlots) {
+      state.detailNamedPhotos[slotKey] = normalizeMediaItems(saved.namedPhotos?.[slotKey]);
+    }
+  }
+}
+
+/* ---- Field-invalid UI feedback (Risk 2/3's mitigation) ---- */
+
+function showPendingLabel(control: HTMLElement): void {
+  const parent = control.parentElement;
+  if (!parent || parent.querySelector('.det-field-pending-msg')) return;
+  const label = document.createElement('div');
+  label.className = 'det-field-pending-msg';
+  label.textContent = 'Not saved yet';
+  parent.appendChild(label);
+}
+
+function clearAllFieldInvalidMarks(): void {
+  el.detail.querySelectorAll('.field-invalid').forEach(n => n.classList.remove('field-invalid'));
+  el.detail.querySelectorAll('.det-field-pending-msg').forEach(n => n.remove());
+}
+
+function applyValidationUiFeedback(result: DetailValidationResult): void {
+  if (result.ok) return;
+  const control = result.field
+    ? (el.detail.querySelector(`[data-edit-field="${result.field.key}"]`) as HTMLElement | null)
+    : null;
+  if (control) {
+    control.classList.add('field-invalid');
+    showPendingLabel(control);
+  }
+  // A conflict is a definite, actionable error — surface it loudly (toast), unlike
+  // a required-field-still-empty state, which is quietly marked inline (Risk 2 vs 3).
+  if (result.kind === 'conflict') showToast(result.message, 'error');
+}
+
+/* ---- Edit-session undo snapshot (B4) ---- */
+
+let _snapshotSessionKey: string | null = null;
+
+/** Explicit allowlist of an entity's own field/table values — never images/namedPhotos (Risk 7). */
+export function buildEntityEditSnapshot(type: EntityType, item: DbRecord): Record<string, any> {
+  const snap: Record<string, any> = {};
+  for (const f of getEffectiveFields(type, item)) snap[f.key] = item[f.key];
+  for (const t of itemTables(type, item)) snap[t.key] = (item[t.key] || []).map((r: any) => ({ ...r }));
+  if (type === 'assets' && isSwitchAsset(item.assetClass, item.assetSubclass)) {
+    snap.switchNetworks = (item.switchNetworks || []).map((r: any) => ({ ...r }));
+    snap.switchPorts    = (item.switchPorts    || []).map((r: any) => ({ ...r }));
+  }
+  if (type === 'assets' && ASSET_CLASS_NETWORK_PORTS.has(item.assetClass)) {
+    snap.networkPorts = (item.networkPorts || []).map((r: any) => ({ ...r }));
+  }
+  return snap;
+}
+
+/** Same idea as buildEntityEditSnapshot, adapted for a PLC slot's own field/table shape. */
+export function buildSlotEditSnapshot(slot: Record<string, any>): Record<string, any> {
+  const snap: Record<string, any> = {
+    name: slot.name, cardType: slot.cardType,
+    partNumber: slot.partNumber, firmwareVersion: slot.firmwareVersion,
+  };
+  for (const f of (PLC_CARD_TYPE_FIELDS[slot.cardType] || [])) snap[f.key] = slot[f.key];
+  if (CARD_TYPE_IO_TYPES.has(slot.cardType)) {
+    snap.ioPoints = (slot.ioPoints || []).map((r: any) => ({ ...r }));
+    snap.powerBus = (slot.powerBus || []).map((e: any) => ({ ...e, wiring: (e.wiring || []).map((w: any) => ({ ...w })) }));
+  }
+  if (CARD_TYPE_TERMINAL_TYPES.has(slot.cardType)) {
+    snap.terminalWiring = (slot.terminalWiring || []).map((r: any) => ({ ...r }));
+  }
+  if (CARD_TYPE_NET_TYPES.has(slot.cardType)) {
+    snap.networkPorts = (slot.networkPorts || []).map((p: any) => ({ ...p }));
+  }
+  return snap;
+}
+
+/**
+ * Pushes one entry onto state.editHistory (capped at 3, oldest dropped) and
+ * persists it via setSetting so it survives a reload. Reads the CURRENT
+ * (pre-edit) stored record from state.refs — called at the moment the first
+ * edit of a session is detected, before that edit has been autosaved.
+ */
+function captureEditHistorySnapshot(): void {
+  const type = state.detailType;
+  const id   = state.detailId;
+  if (!type || !id) return;
+
+  let label: string;
+  let prevSnapshot: Record<string, any>;
+  let slotNumber: number | undefined;
+
+  if (type === FORM_TYPE.PLC_SLOT) {
+    const rack = state.refs.assets?.[id];
+    const slot = rack?.slots?.find((s: any) => s.slotNumber === state.detailSlotNumber);
+    if (!rack || !slot) return;
+    slotNumber   = state.detailSlotNumber as number;
+    label        = `${rack.name || 'PLC Rack'} — Slot ${slotNumber}${slot.name ? ` (${slot.name})` : ''}`;
+    prevSnapshot = buildSlotEditSnapshot(slot);
+  } else {
+    const item = state.refs[type as EntityType]?.[id];
+    if (!item) return;
+    label        = `${ENTITY[type as EntityType].label}: ${item.name || 'Unnamed'}`;
+    prevSnapshot = buildEntityEditSnapshot(type as EntityType, item);
+  }
+
+  const entry: EditHistoryEntry = { type, id, label, prevSnapshot, ts: new Date().toISOString(), slotNumber };
+  state.editHistory.push(entry);
+  while (state.editHistory.length > 3) state.editHistory.shift(); // cap at 3, drop oldest
+  void setSetting('editHistory', state.editHistory);
+  refreshHistoryUi();
+}
+
+/** Takes an undo snapshot at most once per edit session (first edit since panel open/reset). */
+function maybeSnapshotBeforeEdit(): void {
+  const key = `${state.detailType}|${state.detailId}|${state.detailSlotNumber ?? ''}`;
+  if (_snapshotSessionKey === key) return;
+  _snapshotSessionKey = key;
+  captureEditHistorySnapshot();
+}
+
+/* ---- Debounced autosave tick ---- */
+
+/**
+ * Rebuilds + validates + (if valid) persists the currently-open detail
+ * panel's pending edit. Used both as the debounced tick's target and,
+ * directly, by flushOrBlockPendingAutosave() when navigating away.
+ * Does not re-render the panel or call refreshAll() — see Risk 4.
+ */
+async function runAutosaveTick(): Promise<DetailValidationResult> {
+  const type = state.detailType;
+  const id   = state.detailId;
+  if (!type || !id) { state.hasPendingAutosave = false; return { ok: true }; }
+
+  if (type === FORM_TYPE.PLC_SLOT) {
+    const rack = await getById('assets', id);
+    if (!rack) { state.hasPendingAutosave = false; return { ok: true }; }
+    const built = buildSlotDetailItem(rack, state.detailSlotNumber as number);
+    if (!built) { state.hasPendingAutosave = false; return { ok: true }; }
+    const saved = await upsert('assets', { ...rack, slots: built.slots });
+    patchCacheRecord('assets', saved);
+    state.hasPendingAutosave = false;
+    return { ok: true };
+  }
+
+  const entityType = type as EntityType;
+  const item = await getById(entityType, id);
+  if (!item) { state.hasPendingAutosave = false; return { ok: true }; }
+
+  const built  = buildDetailItem(entityType, item);
+  const result = validateDetailItem(entityType, built);
+  clearAllFieldInvalidMarks();
+  if (!result.ok) {
+    applyValidationUiFeedback(result);
+    return result; // Nothing written — state.hasPendingAutosave stays true.
+  }
+
+  await persistDetailItem(entityType, built);
+  state.hasPendingAutosave = false;
+  return { ok: true };
+}
+
+const scheduleAutosave = debounce(() => { void runAutosaveTick(); }, 1100);
+
+/** Called by every field/table edit handler wired above. */
+function armAutosave(): void {
+  state.hasPendingAutosave = true;
+  maybeSnapshotBeforeEdit();
+  scheduleAutosave();
+}
+
+/**
+ * Cancels any pending autosave timer and clears session-scoped autosave
+ * state. Called whenever the detail panel's edit buffers are reset (panel
+ * opened, re-rendered from a fresh record, or closed) so a stale timer from
+ * a previous record can never fire against the wrong one.
+ */
+export function resetAutosaveSession(): void {
+  scheduleAutosave.cancel();
+  state.hasPendingAutosave = false;
+  _snapshotSessionKey = null;
+}
+
+/**
+ * Called by closeDetail()/navigate() (js/app.js) before leaving the detail
+ * panel. If nothing is pending, resolves immediately. If a pending edit is
+ * currently valid, flushes it synchronously and proceeds with no dialog. If
+ * it's currently invalid, shows the narrow 2-option "Fix it / Discard this
+ * edit" dialog (Risk 2's mitigation) and returns false (stay) unless the
+ * user chooses to discard.
+ */
+export async function flushOrBlockPendingAutosave(): Promise<boolean> {
+  if (!state.hasPendingAutosave) return true;
+  scheduleAutosave.cancel();
+
+  const result = await runAutosaveTick();
+  if (result.ok) return true;
+
+  const discard = await confirm(
+    'Fix Before Leaving',
+    result.message,
+    { yesLabel: 'Discard this edit', noLabel: 'Fix it', yesClass: 'btn-danger' }
+  );
+  if (discard) {
+    state.hasPendingAutosave = false;
+    clearAllFieldInvalidMarks();
+    await renderDetail();
+    return true;
+  }
+
+  const control = result.field
+    ? (el.detail.querySelector(`[data-edit-field="${result.field.key}"]`) as HTMLElement | null)
+    : null;
+  control?.focus();
+  return false;
 }

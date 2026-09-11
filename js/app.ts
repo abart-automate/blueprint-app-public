@@ -2,13 +2,13 @@ import type { DbRecord } from './db.js';
 import type { EntityConfig, EntityType, FormType, RefFieldDef } from './entity-config.js';
 import type { ChecklistItem, ChecklistSubItem } from './utils.js';
 
-import { getSetting, setSetting } from './db.js';
+import { getById, getSetting, setSetting, upsert } from './db.js';
 import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
-import { $, confirmUnsaved, el, loadCache, refreshAll, state } from './state.js';
-import { base64ToMediaItem, buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, getCardThumbSrc, getEntityNetworkPorts, getLayoutMode, markFormMediaStart, resolveRefName, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, sortByName } from './utils.js';
+import { $, el, loadCache, refreshAll, showToast, state } from './state.js';
+import { base64ToMediaItem, buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, formatRelativeTime, getCardThumbSrc, getEntityNetworkPorts, getLayoutMode, markFormMediaStart, resolveRefName, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, sortByName } from './utils.js';
 import { renderMediaGallery } from './renderers/tables.js';
 import { renderForm } from './renderers/form.js';
-import { renderDetail, saveDetailChanges } from './renderers/detail.js';
+import { flushOrBlockPendingAutosave, renderDetail, resetAutosaveSession } from './renderers/detail.js';
 import { clearAllData, deleteItem, importData, showExportOptions } from './operations.js';
 import { renderPartsLibraryPage } from './parts-library.js';
 /* ============================================================
@@ -34,18 +34,10 @@ import { renderPartsLibraryPage } from './parts-library.js';
    ============================================================ */
 
 /**
- * Returns true if the detail panel has any unsaved edits that should
- * trigger a "leave without saving?" prompt before navigating away.
- * Checks both field-level changes and media/table dirty state.
- */
-export function hasUnsavedDetailChanges(): boolean {
-  return Object.keys(state.detailChanges).length > 0 || state.detailMediaDirty;
-}
-
-/**
- * Resets all six detail edit state properties back to their empty defaults.
- * Called after a successful save, a discard, or a force-close so the
- * navigation guard cannot fire on stale state.
+ * Resets all detail edit state properties back to their empty defaults, and
+ * cancels/clears any in-flight autosave (resetAutosaveSession — see
+ * js/renderers/detail.js). Called after a discard or a force-close so
+ * nothing lingers to autosave against a panel that's no longer open.
  */
 export function _clearDetailEditState(): void {
   state.detailChanges        = {};
@@ -59,6 +51,7 @@ export function _clearDetailEditState(): void {
   state.detailSlotIoPoints    = [];
   state.detailSlotPowerBus    = [];
   state.detailSlotNetworkPorts= [];
+  resetAutosaveSession();
 }
 
 /**
@@ -253,20 +246,10 @@ export function openDetail(type: EntityType, id: string): void {
  * Returns early (keeping the panel open) if the user chooses to cancel.
  */
 export async function closeDetail(): Promise<void> {
-  // Guard: if there are unsaved edits, give the user 3 choices before proceeding.
-  if (hasUnsavedDetailChanges()) {
-    const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
-    if (action === null) return; // Cancel — stay on the current detail
-
-    if (action === 'save') {
-      const ok = await saveDetailChanges(state.detailType as FormType, state.detailId as string);
-      if (!ok) return; // Validation failed — stay so the user can fix the error
-      // saveDetailChanges already cleared edit state; fall through to close.
-    } else {
-      // 'discard' — drop all pending edits before closing
-      _clearDetailEditState();
-    }
-  }
+  // Guard: flush a pending (valid) autosave silently, or block on an invalid
+  // one via the narrow "Fix it / Discard this edit" dialog — see B3/Risk 2.
+  const proceed = await flushOrBlockPendingAutosave();
+  if (!proceed) return; // Invalid edit, user chose "Fix it" — stay on the current detail
 
   if (state.detailStack.length > 0) {
     const prev = state.detailStack.pop() as { type: FormType | null, id: string | null, slotNumber?: number | null };
@@ -281,10 +264,10 @@ export async function closeDetail(): Promise<void> {
   }
 
   _closeDetailImmediate();
-  // Re-render the list so any saves made in the detail panel (e.g. % complete changes)
-  // are immediately reflected on the cards. saveDetailChanges() already called refreshAll(),
-  // so state.cache is fresh — renderPage() repaints the list without needing a round-trip
-  // to IndexedDB first (renderList() does call loadCache(), but from a hot in-memory store).
+  // Re-render the list so any autosaved edits (e.g. % complete changes) are immediately
+  // reflected on the cards. Autosave already patched state.cache directly (persistDetailItem),
+  // so renderPage() repaints the list without needing a round-trip to IndexedDB first
+  // (renderList() does call loadCache(), but from a hot in-memory store).
   await renderPage();
 }
 
@@ -501,20 +484,10 @@ export async function openAssignOrCreate(childType: EntityType, parentField: str
  */
 export async function navigate(page: string): Promise<void> {
   if (state.detailType) {
-    // Guard fires BEFORE clearing detailStack so cancelling keeps the stack intact.
-    if (hasUnsavedDetailChanges()) {
-      const action = await confirmUnsaved('Unsaved Changes', 'Leave without saving your changes?');
-      if (action === null) return; // Cancel — abort navigation
-
-      if (action === 'save') {
-        const ok = await saveDetailChanges(state.detailType as FormType, state.detailId as string);
-        if (!ok) return; // Validation failed — abort navigation
-        // saveDetailChanges cleared edit state; fall through to close + navigate.
-      } else {
-        // 'discard'
-        _clearDetailEditState();
-      }
-    }
+    // Guard fires BEFORE clearing detailStack so staying (invalid pending edit,
+    // "Fix it") keeps the stack intact. See closeDetail()'s identical guard.
+    const proceed = await flushOrBlockPendingAutosave();
+    if (!proceed) return; // Abort navigation — stay so the user can fix the field
     state.detailStack = [];
     _closeDetailImmediate();
   }
@@ -547,6 +520,104 @@ export function setHeaderForPage(page: string): void {
     el.backBtn.style.visibility = 'hidden';
     el.addBtn.style.visibility  = 'visible';
   }
+}
+
+/* ============================================================
+   RECENT CHANGES (detail-panel autosave undo history — B4)
+   The toggle button + dropdown panel live in el.header, independent of
+   state.page/state.detailStack (Risk 8) — unlike backBtn/addBtn above,
+   nothing here is touched by openDetail/closeDetail/setHeaderForPage.
+   ============================================================ */
+
+/** Mirrors the open/close pattern already used for #home-stats-toggle (_statsExpanded). */
+export let _historyExpanded = false;
+
+/** Updates the small entry-count badge on the header toggle icon (Risk 1's mitigation). */
+export function renderHistoryBadge(): void {
+  const count = state.editHistory.length;
+  el.historyBadge.hidden = count === 0;
+  el.historyBadge.textContent = String(count);
+}
+
+/** (Re)builds the Recent Changes dropdown's entry list — newest first, each with its own Undo button. */
+export function renderHistoryPanelList(): void {
+  const entries = state.editHistory;
+  if (!entries.length) {
+    el.historyList.innerHTML = `<div class="history-empty">No recent changes</div>`;
+    return;
+  }
+  // data-idx refers to the entry's position in state.editHistory (build strings in
+  // original order, THEN reverse — so idx still addresses the right array slot).
+  el.historyList.innerHTML = entries.map((entry, idx) => `
+    <div class="history-entry" data-idx="${idx}">
+      <div class="history-entry-top">
+        <span class="history-entry-label">${esc(entry.label)}</span>
+        <span class="history-entry-time">${esc(formatRelativeTime(entry.ts))}</span>
+      </div>
+      <button class="btn btn-outline btn-sm history-entry-undo" data-idx="${idx}">Undo</button>
+    </div>
+  `).reverse().join('');
+
+  el.historyList.querySelectorAll('.history-entry-undo').forEach(btn0 => {
+    const btn = btn0 as HTMLElement;
+    btn.addEventListener('click', () => { void undoHistoryEntry(Number(btn.dataset.idx)); });
+  });
+}
+
+/** Updates both the badge and (if currently open) the panel list — call after any editHistory change. */
+export function refreshHistoryUi(): void {
+  renderHistoryBadge();
+  if (_historyExpanded) renderHistoryPanelList();
+}
+
+/** Click handler for #history-toggle (wired in js/events.js), mirroring home-stats-toggle's pattern. */
+export function toggleHistoryPanel(): void {
+  _historyExpanded = !_historyExpanded;
+  el.historyPanel.hidden = !_historyExpanded;
+  el.historyToggle.setAttribute('aria-expanded', String(_historyExpanded));
+  if (_historyExpanded) renderHistoryPanelList();
+}
+
+/** Loads the persisted undo history from settings at app init (js/init.js). */
+export async function loadEditHistory(): Promise<void> {
+  state.editHistory = (await getSetting('editHistory')) || [];
+  renderHistoryBadge();
+}
+
+/**
+ * Undoes one entry: restores its prevSnapshot's fields onto the CURRENT stored
+ * record (merge, not replace — preserves id/createdAt/images/namedPhotos, which
+ * are deliberately outside the snapshot's allowlist per Risk 7), removes the
+ * entry, and re-renders.
+ */
+export async function undoHistoryEntry(idx: number): Promise<void> {
+  const entry = state.editHistory[idx];
+  if (!entry) return;
+
+  if (entry.type === FORM_TYPE.PLC_SLOT) {
+    const rack = await getById('assets', entry.id);
+    if (rack) {
+      const slots = [...(rack.slots || [])];
+      const sIdx  = slots.findIndex((s: any) => s.slotNumber === entry.slotNumber);
+      if (sIdx !== -1) {
+        slots[sIdx] = { ...slots[sIdx], ...entry.prevSnapshot };
+        await upsert('assets', { ...rack, slots });
+      }
+    }
+  } else {
+    const current = await getById(entry.type as EntityType, entry.id);
+    if (current) {
+      await upsert(entry.type as EntityType, { ...current, ...entry.prevSnapshot });
+    }
+  }
+
+  await refreshAll();
+  state.editHistory.splice(idx, 1);
+  await setSetting('editHistory', state.editHistory);
+  refreshHistoryUi();
+  if (state.detailType) await renderDetail({ preserveScroll: true });
+  await renderPage();
+  showToast('Change undone', 'success');
 }
 
 /* ============================================================
@@ -1314,7 +1385,7 @@ export function matchParentChip(type: EntityType, item: DbRecord, parentId: stri
 
 /* renderDetail, renderSlotDetail, renderEntityDetail, buildEditableFieldHtml,
    buildCollapsibleCard, getSlotLinkedRacks, slotLinkedRackCardHTML,
-   buildChildSections, saveDetailChanges
+   buildChildSections, flushOrBlockPendingAutosave, resetAutosaveSession
    are defined in js/renderers/detail.js (loaded before this file). */
 
 /* ============================================================

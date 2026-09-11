@@ -213,7 +213,8 @@ export function getNetworkAddrFields(networkId: string | undefined | null): read
 // plus address fields. Synthesizes a single "Port 1" row from those legacy
 // fields so the value isn't silently dropped the first time the record is
 // opened — saving then persists it into networkPorts[] and clears the legacy
-// fields (see saveEntityForm / saveDetailChanges).
+// fields (see saveEntityForm in operations.js / buildDetailItem's autosave
+// path in renderers/detail.js).
 export function buildLegacyNetworkPortRow(item: Record<string, any>): { portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string } {
   const row: { portNumber: number, networkId: string, ipAddress?: string, subnetMask?: string, gateway?: string, nodeAddress?: string } = { portNumber: 1, networkId: item.networkId };
   for (const key of ['ipAddress', 'subnetMask', 'gateway', 'nodeAddress'] as const) {
@@ -595,6 +596,75 @@ export function initLayoutDetection(): void {
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(applyLayout, 100);
   });
+}
+
+/* ---- DEBOUNCE ---- */
+
+/**
+ * A debounced wrapper around `fn`. Calling it resets a `ms`-long timer;
+ * `fn` only actually runs once no further calls arrive within that window.
+ * Unlike the one-off inline debounce in initLayoutDetection() above, this is
+ * a reusable, exported primitive with explicit `cancel()`/`flush()` escape
+ * hatches — needed by the detail-panel autosave (js/renderers/detail.js),
+ * which must be able to abort a pending tick (panel closed) or force it to
+ * run immediately (navigating away with a pending edit).
+ */
+export interface DebouncedFn<T extends (...args: any[]) => void> {
+  (...args: Parameters<T>): void;
+  /** Cancels any pending invocation without running `fn`. */
+  cancel(): void;
+  /** If a call is pending, runs `fn` immediately (with its latest args) and cancels the timer. */
+  flush(): void;
+}
+
+export function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): DebouncedFn<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastArgs: Parameters<T> | undefined;
+
+  const run = (): void => {
+    timer = undefined;
+    const args = lastArgs;
+    lastArgs = undefined;
+    if (args) fn(...args);
+  };
+
+  const debounced = ((...args: Parameters<T>) => {
+    lastArgs = args;
+    clearTimeout(timer);
+    timer = setTimeout(run, ms);
+  }) as DebouncedFn<T>;
+
+  debounced.cancel = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    lastArgs = undefined;
+  };
+
+  debounced.flush = () => {
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    run();
+  };
+
+  return debounced;
+}
+
+/**
+ * Renders an ISO timestamp as "just now" / "5m ago" / "3h ago" / "2d ago"
+ * for the Recent Changes (undo history) panel.
+ */
+export function formatRelativeTime(iso: string): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return '';
+  const diffSec = Math.round((Date.now() - ts) / 1000);
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay}d ago`;
 }
 
 /* ---- OPTION BUILDERS ---- */

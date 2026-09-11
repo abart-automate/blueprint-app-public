@@ -222,6 +222,74 @@ body {
 .icon-btn:active { background: var(--primary-lt); }
 
 /* =====================================================
+   RECENT CHANGES (autosave undo history) — header toggle + dropdown
+   ===================================================== */
+.history-toggle-btn { position: relative; }
+.history-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.history-panel {
+  position: fixed;
+  top: var(--header-h);
+  right: 8px;
+  z-index: 900;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+}
+.history-panel[hidden] { display: none; }
+.history-panel-hdr {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 10px 14px 6px;
+}
+.history-entry {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-entry-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.history-entry-label {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-entry-time { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.history-entry-undo { align-self: flex-end; }
+.history-empty { padding: 14px; font-size: 13px; color: var(--muted); }
+
+/* =====================================================
    MAIN CONTENT
    ===================================================== */
 #app-main {
@@ -1014,7 +1082,21 @@ body {
 
 /* f-input spacing and validation inside confirm-box */
 .confirm-box .f-input { margin-bottom: 16px; }
-.f-input.field-invalid { border-color: var(--c-safety); }
+.f-input.field-invalid,
+.det-inline-input.field-invalid,
+.det-inline-select.field-invalid,
+.det-inline-textarea.field-invalid,
+.det-name-input.field-invalid {
+  border-color: var(--c-safety);
+}
+/* Autosave: inline "not saved yet" indicator shown under a detail-panel field
+   while a pending edit is invalid (required-empty or a name/IP conflict) —
+   see renderers/detail.js's showPendingLabel(). */
+.det-field-pending-msg {
+  font-size: 11px;
+  color: var(--c-safety);
+  margin-top: 4px;
+}
 
 /* Child selector — wider box for panel duplicate checklist */
 .confirm-box.confirm-box--wide { max-width: 420px; }

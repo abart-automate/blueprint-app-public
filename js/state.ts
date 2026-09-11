@@ -32,6 +32,24 @@ export interface NetworkPortRow { portNumber?: number, networkId: string, ipAddr
  */
 export type UntypedTableRow = Record<string, any>;
 
+/**
+ * One entry in the detail-panel autosave undo history (state.editHistory).
+ * `prevSnapshot` is an explicit allowlist of the record's own non-media
+ * field/table values as they existed immediately before the edit session
+ * that produced this entry — never `images`/`namedPhotos` (see
+ * buildEntityEditSnapshot/buildSlotEditSnapshot in renderers/detail.js).
+ * `slotNumber` is only present when `type === FORM_TYPE.PLC_SLOT`, where
+ * `id` holds the parent rack asset's id (a slot has no id of its own).
+ */
+export interface EditHistoryEntry {
+  type: FormType;
+  id: string;
+  label: string;
+  prevSnapshot: Record<string, any>;
+  ts: string;
+  slotNumber?: number;
+}
+
 export interface State {
   page: string;
 
@@ -61,6 +79,21 @@ export interface State {
   detailSlotNetworkPorts: NetworkPortRow[];
   /** In-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS). */
   detailAssetNetworkPorts: NetworkPortRow[];
+
+  /**
+   * True from the moment a detail-panel autosave debounce timer is armed
+   * until its tick has successfully persisted (or been cancelled). Drives
+   * the beforeunload guard (js/events.js) and the navigate-away flush/prompt
+   * logic (closeDetail/navigate in js/app.js) — see renderers/detail.js's
+   * armAutosave()/runAutosaveTick().
+   */
+  hasPendingAutosave: boolean;
+  /**
+   * Last 3 detail-panel edit sessions, most-recent last, each independently
+   * undoable from the header's Recent Changes panel. Persisted to the
+   * `settings` store (key 'editHistory') so it survives a reload.
+   */
+  editHistory: EditHistoryEntry[];
 
   formType: FormType | null;
   formId: string | null;
@@ -122,6 +155,10 @@ export const state: State = {
   detailSlotNetworkPorts:[],   // Array of network port entries for an in-edit Controller/Communication card
   detailAssetNetworkPorts:[],  // Array of network port entries for an in-edit HMI/Field Device asset (see ASSET_CLASS_NETWORK_PORTS)
 
+  // --- Detail-panel autosave / undo history ---
+  hasPendingAutosave: false,
+  editHistory:        [],   // last 3 undoable edit sessions; loaded from settings at init (see js/init.js)
+
   // --- Active form ---
   formType:            null,
   formId:              null,
@@ -163,6 +200,8 @@ export interface ElRefs {
   promptBD: HTMLElement, promptT: HTMLElement, promptM: HTMLElement,
   promptField: HTMLInputElement, promptCancel: HTMLElement, promptOk: HTMLElement,
   toast: HTMLElement, nav: HTMLElement,
+  historyToggle: HTMLButtonElement, historyBadge: HTMLElement,
+  historyPanel: HTMLElement, historyList: HTMLElement,
 }
 
 /**
@@ -204,7 +243,7 @@ export function initEl(): void {
     confirmT:     $('confirm-title'),
     confirmM:     $('confirm-msg'),
     confirmNo:    $('confirm-no'),
-    confirmSave:  $('confirm-save'),   // 3rd button used only by confirmUnsaved()
+    confirmSave:  $('confirm-save'),   // 3rd button used only by confirmThreeWay()
     confirmYes:   $('confirm-yes'),
     promptBD:     $('prompt-backdrop'),
     promptT:      $('prompt-title'),
@@ -214,6 +253,10 @@ export function initEl(): void {
     promptOk:     $('prompt-ok'),
     toast:        $('toast'),
     nav:          $('bottom-nav'),
+    historyToggle: $('history-toggle') as HTMLButtonElement | null,
+    historyBadge:  $('history-badge'),
+    historyPanel:  $('history-panel'),
+    historyList:   $('history-panel-list'),
   };
   const missing = Object.entries(refs).filter(([, node]) => !node).map(([name]) => name);
   if (missing.length) {
@@ -310,17 +353,6 @@ export function confirmThreeWay(
     el.confirmSave.addEventListener('click', onMid);
     el.confirmYes.addEventListener('click', onYes);
   });
-}
-
-/**
- * Shows a 3-button "unsaved changes" dialog (left-to-right).
- */
-export function confirmUnsaved(title: string, msg: string): Promise<'save' | 'discard' | null> {
-  return confirmThreeWay(title, msg, {
-    cancelLabel: 'Cancel',
-    midLabel:    'Save Changes', midClass: 'btn-primary',
-    yesLabel:    'Discard',      yesClass: 'btn-danger',
-  }).then(r => r === 'mid' ? 'save' : r === 'yes' ? 'discard' : null);
 }
 
 /**
