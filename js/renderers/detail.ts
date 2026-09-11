@@ -1345,9 +1345,14 @@ function applyValidationUiFeedback(result: DetailValidationResult): void {
   if (result.kind === 'conflict') showToast(result.message, 'error');
 }
 
-/* ---- Edit-session undo snapshot (B4) ---- */
+/* ---- Per-field undo history (B4, refined by plan Part D) ---- */
 
-let _snapshotSessionKey: string | null = null;
+/**
+ * Maximum number of undoable entries kept in state.editHistory (oldest dropped
+ * first). Single source of truth for the cap — bump this one constant to
+ * change how much history is kept; nothing else needs editing (see plan Part D4).
+ */
+export const EDIT_HISTORY_LIMIT = 5;
 
 /** Explicit allowlist of an entity's own field/table values — never images/namedPhotos (Risk 7). */
 export function buildEntityEditSnapshot(type: EntityType, item: DbRecord): Record<string, any> {
@@ -1384,48 +1389,117 @@ export function buildSlotEditSnapshot(slot: Record<string, any>): Record<string,
   return snap;
 }
 
-/**
- * Pushes one entry onto state.editHistory (capped at 3, oldest dropped) and
- * persists it via setSetting so it survives a reload. Reads the CURRENT
- * (pre-edit) stored record from state.refs — called at the moment the first
- * edit of a session is detected, before that edit has been autosaved.
- */
-function captureEditHistorySnapshot(): void {
-  const type = state.detailType;
-  const id   = state.detailId;
-  if (!type || !id) return;
-
-  let label: string;
-  let prevSnapshot: Record<string, any>;
-  let slotNumber: number | undefined;
-
-  if (type === FORM_TYPE.PLC_SLOT) {
-    const rack = state.refs.assets?.[id];
-    const slot = rack?.slots?.find((s: any) => s.slotNumber === state.detailSlotNumber);
-    if (!rack || !slot) return;
-    slotNumber   = state.detailSlotNumber as number;
-    label        = `${rack.name || 'PLC Rack'} — Slot ${slotNumber}${slot.name ? ` (${slot.name})` : ''}`;
-    prevSnapshot = buildSlotEditSnapshot(slot);
-  } else {
-    const item = state.refs[type as EntityType]?.[id];
-    if (!item) return;
-    label        = `${ENTITY[type as EntityType].label}: ${item.name || 'Unnamed'}`;
-    prevSnapshot = buildEntityEditSnapshot(type as EntityType, item);
-  }
-
-  const entry: EditHistoryEntry = { type, id, label, prevSnapshot, ts: new Date().toISOString(), slotNumber };
-  state.editHistory.push(entry);
-  while (state.editHistory.length > 3) state.editHistory.shift(); // cap at 3, drop oldest
-  void setSetting('editHistory', state.editHistory);
-  refreshHistoryUi();
+/** Scalar `===`, falling back to JSON comparison for the array/object-valued table keys. */
+function _valuesEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a === 'object' || typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b);
+  return false;
 }
 
-/** Takes an undo snapshot at most once per edit session (first edit since panel open/reset). */
-function maybeSnapshotBeforeEdit(): void {
-  const key = `${state.detailType}|${state.detailId}|${state.detailSlotNumber ?? ''}`;
-  if (_snapshotSessionKey === key) return;
-  _snapshotSessionKey = key;
-  captureEditHistorySnapshot();
+/**
+ * Pure: diffs two entity records over the undo-eligible allowlist (the same
+ * keys buildEntityEditSnapshot enumerates), returning one {field, prevValue}
+ * per key that actually changed. Used by runAutosaveTick() to turn "what did
+ * this tick write" into one undo entry per changed field/table, instead of one
+ * whole-record snapshot per edit session (plan Part D).
+ */
+export function diffEntityEditableKeys(type: EntityType, before: DbRecord, after: DbRecord): Array<{ field: string, prevValue: any }> {
+  const beforeSnap = buildEntityEditSnapshot(type, before);
+  const afterSnap  = buildEntityEditSnapshot(type, after);
+  const diffs: Array<{ field: string, prevValue: any }> = [];
+  for (const key of Object.keys(afterSnap)) {
+    if (!_valuesEqual(beforeSnap[key], afterSnap[key])) diffs.push({ field: key, prevValue: beforeSnap[key] });
+  }
+  return diffs;
+}
+
+/** Same idea as diffEntityEditableKeys, adapted for a PLC slot's own field/table shape. */
+export function diffSlotEditableKeys(before: Record<string, any>, after: Record<string, any>): Array<{ field: string, prevValue: any }> {
+  const beforeSnap = buildSlotEditSnapshot(before);
+  const afterSnap  = buildSlotEditSnapshot(after);
+  const diffs: Array<{ field: string, prevValue: any }> = [];
+  for (const key of Object.keys(afterSnap)) {
+    if (!_valuesEqual(beforeSnap[key], afterSnap[key])) diffs.push({ field: key, prevValue: beforeSnap[key] });
+  }
+  return diffs;
+}
+
+/** Display names for the hardcoded table keys not covered by a FieldDef/ItemTableDef label. */
+const TABLE_KEY_LABELS: Record<string, string> = {
+  switchNetworks: 'Switch Networks',
+  switchPorts:    'Switch Ports',
+  networkPorts:   'Network Ports',
+  ioPoints:       'IO Points',
+  powerBus:       'Power Bus',
+  terminalWiring: 'Terminal Wiring',
+};
+
+/** Resolves a changed key to its display label for an entity's history-entry text. */
+function resolveEntityFieldLabel(type: EntityType, item: DbRecord, field: string): string {
+  const f = getEffectiveFields(type, item).find(fd => fd.key === field);
+  if (f) return f.label;
+  const t = itemTables(type, item).find(td => td.key === field);
+  if (t) return t.label;
+  return TABLE_KEY_LABELS[field] || field;
+}
+
+/** Resolves a changed key to its display label for a PLC slot's history-entry text. */
+function resolveSlotFieldLabel(slot: Record<string, any>, field: string): string {
+  if (field === 'name')             return 'Card Name';
+  if (field === 'partNumber')       return 'Part Number';
+  if (field === 'firmwareVersion')  return 'Firmware Version';
+  if (field === 'cardType')         return 'Card Type';
+  const f = (PLC_CARD_TYPE_FIELDS[slot.cardType] || []).find(fd => fd.key === field);
+  if (f) return f.label;
+  return TABLE_KEY_LABELS[field] || field;
+}
+
+/**
+ * Pure: builds one EditHistoryEntry per {field, prevValue} diff and appends
+ * them to `history` in place, capping it at EDIT_HISTORY_LIMIT (oldest
+ * dropped first). Split out from pushEditHistoryEntries() below so the
+ * cap/append logic is unit-testable without the setSetting/refreshHistoryUi
+ * side effects (mirrors persistDetailItem vs the pure builders in B2).
+ */
+export function appendEditHistoryEntries(
+  history: EditHistoryEntry[],
+  type: FormType,
+  id: string,
+  recordLabel: string,
+  diffs: Array<{ field: string, prevValue: any }>,
+  fieldLabelFor: (field: string) => string,
+  slotNumber?: number,
+): void {
+  for (const { field, prevValue } of diffs) {
+    history.push({
+      type, id, field, prevValue,
+      label: `${recordLabel} — ${fieldLabelFor(field)}`,
+      ts: new Date().toISOString(),
+      slotNumber,
+    });
+  }
+  while (history.length > EDIT_HISTORY_LIMIT) history.shift();
+}
+
+/**
+ * Pushes one EditHistoryEntry per changed field/table key onto state.editHistory
+ * (via appendEditHistoryEntries), then persists the updated history via
+ * setSetting and refreshes the header badge/panel. Called from runAutosaveTick()
+ * with the diff between the pre-tick and about-to-be-written record.
+ */
+function pushEditHistoryEntries(
+  type: FormType,
+  id: string,
+  recordLabel: string,
+  diffs: Array<{ field: string, prevValue: any }>,
+  fieldLabelFor: (field: string) => string,
+  slotNumber?: number,
+): void {
+  if (!diffs.length) return;
+  appendEditHistoryEntries(state.editHistory, type, id, recordLabel, diffs, fieldLabelFor, slotNumber);
+  void setSetting('editHistory', state.editHistory);
+  refreshHistoryUi();
 }
 
 /* ---- Debounced autosave tick ---- */
@@ -1444,10 +1518,17 @@ async function runAutosaveTick(): Promise<DetailValidationResult> {
   if (type === FORM_TYPE.PLC_SLOT) {
     const rack = await getById('assets', id);
     if (!rack) { state.hasPendingAutosave = false; return { ok: true }; }
-    const built = buildSlotDetailItem(rack, state.detailSlotNumber as number);
+    const slotNumber = state.detailSlotNumber as number;
+    const beforeSlot  = rack.slots?.find((s: any) => s.slotNumber === slotNumber);
+    const built = buildSlotDetailItem(rack, slotNumber);
     if (!built) { state.hasPendingAutosave = false; return { ok: true }; }
     const saved = await upsert('assets', { ...rack, slots: built.slots });
     patchCacheRecord('assets', saved);
+    if (beforeSlot) {
+      const diffs      = diffSlotEditableKeys(beforeSlot, built.updatedSlot);
+      const recordLabel = `${rack.name || 'PLC Rack'} — Slot ${slotNumber}${built.updatedSlot.name ? ` (${built.updatedSlot.name})` : ''}`;
+      pushEditHistoryEntries(type, id, recordLabel, diffs, f => resolveSlotFieldLabel(built.updatedSlot, f), slotNumber);
+    }
     state.hasPendingAutosave = false;
     return { ok: true };
   }
@@ -1464,7 +1545,10 @@ async function runAutosaveTick(): Promise<DetailValidationResult> {
     return result; // Nothing written — state.hasPendingAutosave stays true.
   }
 
+  const diffs = diffEntityEditableKeys(entityType, item, built);
   await persistDetailItem(entityType, built);
+  const recordLabel = built.name || item.name || ENTITY[entityType].label;
+  pushEditHistoryEntries(type, id, recordLabel, diffs, f => resolveEntityFieldLabel(entityType, built, f));
   state.hasPendingAutosave = false;
   return { ok: true };
 }
@@ -1474,7 +1558,6 @@ const scheduleAutosave = debounce(() => { void runAutosaveTick(); }, 1100);
 /** Called by every field/table edit handler wired above. */
 function armAutosave(): void {
   state.hasPendingAutosave = true;
-  maybeSnapshotBeforeEdit();
   scheduleAutosave();
 }
 
@@ -1487,7 +1570,6 @@ function armAutosave(): void {
 export function resetAutosaveSession(): void {
   scheduleAutosave.cancel();
   state.hasPendingAutosave = false;
-  _snapshotSessionKey = null;
 }
 
 /**

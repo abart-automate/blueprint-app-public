@@ -21,6 +21,10 @@ const {
   buildSlotDetailItem,
   buildEntityEditSnapshot,
   buildSlotEditSnapshot,
+  diffEntityEditableKeys,
+  diffSlotEditableKeys,
+  appendEditHistoryEntries,
+  EDIT_HISTORY_LIMIT,
 } = await import('./detail.js');
 
 function resetDetailEditState(): void {
@@ -236,5 +240,76 @@ describe('buildEntityEditSnapshot / buildSlotEditSnapshot (undo-history allowlis
     expect(snap.ioPoints).toEqual([{ label: 'A' }]);
     expect(snap.terminalWiring).toEqual([{ terminal: 'T1', label: 'L1' }]);
     expect(snap).not.toHaveProperty('networkPorts'); // Digital isn't a CARD_TYPE_NET_TYPES card
+  });
+});
+
+describe('diffEntityEditableKeys / diffSlotEditableKeys (per-field undo diffing — plan Part D)', () => {
+  it('returns one {field, prevValue} entry per changed key, and nothing for unchanged keys', () => {
+    const before = { id: 'p1', name: 'Panel A', location: 'Room 1' };
+    const after  = { id: 'p1', name: 'Panel A', location: 'Room 2' };
+    const diffs = diffEntityEditableKeys('panels', before, after);
+    expect(diffs).toEqual([{ field: 'location', prevValue: 'Room 1' }]);
+  });
+
+  it('returns multiple entries when multiple allowlisted keys change in the same tick', () => {
+    const before = { id: 'p1', name: 'Panel A', location: 'Room 1', manufacturer: 'Acme' };
+    const after  = { id: 'p1', name: 'Panel A', location: 'Room 2', manufacturer: 'Acme Co' };
+    const diffs = diffEntityEditableKeys('panels', before, after);
+    expect(diffs).toHaveLength(2);
+    expect(diffs).toEqual(expect.arrayContaining([
+      { field: 'location', prevValue: 'Room 1' },
+      { field: 'manufacturer', prevValue: 'Acme' },
+    ]));
+  });
+
+  it('never diffs images/namedPhotos — they are outside the allowlist entirely', () => {
+    const before = { id: 'p1', name: 'Panel A', images: ['blob-a'] };
+    const after  = { id: 'p1', name: 'Panel A', images: ['blob-b', 'blob-c'] };
+    const diffs = diffEntityEditableKeys('panels', before, after);
+    expect(diffs).toEqual([]);
+  });
+
+  it('treats table-row array changes as a single diff on the table key, not per-row', () => {
+    const before = { id: 'p1', name: 'Device', inputWiring: [{ terminal: '1', label: 'X' }] };
+    const after  = { id: 'p1', name: 'Device', inputWiring: [{ terminal: '1', label: 'Y' }] };
+    const diffs = diffEntityEditableKeys('power', before, after);
+    expect(diffs).toEqual([{ field: 'inputWiring', prevValue: [{ terminal: '1', label: 'X' }] }]);
+  });
+
+  it('slot variant diffs only the fields relevant to the (shared) card type', () => {
+    const before = { slotNumber: 0, cardType: 'Digital', name: 'Card1', partNumber: 'PN1' };
+    const after  = { slotNumber: 0, cardType: 'Digital', name: 'Card1 renamed', partNumber: 'PN1' };
+    const diffs = diffSlotEditableKeys(before, after);
+    expect(diffs).toEqual([{ field: 'name', prevValue: 'Card1' }]);
+  });
+});
+
+describe('appendEditHistoryEntries (undo-history cap — plan Part D4, EDIT_HISTORY_LIMIT)', () => {
+  it('appends one entry per diff, most-recent last', () => {
+    const history: any[] = [];
+    appendEditHistoryEntries(
+      history, 'areas', 'ar1', 'North Wing',
+      [{ field: 'name', prevValue: 'Old' }, { field: 'notes', prevValue: 'Old notes' }],
+      field => field,
+    );
+    expect(history).toHaveLength(2);
+    expect(history[0].field).toBe('name');
+    expect(history[1].field).toBe('notes');
+    expect(history[0].label).toBe('North Wing — name');
+  });
+
+  it(`caps history at EDIT_HISTORY_LIMIT (${EDIT_HISTORY_LIMIT}), dropping the oldest entries first`, () => {
+    const history: any[] = [];
+    for (let i = 0; i < EDIT_HISTORY_LIMIT + 1; i++) {
+      appendEditHistoryEntries(
+        history, 'areas', 'ar1', 'North Wing',
+        [{ field: 'notes', prevValue: `v${i}` }],
+        field => field,
+      );
+    }
+    expect(history).toHaveLength(EDIT_HISTORY_LIMIT);
+    // The very first push (prevValue 'v0') should have been dropped as the oldest.
+    expect(history.some((e: any) => e.prevValue === 'v0')).toBe(false);
+    expect(history[history.length - 1].prevValue).toBe(`v${EDIT_HISTORY_LIMIT}`);
   });
 });

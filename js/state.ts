@@ -33,11 +33,14 @@ export interface NetworkPortRow { portNumber?: number, networkId: string, ipAddr
 export type UntypedTableRow = Record<string, any>;
 
 /**
- * One entry in the detail-panel autosave undo history (state.editHistory).
- * `prevSnapshot` is an explicit allowlist of the record's own non-media
- * field/table values as they existed immediately before the edit session
- * that produced this entry — never `images`/`namedPhotos` (see
- * buildEntityEditSnapshot/buildSlotEditSnapshot in renderers/detail.js).
+ * One entry in the detail-panel autosave undo history (state.editHistory) —
+ * one entry per changed field/table key, not per edit session. `field` is the
+ * changed key and `prevValue` is that key's value immediately before the
+ * autosave tick that produced this entry (never `images`/`namedPhotos` — media
+ * commits immediately and separately, outside undo entirely; see
+ * diffEntityEditableKeys/diffSlotEditableKeys and buildEntityEditSnapshot/
+ * buildSlotEditSnapshot in renderers/detail.js). `label` names both the
+ * record and the specific field (e.g. "Pump-3 — Location").
  * `slotNumber` is only present when `type === FORM_TYPE.PLC_SLOT`, where
  * `id` holds the parent rack asset's id (a slot has no id of its own).
  */
@@ -45,7 +48,8 @@ export interface EditHistoryEntry {
   type: FormType;
   id: string;
   label: string;
-  prevSnapshot: Record<string, any>;
+  field: string;
+  prevValue: any;
   ts: string;
   slotNumber?: number;
 }
@@ -89,9 +93,10 @@ export interface State {
    */
   hasPendingAutosave: boolean;
   /**
-   * Last 3 detail-panel edit sessions, most-recent last, each independently
-   * undoable from the header's Recent Changes panel. Persisted to the
-   * `settings` store (key 'editHistory') so it survives a reload.
+   * Up to EDIT_HISTORY_LIMIT (renderers/detail.js) detail-panel field/table
+   * edits, most-recent last, each independently undoable from the header's
+   * Recent Changes panel. Persisted to the `settings` store (key
+   * 'editHistory') so it survives a reload.
    */
   editHistory: EditHistoryEntry[];
 
@@ -157,7 +162,7 @@ export const state: State = {
 
   // --- Detail-panel autosave / undo history ---
   hasPendingAutosave: false,
-  editHistory:        [],   // last 3 undoable edit sessions; loaded from settings at init (see js/init.js)
+  editHistory:        [],   // undoable field-level edits, up to EDIT_HISTORY_LIMIT; loaded from settings at init (see js/init.js)
 
   // --- Active form ---
   formType:            null,

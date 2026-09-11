@@ -585,10 +585,11 @@ export async function loadEditHistory(): Promise<void> {
 }
 
 /**
- * Undoes one entry: restores its prevSnapshot's fields onto the CURRENT stored
- * record (merge, not replace — preserves id/createdAt/images/namedPhotos, which
- * are deliberately outside the snapshot's allowlist per Risk 7), removes the
- * entry, and re-renders.
+ * Undoes one entry: restores just its one field onto the CURRENT stored
+ * record (a single-key merge, not a whole-record replace — preserves
+ * id/createdAt/images/namedPhotos, and doesn't touch any OTHER field edited
+ * on this record since the entry was captured, since each entry only ever
+ * claims one field). Removes the entry, and re-renders.
  */
 export async function undoHistoryEntry(idx: number): Promise<void> {
   const entry = state.editHistory[idx];
@@ -600,14 +601,14 @@ export async function undoHistoryEntry(idx: number): Promise<void> {
       const slots = [...(rack.slots || [])];
       const sIdx  = slots.findIndex((s: any) => s.slotNumber === entry.slotNumber);
       if (sIdx !== -1) {
-        slots[sIdx] = { ...slots[sIdx], ...entry.prevSnapshot };
+        slots[sIdx] = { ...slots[sIdx], [entry.field]: entry.prevValue };
         await upsert('assets', { ...rack, slots });
       }
     }
   } else {
     const current = await getById(entry.type as EntityType, entry.id);
     if (current) {
-      await upsert(entry.type as EntityType, { ...current, ...entry.prevSnapshot });
+      await upsert(entry.type as EntityType, { ...current, [entry.field]: entry.prevValue });
     }
   }
 
