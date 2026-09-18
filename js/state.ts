@@ -1,5 +1,5 @@
 import type { DbRecord, StoreName } from './db.js';
-import type { FormType } from './entity-config.js';
+import type { EntityType, FormType } from './entity-config.js';
 import type { NormalizedMediaItem } from './utils.js';
 
 import { getAll } from './db.js';
@@ -100,6 +100,11 @@ export interface State {
    */
   editHistory: EditHistoryEntry[];
 
+  /** Entity type currently selected in the Quick Add modal. Null when modal is closed. */
+  qaType: EntityType | null;
+  /** "Other Media" items accumulated while the Quick Add modal is open. */
+  qaImages: EditableMediaItem[];
+
   formType: FormType | null;
   formId: string | null;
   /** Polymorphic: {rackId,slotNumber} for a PLC slot form, or {field,value,extra,copyFrom} for an entity form preset. */
@@ -164,6 +169,10 @@ export const state: State = {
   hasPendingAutosave: false,
   editHistory:        [],   // undoable field-level edits, up to EDIT_HISTORY_LIMIT; loaded from settings at init (see js/init.js)
 
+  // --- Quick Add modal ---
+  qaType:   null,
+  qaImages: [],
+
   // --- Active form ---
   formType:            null,
   formId:              null,
@@ -207,6 +216,9 @@ export interface ElRefs {
   toast: HTMLElement, nav: HTMLElement,
   historyToggle: HTMLButtonElement, historyBadge: HTMLElement,
   historyPanel: HTMLElement, historyList: HTMLElement,
+  qaBackdrop: HTMLElement, qaModal: HTMLElement, qaTitle: HTMLElement,
+  qaCancel: HTMLButtonElement, qaSave: HTMLButtonElement,
+  qaTypeBar: HTMLElement, qaBody: HTMLElement,
 }
 
 /**
@@ -262,6 +274,13 @@ export function initEl(): void {
     historyBadge:  $('history-badge'),
     historyPanel:  $('history-panel'),
     historyList:   $('history-panel-list'),
+    qaBackdrop:    $('qa-backdrop'),
+    qaModal:       $('qa-modal'),
+    qaTitle:       $('qa-title'),
+    qaCancel:      $('qa-cancel') as HTMLButtonElement | null,
+    qaSave:        $('qa-save') as HTMLButtonElement | null,
+    qaTypeBar:     $('qa-type-bar'),
+    qaBody:        $('qa-body'),
   };
   const missing = Object.entries(refs).filter(([, node]) => !node).map(([name]) => name);
   if (missing.length) {

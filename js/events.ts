@@ -4,6 +4,7 @@ import { ENTITY } from './entity-config.js';
 import { $, el, state } from './state.js';
 import { processImportFile, saveForm } from './operations.js';
 import { closeDetail, closeSheet, initDetailResizeHandle, navigate, openSheet, toggleHistoryPanel } from './app.js';
+import { closeQuickAdd, openQuickAdd, saveQuickAdd } from './renderers/quick-add.js';
 /* ============================================================
    EVENT WIRING
    Depends on: state.js, app.js (navigate, openSheet, closeDetail,
@@ -25,12 +26,16 @@ export function wireEvents(): void {
     }
   });
 
-  // Add button — hidden on home and checklist pages (those have no add-entity action)
+  // Add button — opens the Quick Add modal; pre-selects the current page's entity
+  // type when on an entity list page, otherwise shows the type-selector bar.
   el.addBtn.addEventListener('click', () => {
-    if (state.page !== 'home' && state.page !== 'checklist') {
-      openSheet(state.page as EntityType);
-    }
+    openQuickAdd(state.page);
   });
+
+  // Quick Add modal — cancel, save, backdrop
+  el.qaCancel.addEventListener('click', closeQuickAdd);
+  el.qaSave.addEventListener('click', () => void saveQuickAdd());
+  el.qaBackdrop.addEventListener('click', closeQuickAdd);
 
   // Form save / cancel
   el.formSave.addEventListener('click', saveForm);

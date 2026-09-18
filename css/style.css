@@ -931,6 +931,95 @@ body {
   transform: translateY(0);
 }
 
+/* =====================================================
+   QUICK ADD MODAL
+   Always-centered overlay on all screen sizes.
+   ===================================================== */
+.qa-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0,0,0,0.45);
+  display: none;
+}
+.qa-backdrop.open { display: block; }
+
+.qa-modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -52%);
+  opacity: 0;
+  z-index: 401;
+  width: 92%;
+  max-width: 480px;
+  max-height: 88dvh;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  display: none;
+  flex-direction: column;
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease;
+}
+.qa-modal.open {
+  display: flex;
+  transform: translate(-50%, -50%);
+  opacity: 1;
+}
+
+.qa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.qa-type-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.qa-type-chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.qa-type-chip:hover { border-color: var(--primary); color: var(--primary); }
+.qa-type-chip.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.qa-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.qa-placeholder {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 32px 0;
+}
+
+/* ===================================================== */
+
 .sheet-handle-bar {
   width: 36px;
   height: 4px;
@@ -1189,6 +1278,8 @@ body {
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.success { background: #14532d; }
 .toast.error   { background: #7f1d1d; }
+.toast.has-action { pointer-events: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; }
+.toast-action-btn { background: none; border: 1.5px solid rgba(255,255,255,0.5); color: #fff; border-radius: 4px; padding: 3px 10px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 
 /* =====================================================
    EXPORT PROGRESS MODAL

@@ -308,6 +308,7 @@ export const ENTITY: Record<EntityType, EntityConfig> = {
   networks: {
     label: 'Network', plural: 'Networks', store: 'networks',
     color: '#16a34a', bgColor: '#dcfce7', badgeClass: 'badge-network',
+    noImages: true,
     fields: [
       { key: 'name',        label: 'Name',          type: 'text',  required: true },
       { key: 'networkType', label: 'Network Type',  type: 'enum',  required: true,

@@ -89,6 +89,18 @@
       <div id="form-body" class="sheet-scroll"></div>
     </div>
 
+    <!-- Quick Add Modal — always-centered overlay on all screen sizes -->
+    <div id="qa-backdrop" class="qa-backdrop" aria-hidden="true"></div>
+    <div id="qa-modal" class="qa-modal" role="dialog" aria-modal="true" aria-labelledby="qa-title" aria-hidden="true">
+      <div class="qa-header">
+        <button id="qa-cancel" class="txt-btn">Cancel</button>
+        <span id="qa-title" class="sheet-title">Add</span>
+        <button id="qa-save" class="txt-btn txt-btn-primary">Save</button>
+      </div>
+      <div id="qa-type-bar" class="qa-type-bar"></div>
+      <div id="qa-body" class="qa-body sheet-scroll"></div>
+    </div>
+
     <!-- Confirm dialog -->
     <div id="confirm-backdrop" class="confirm-backdrop" aria-hidden="true">
       <div class="confirm-box">

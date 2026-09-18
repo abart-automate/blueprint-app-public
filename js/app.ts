@@ -504,22 +504,16 @@ export async function navigate(page: string): Promise<void> {
 
 export function setHeaderForPage(page: string): void {
   if (page === 'home') {
-    el.pageTitle.textContent   = 'blueprint';
-    el.backBtn.style.visibility = 'hidden';
-    el.addBtn.style.visibility  = 'hidden';
+    el.pageTitle.textContent = 'blueprint';
   } else if (page === 'checklist') {
-    el.pageTitle.textContent   = 'Checklist';
-    el.backBtn.style.visibility = 'hidden';
-    el.addBtn.style.visibility  = 'hidden';
+    el.pageTitle.textContent = 'Checklist';
   } else if (page === 'parts-library') {
-    el.pageTitle.textContent   = 'Parts Library';
-    el.backBtn.style.visibility = 'hidden';
-    el.addBtn.style.visibility  = 'hidden';
+    el.pageTitle.textContent = 'Parts Library';
   } else {
-    el.pageTitle.textContent   = (ENTITY as Record<string, EntityConfig>)[page].plural;
-    el.backBtn.style.visibility = 'hidden';
-    el.addBtn.style.visibility  = 'visible';
+    el.pageTitle.textContent = (ENTITY as Record<string, EntityConfig>)[page].plural;
   }
+  el.backBtn.style.visibility = 'hidden';
+  el.addBtn.style.visibility  = 'visible';
 }
 
 /* ============================================================
