@@ -3,7 +3,7 @@ import type { BlobMediaItem, NetworkPortEntry, NormalizedMediaItem } from '../ut
 
 import { CARD_TYPE_NET_TYPES, ENTITY, ICON_RM } from '../entity-config.js';
 import { $, showToast, state } from '../state.js';
-import { ACCEPTED_MEDIA_ACCEPT, buildNetworkOptions, createMediaUrl, esc, getEntityNetworkPorts, getIpPrefix, getNetworkAddrFields, openMediaLightbox, processMediaFile, revokeBlobUrlsInContainer } from '../utils.js';
+import { buildNetworkOptions, createMediaUrl, esc, getEntityNetworkPorts, getIpPrefix, getNetworkAddrFields, openMediaLightbox, processMediaFile, revokeBlobUrlsInContainer } from '../utils.js';
 /* ============================================================
    TABLE & MEDIA RENDERERS
    All dynamic table UIs rendered into the form sheet.
@@ -49,7 +49,9 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
 export function _makeUploadInput(multiple: boolean, onFiles: (items: BlobMediaItem[]) => void): HTMLLabelElement {
   const label = document.createElement('label');
   label.className = 'wiring-add-btn';
-  label.innerHTML = `<input type="file" accept="${ACCEPTED_MEDIA_ACCEPT}"${multiple ? ' multiple' : ''}><span>+ Add Photo</span>`;
+  // image/*,video/* triggers the native Photo Library sheet on iOS and the gallery
+  // picker on Android; a specific MIME list (jpeg,png,…) suppresses that sheet on iOS.
+  label.innerHTML = `<input type="file" accept="image/*,video/*"${multiple ? ' multiple' : ''}><span>+ Add Photo</span>`;
   const input = label.querySelector('input') as HTMLInputElement;
   input.addEventListener('change', async () => {
     const files = Array.from(input.files ?? []);
@@ -82,7 +84,7 @@ export function _renderMediaItems(
   mediaItems.forEach((item, i) => {
     containerEl.appendChild(renderMediaThumb(item, {
       onRemove: readonly ? null : () => onRemove?.(i),
-      onClick:  () => openMediaLightbox(item),
+      onClick:  () => openMediaLightbox(mediaItems, i),
     }));
   });
   if (!readonly) {

@@ -927,6 +927,25 @@ export function hideExportProgress(): void {
   if (modal) modal.remove();
 }
 
+/**
+ * Downloads all photos for a single entity as a ZIP file.
+ * Reuses _exportMedia() for consistent file naming (sanitized slot names, numbered suffixes).
+ * Shows an error toast and returns without downloading if the entity has no media.
+ * JSZip is available as a global via the vendor <script> tag in index.html.
+ */
+export async function downloadEntityPhotos(entityName: string, entity: DbRecord): Promise<void> {
+  const hasNamedPhotos = entity.namedPhotos && Object.values(entity.namedPhotos as Record<string, any[]>).some(v => v?.length > 0);
+  const hasImages = Array.isArray(entity.images) && entity.images.length > 0;
+  if (!hasNamedPhotos && !hasImages) {
+    showToast('No photos to download for this item.', 'error');
+    return;
+  }
+  const zip = new JSZip();
+  _exportMedia(entity, zip);
+  const blob = await zip.generateAsync({ type: 'blob' });
+  downloadBlob(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`);
+}
+
 // Make export functions globally available
 (window as any).exportToZip  = exportToZip;
 (window as any).exportExcel  = exportExcel;

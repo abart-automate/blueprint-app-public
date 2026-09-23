@@ -4,6 +4,10 @@ import type { EntityType, EnumFieldDef, FieldDef, ItemTableDef } from './entity-
 import { ENTITY } from './entity-config.js';
 import { state } from './state.js';
 import { renderDetailPlaceholder } from './app.js';
+import PhotoSwipeLightbox from 'photoswipe/lightbox';
+import PhotoSwipe from 'photoswipe';
+import PhotoSwipeVideoPlugin from 'photoswipe-video-plugin';
+import 'photoswipe/style.css';
 /* ============================================================
    UTILITIES
    Pure helper functions with no side effects beyond what they
@@ -383,17 +387,21 @@ export function entityIcon(type: string, size: number = 22): string {
 
 /**
  * Validates file type and returns { blob, mimeType }.
- * Images are resized to max 1400px and re-encoded as JPEG blobs.
- * Throws a user-readable Error for unsupported types.
+ * Images are resized to max 4096px and re-encoded as JPEG blobs at 0.92 quality,
+ * preserving near-native resolution for modern phone cameras.
+ * Accepts any image/* or video/* MIME type (iOS converts HEIC→JPEG on the Canvas).
+ * Throws a user-readable Error for unsupported file categories.
  */
 export async function processMediaFile(file: File): Promise<BlobMediaItem> {
-  if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
+  const isImage = file.type.startsWith('image/');
+  const isVideo = file.type.startsWith('video/');
+  if (!isImage && !isVideo) {
     throw new Error(
       `Unsupported file: ${file.name} (${file.type || 'unknown type'})\n` +
-      `Accepted images: JPEG, PNG, WebP\nAccepted videos: MP4, MOV`
+      `Accepted: image files (JPEG, PNG, WebP, HEIC…) and video files (MP4, MOV…)`
     );
   }
-  if (ACCEPTED_VIDEO_TYPES.includes(file.type)) {
+  if (isVideo) {
     return { blob: file, mimeType: file.type };
   }
   return new Promise((resolve, reject) => {
@@ -403,7 +411,7 @@ export async function processMediaFile(file: File): Promise<BlobMediaItem> {
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
-        const maxPx = 1400;
+        const maxPx = 4096;
         const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
         const w = Math.round(img.width  * scale);
         const h = Math.round(img.height * scale);
@@ -413,7 +421,7 @@ export async function processMediaFile(file: File): Promise<BlobMediaItem> {
         canvas.toBlob(blob => {
           if (blob) resolve({ blob, mimeType: 'image/jpeg' });
           else reject(new Error(`Failed to encode image: ${file.name}`));
-        }, 'image/jpeg', 0.82);
+        }, 'image/jpeg', 0.92);
       };
       img.src = e.target?.result as string;
     };
@@ -717,47 +725,48 @@ export function attachFieldEmptyToggle(container: Element, inputSel: string, cha
 /* ---- LIGHTBOX ---- */
 
 /**
- * Opens a fullscreen lightbox for an image or video media item.
- * Accepts { blob, mimeType } or a legacy { _legacySrc } item.
+ * Opens a PhotoSwipe gallery at the given index into the items array.
+ * Supports pinch-to-zoom, swipe navigation, and mouse-wheel zoom.
+ * Videos are handled by PhotoSwipeVideoPlugin which auto-pauses them on swipe —
+ * without the plugin, video audio would continue playing behind subsequent slides.
+ * Blob URLs created here are revoked in the pswp 'destroy' event; PhotoSwipe
+ * manages its own DOM outside #app so revokeBlobUrlsInContainer() cannot reach them.
  */
-export function openMediaLightbox(mediaItem: NormalizedMediaItem): void {
-  let lb = document.querySelector('.lightbox') as HTMLElement | null;
-  if (!lb) {
-    lb = document.createElement('div');
-    lb.className = 'lightbox';
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'lightbox-close';
-    closeBtn.textContent = '✕';
-    closeBtn.onclick = () => _closeLightbox(lb as HTMLElement);
-    lb.onclick = e => { if (e.target === lb) _closeLightbox(lb as HTMLElement); };
-    lb.appendChild(closeBtn);
-    (document.querySelector('#app') as Element).appendChild(lb);
-  }
-  // Revoke the outgoing lightbox blob URL before replacing it — the lightbox lives in #app,
-  // not inside el.detail, so revokeBlobUrlsInContainer(el.detail) never reaches it.
-  revokeBlobUrlsInContainer(lb);
-  lb.querySelectorAll('img, video').forEach(el => el.remove());
+export function openMediaLightbox(items: NormalizedMediaItem[], index: number): void {
+  const slideUrls: string[] = [];
 
-  const src = createMediaUrl(mediaItem);
-  const isVideo = mediaItem.mimeType?.startsWith('video/');
-  if (isVideo) {
-    const video = document.createElement('video');
-    video.src = src;
-    video.controls = true;
-    video.autoplay = true;
-    lb.insertBefore(video, lb.firstChild);
-  } else {
-    const img = document.createElement('img');
-    img.src = src;
-    lb.insertBefore(img, lb.firstChild);
-  }
-  lb.classList.add('open');
-}
+  const dataSource = items.map(item => {
+    const src = createMediaUrl(item);
+    // Track blob:// URLs for revocation; legacy base64 strings are not revocable.
+    if (src.startsWith('blob:')) slideUrls.push(src);
 
-export function _closeLightbox(lb: HTMLElement): void {
-  const video = lb.querySelector('video');
-  if (video) video.pause();
-  // Revoke blob URL before removing the element from DOM.
-  revokeBlobUrlsInContainer(lb);
-  lb.remove();
+    if (item.mimeType?.startsWith('video/')) {
+      // VideoPlugin expects { type: 'video', videoSrc } and renders a native <video>
+      // with controls and playsinline (required for inline playback on iOS Safari).
+      return { type: 'video' as const, videoSrc: src };
+    }
+    // width/height 0 defers to PhotoSwipe's natural-dimension detection on load.
+    return { src, width: 0, height: 0 };
+  });
+
+  const lightbox = new PhotoSwipeLightbox({
+    pswpModule: PhotoSwipe,
+    dataSource,
+    bgOpacity: 0.92,
+    loop: false,
+  });
+
+  // Wire video plugin before init() so it can attach its own event listeners.
+  new PhotoSwipeVideoPlugin(lightbox, {
+    videoAttributes: { controls: '', playsinline: '' },
+  });
+
+  lightbox.on('init', () => {
+    lightbox.pswp!.on('destroy', () => {
+      slideUrls.forEach(url => URL.revokeObjectURL(url));
+    });
+  });
+
+  lightbox.init();
+  lightbox.loadAndOpen(index);
 }

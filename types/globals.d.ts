@@ -9,3 +9,7 @@
 // just unblocks @ts-check on files that touch these globals.
 declare var XLSX: any;
 declare var JSZip: any;
+
+// Allow Vite-style side-effect CSS imports (e.g. `import 'some-pkg/style.css'`).
+// Vite resolves these at build time; tsc never sees the actual CSS.
+declare module '*.css' {}

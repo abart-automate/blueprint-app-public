@@ -9,6 +9,7 @@ import { confirm, el, refreshAll, showToast, state } from '../state.js';
 import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
 import { deleteItem, duplicateItem, validateRequiredFields, validateUniqueIp, validateUniqueName } from '../operations.js';
+import { downloadEntityPhotos } from '../export.js';
 import { cardHTML, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm, refreshHistoryUi } from '../app.js';
 /* ============================================================
    DETAIL VIEW RENDERERS
@@ -515,10 +516,15 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml, { expanded: true });
   }
 
-  // Other media gallery placeholder
+  // Other media gallery placeholder; download button is appended dynamically in the
+  // mounting block below (after state.detailImages is populated, so we can gate on count).
   let otherPhotosCard = '';
   if (!cfg.noImages) {
-    otherPhotosCard = buildCollapsibleCard('Other Media', `<div id="det-gallery" class="img-grid"></div>`, { expanded: true });
+    otherPhotosCard = buildCollapsibleCard(
+      'Other Media',
+      `<div id="det-gallery" class="img-grid"></div><div id="det-media-download"></div>`,
+      { expanded: true }
+    );
   }
 
   /* ------------------------------------------------------------------
@@ -729,6 +735,21 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
         onRemove: i     => { state.detailImages.splice(i, 1);  reGallery(); void persistDetailMedia(type, id); },
       });
       reGallery();
+    }
+
+    // Download Photos button — mounted once on entity load.  Not in a reGallery closure
+    // because it reflects what is already saved, not the in-progress draft state.
+    const downloadContainer = document.getElementById('det-media-download');
+    if (downloadContainer) {
+      const hasMedia = state.detailImages.length > 0
+        || Object.values(state.detailNamedPhotos).some(v => v.length > 0);
+      if (hasMedia) {
+        const btn = document.createElement('button');
+        btn.className = 'wiring-add-btn det-download-photos-btn';
+        btn.textContent = 'Download Photos';
+        btn.addEventListener('click', () => void downloadEntityPhotos((item.name as string) ?? '', item));
+        downloadContainer.appendChild(btn);
+      }
     }
   }
 

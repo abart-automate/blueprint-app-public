@@ -1688,42 +1688,7 @@ body {
   gap: 8px;
 }
 
-/* =====================================================
-   IMAGE LIGHTBOX
-   ===================================================== */
-.lightbox {
-  position: absolute;
-  inset: 0;
-  z-index: 800;
-  background: rgba(0,0,0,0.92);
-  display: none;
-  align-items: center;
-  justify-content: center;
-}
-.lightbox.open { display: flex; }
-.lightbox img,
-.lightbox video {
-  max-width: 100%;
-  max-height: 90%;
-  object-fit: contain;
-  border-radius: 4px;
-}
-.lightbox-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  background: rgba(255,255,255,0.2);
-  border: none;
-  color: #fff;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* IMAGE LIGHTBOX styles removed — PhotoSwipe injects its own stylesheet. */
 
 /* =====================================================
    RELATED ITEMS LIST (in detail view)
