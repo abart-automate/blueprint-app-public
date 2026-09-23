@@ -767,6 +767,16 @@ export function openMediaLightbox(items: NormalizedMediaItem[], index: number): 
     });
   });
 
+  // When width/height are 0, PhotoSwipe won't stretch-fit on its own — read the
+  // actual loaded image dimensions and reflow the slide at the correct aspect ratio.
+  lightbox.on('loadComplete', ({ slide }) => {
+    if (slide.data.width === 0 && slide.content.element instanceof HTMLImageElement) {
+      slide.data.width = slide.content.element.naturalWidth;
+      slide.data.height = slide.content.element.naturalHeight;
+      slide.pswp!.updateSize(true);
+    }
+  });
+
   lightbox.init();
   lightbox.loadAndOpen(index);
 }
