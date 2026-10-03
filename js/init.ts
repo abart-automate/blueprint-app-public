@@ -5,7 +5,7 @@ import { ENTITY, assertEntityConfigComplete } from './entity-config.js';
 import { initEl, showToast, state } from './state.js';
 import { esc, initLayoutDetection } from './utils.js';
 import { wireEvents } from './events.js';
-import { loadEditHistory, navigate, renderHome, renderPage } from './app.js';
+import { applyLayoutTransition, loadEditHistory, navigate, renderHome, renderPage } from './app.js';
 import { hideExportProgress, showExportProgress, updateProgress } from './export.js';
 import { initMediaThumbHydration } from './media.js';
 import { collectOrphanMedia, migrateInlineMedia } from './media-migration.js';
@@ -49,7 +49,7 @@ export async function init(): Promise<void> {
 
     /* Detect viewport size and stamp body[data-layout] before any rendering
        so CSS and JS branches are consistent from the very first paint. */
-    initLayoutDetection();
+    initLayoutDetection(applyLayoutTransition);
 
     /* Restore the user's last-saved list-pane width (desktop only).
        Must run before wireEvents so the CSS custom property is set

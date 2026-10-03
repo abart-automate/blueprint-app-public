@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- viewport-fit=cover lets the layout use the full screen (incl. the notch side in
+       landscape) and makes env(safe-area-inset-*) report real values; style.css pads
+       for them via the --sa-* tokens. No maximum-scale/user-scalable: pinch-zoom stays
+       available everywhere, and iOS focus-zoom is avoided with 16px touch inputs instead. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="mobile-web-app-capable" content="yes">
@@ -195,6 +199,7 @@
         // without it, an HTTP-cached copy of sw.js could mask a real change
         // even after the byte-diff fix in sw.js's own SW_BUILD comment.
         navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
+          if (!reg) return; // registration blocked (e.g. automated test browsers)
           var hadController = !!navigator.serviceWorker.controller;
 
           // Gated activation: sw.js no longer self-activates a waiting worker,

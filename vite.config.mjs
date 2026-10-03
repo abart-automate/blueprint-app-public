@@ -52,6 +52,10 @@ export default defineConfig({
   build: {
     target: 'es2022',
   },
+  // Unit tests only -- tests/ui/*.spec.ts is the Playwright suite (npm run test:ui).
+  test: {
+    include: ['js/**/*.test.ts'],
+  },
   plugins: [
     VitePWA({
       // Our own hand-written sw.js (see that file for why: a specific

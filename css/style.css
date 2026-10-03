@@ -59,6 +59,19 @@
   --field-text:        var(--text);
   --field-empty-text:  #94a3b8;
   --bg-alt:            #e8edf4;
+
+  /* Hover tint and modal scrim — shared by every hover state / backdrop */
+  --hover:             rgba(15,23,42,0.06);
+  --backdrop:          rgba(0,0,0,0.45);
+
+  /* Safe-area insets (notch, home indicator, landscape sensor housing).
+     Non-zero only on devices that have them — index.html's viewport-fit=cover
+     is what makes env() report real values. Always use these tokens rather than
+     repeating env(). */
+  --sa-t: env(safe-area-inset-top, 0px);
+  --sa-r: env(safe-area-inset-right, 0px);
+  --sa-b: env(safe-area-inset-bottom, 0px);
+  --sa-l: env(safe-area-inset-left, 0px);
 }
 
 /* =====================================================
@@ -76,6 +89,11 @@ html, body {
   overflow: hidden;
 }
 
+/* Form controls don't inherit the page font by default — without this, any
+   button/input lacking its own font-family renders in the UA font (serif on
+   iOS/WebKit), so the same control looked different per platform. */
+button, input, select, textarea { font-family: inherit; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   background: var(--bg);
@@ -84,14 +102,17 @@ body {
   line-height: 1.5;
 }
 
+/* Fixed + inset:0 (not height:100dvh) so the shell always matches the visible
+   viewport — iOS standalone PWAs don't reliably recompute dvh after rotation,
+   which left a gap or clipped the nav. Every overlay below positions against
+   this box. */
 #app {
+  position: fixed;
+  inset: 0;
   max-width: 600px;
   margin: 0 auto;
-  height: 100vh;
-  height: 100dvh;
   display: flex;
   flex-direction: column;
-  position: relative;
   overflow: hidden;
 }
 
@@ -117,12 +138,6 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/* The detail panel is now inside .app-body (which sits above the nav),
-   so the save bar no longer needs to clear the nav height. */
-.app-body .det-save-bar {
-  margin-bottom: 0;
 }
 
 /* =====================================================
@@ -184,12 +199,12 @@ body {
    HEADER
    ===================================================== */
 #app-header {
-  height: var(--header-h);
+  height: calc(var(--header-h) + var(--sa-t));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: var(--sa-t) calc(8px + var(--sa-r)) 0 calc(8px + var(--sa-l));
   gap: 4px;
   flex-shrink: 0;
   z-index: 50;
@@ -243,12 +258,13 @@ body {
 }
 .history-panel {
   position: fixed;
-  top: var(--header-h);
-  right: 8px;
+  top: calc(var(--header-h) + var(--sa-t));
+  right: calc(8px + var(--sa-r));
   z-index: 900;
   width: 300px;
   max-width: calc(100vw - 16px);
   max-height: 60vh;
+  max-height: 60dvh;
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -297,20 +313,21 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 12px calc(12px + var(--sa-r)) 12px calc(12px + var(--sa-l));
 }
 
 /* =====================================================
    BOTTOM NAV
    ===================================================== */
 #bottom-nav {
-  height: var(--nav-h);
+  /* The home-indicator inset is added to the bar, not carved out of the buttons */
+  height: calc(var(--nav-h) + var(--sa-b));
   background: var(--surface);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding: 0 var(--sa-r) var(--sa-b) var(--sa-l);
   position: relative;
   z-index: 201;
 }
@@ -583,7 +600,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 12px 12px 8px;
+  padding: 12px calc(12px + var(--sa-r)) 8px 12px;
 }
 
 /* =====================================================
@@ -665,21 +682,7 @@ body {
   margin-bottom: 12px;
 }
 
-.det-back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--surface);
-  border: none;
-  cursor: pointer;
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-.det-back-btn:active { opacity: 0.7; }
-
+.det-back-btn,
 .det-edit-btn {
   display: flex;
   align-items: center;
@@ -693,6 +696,7 @@ body {
   color: var(--text);
   box-shadow: var(--shadow);
 }
+.det-back-btn:active,
 .det-edit-btn:active { opacity: 0.7; }
 /* Scale ICON_DUPLICATE (defined at 14px) up to the original 18px inside the entity button */
 .det-edit-btn svg { width: 18px; height: 18px; }
@@ -722,8 +726,10 @@ body {
 .det-field-editable {
   cursor: pointer;
 }
-.det-field-editable:hover .det-fval:not(:has(input)):not(:has(select)):not(:has(textarea)) {
-  color: var(--primary);
+@media (hover: hover) {
+  .det-field-editable:hover .det-fval:not(:has(input)):not(:has(select)):not(:has(textarea)) {
+    color: var(--primary);
+  }
 }
 .det-fval-empty {
   color: var(--muted);
@@ -778,9 +784,7 @@ body {
   color: var(--field-empty-text);
 }
 .det-save-bar {
-  /* Static flex child — always rendered at the bottom of the flex column.
-     margin-bottom pushes the bar's lower edge above the nav bar (which
-     sits at z-index 201 and visually overlays the panel from the bottom). */
+  /* Static flex child — always rendered at the bottom of the flex column. */
   flex-shrink: 0;
   background: var(--surface);
   border-top: 2px solid var(--primary);
@@ -788,7 +792,6 @@ body {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-bottom: var(--nav-h);
 }
 
 /* =====================================================
@@ -904,13 +907,23 @@ body {
 .btn-sm { height: 36px; font-size: 13px; padding: 0 12px; }
 
 /* =====================================================
+   BACKDROPS — one scrim for every modal surface
+   ===================================================== */
+.sheet-backdrop,
+.qa-backdrop,
+.confirm-backdrop,
+.export-progress-backdrop,
+.export-options-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--backdrop);
+}
+
+/* =====================================================
    BOTTOM SHEET
    ===================================================== */
 .sheet-backdrop {
-  position: absolute;
-  inset: 0;
   z-index: 300;
-  background: rgba(0,0,0,0.45);
   display: none;
 }
 .sheet-backdrop.open { display: block; }
@@ -923,8 +936,9 @@ body {
   z-index: 400;
   background: var(--surface);
   border-radius: 20px 20px 0 0;
+  padding: 0 var(--sa-r) 0 var(--sa-l);
   max-height: 92vh;
-  max-height: 92dvh;
+  max-height: min(92dvh, calc(100dvh - var(--sa-t) - 8px));
   display: none;
   flex-direction: column;
   transform: translateY(100%);
@@ -940,10 +954,7 @@ body {
    Always-centered overlay on all screen sizes.
    ===================================================== */
 .qa-backdrop {
-  position: absolute;
-  inset: 0;
   z-index: 300;
-  background: rgba(0,0,0,0.45);
   display: none;
 }
 .qa-backdrop.open { display: block; }
@@ -1001,7 +1012,9 @@ body {
   font-family: inherit;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
-.qa-type-chip:hover { border-color: var(--primary); color: var(--primary); }
+@media (hover: hover) {
+  .qa-type-chip:hover { border-color: var(--primary); color: var(--primary); }
+}
 .qa-type-chip.active {
   border-color: var(--primary);
   background: var(--primary);
@@ -1046,7 +1059,7 @@ body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  padding: 16px 16px calc(20px + var(--sa-b));
 }
 
 .txt-btn {
@@ -1174,10 +1187,7 @@ body {
    CONFIRM DIALOG
    ===================================================== */
 .confirm-backdrop {
-  position: absolute;
-  inset: 0;
   z-index: 600;
-  background: rgba(0,0,0,0.45);
   display: none;
   align-items: center;
   justify-content: center;
@@ -1303,7 +1313,7 @@ body {
    ===================================================== */
 .toast {
   position: absolute;
-  bottom: calc(var(--nav-h) + 12px);
+  bottom: calc(var(--nav-h) + var(--sa-b) + 12px);
   left: 16px;
   right: 16px;
   background: #1e293b;
@@ -1329,11 +1339,6 @@ body {
    ===================================================== */
 .export-progress-backdrop {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.5);
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -1397,20 +1402,11 @@ body {
    ===================================================== */
 .export-options-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   z-index: 1000;
 }
 
 .export-options-backdrop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1457,9 +1453,11 @@ body {
   text-align: left;
 }
 
-.export-option:hover:not(.export-option-disabled) {
-  border-color: var(--primary);
-  background: var(--primary-lt);
+@media (hover: hover) {
+  .export-option:hover:not(.export-option-disabled) {
+    border-color: var(--primary);
+    background: var(--primary-lt);
+  }
 }
 
 .export-option-icon {
@@ -2222,9 +2220,16 @@ body {
   flex-shrink: 0;
   transition: color 0.15s, background 0.15s;
 }
-.slot-action-btn:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
+@media (hover: hover) {
+  .slot-action-btn:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .rack-slot-grip:hover {
+    opacity: 1;
+    background: var(--hover);
+    border-color: var(--border);
+  }
 }
 .slot-action-btn:disabled {
   opacity: 0.3;
@@ -2237,11 +2242,6 @@ body {
   border-color: transparent;
   color: var(--muted);
   opacity: 0.5;
-}
-.rack-slot-grip:hover {
-  opacity: 1;
-  background: var(--hover);
-  border-color: var(--border);
 }
 .rack-slot-grip:active { cursor: grabbing; }
 
@@ -2275,7 +2275,7 @@ body {
 .rack-slot-drop-indicator {
   position: absolute;
   height: 2px;
-  background: var(--accent, #2563eb);
+  background: var(--primary);
   border-radius: 2px;
   z-index: 9998;
   pointer-events: none;
@@ -2344,30 +2344,17 @@ body {
 }
 
 /* =====================================================
-   LANDSCAPE — keep fields usable when height is tight
-   ===================================================== */
-@media (max-height: 500px) and (orientation: landscape) {
-  :root { --nav-h: 52px; }
-  #bottom-nav { height: var(--nav-h); }
-  .f-input, .f-select, .f-textarea,
-  .det-inline-input, .det-inline-select, .det-inline-textarea {
-    min-height: 44px;
-    padding: 9px 12px;
-  }
-  .det-panel-scroll { padding: 8px 10px 4px; }
-  .det-card { padding: 12px; }
-  .sheet { max-height: 85dvh; }
-}
-
-/* =====================================================
    TABLET LAYOUT  (768px – 1199px)
    The bottom nav becomes a narrow icon-only sidebar on
    the left.  The detail panel still slides in as a
    right-side overlay (50 % width) rather than a
    permanent pane — there isn't enough horizontal space
    to lock all three columns.
+   Also used by phones in landscape (short viewport) so every phone gets
+   the same sidebar layout on its side, whatever its width.
+   Query text MUST match LAYOUT_QUERY.tablet in js/utils.ts.
    ===================================================== */
-@media (min-width: 768px) {
+@media (min-width: 768px), (orientation: landscape) and (max-height: 500px) {
 
   /* Lift the 600 px mobile cap; go full-viewport width */
   #app {
@@ -2380,15 +2367,16 @@ body {
   #bottom-nav {
     /* Pull the nav to the leftmost position in the flex row */
     order: -1;
-    width: var(--sidebar-w-icon);
-    height: 100dvh;
+    /* The left inset (notch side in landscape) widens the rail rather than
+       covering its icons; height follows #app via the row's align-stretch. */
+    width: calc(var(--sidebar-w-icon) + var(--sa-l));
+    height: auto;
     flex-direction: column;
     align-items: stretch;
     /* Replace the horizontal top-border with a vertical right-border */
     border-top: none;
     border-right: 1px solid var(--border);
-    /* Safe-area bottom padding is irrelevant for a left sidebar */
-    padding-bottom: 0;
+    padding: var(--sa-t) 0 var(--sa-b) var(--sa-l);
     overflow-y: auto;
     overflow-x: hidden;
     flex-shrink: 0;
@@ -2416,6 +2404,18 @@ body {
     min-width: 0; /* prevent flex children from overflowing */
   }
 
+  /* The sidebar now owns the left inset; the list and detail reach the bottom edge */
+  #app-header { padding-left: 8px; }
+  #app-main {
+    padding-left: 12px;
+    padding-bottom: calc(12px + var(--sa-b));
+  }
+  .det-panel-scroll { padding-bottom: calc(8px + var(--sa-b)); }
+  .det-save-bar {
+    padding-right: calc(16px + var(--sa-r));
+    padding-bottom: calc(12px + var(--sa-b));
+  }
+
   /* Body area: detail overlays on tablet (position:absolute still active) */
   .app-body {
     flex: 1;
@@ -2435,8 +2435,30 @@ body {
   /* Toast: nav is now a sidebar, so raise the toast above the viewport
      bottom edge rather than above a bottom nav bar. */
   .toast {
-    bottom: 12px;
+    bottom: calc(12px + var(--sa-b));
   }
+}
+
+/* =====================================================
+   COMPACT LANDSCAPE — phones on their side (≤ 500 px tall)
+   Gets the tablet sidebar layout above; this tightens the chrome so content
+   keeps most of the short screen.
+   ===================================================== */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --header-h: 48px; }
+  /* Share the rail height evenly so all 8 destinations fit without scrolling */
+  .nav-btn {
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 4px;
+  }
+  .f-input, .f-select, .f-textarea,
+  .det-inline-input, .det-inline-select, .det-inline-textarea {
+    min-height: 44px;
+    padding: 9px 12px;
+  }
+  .det-panel-scroll { padding-top: 8px; padding-left: 10px; }
+  .det-card { padding: 12px; }
 }
 
 /* =====================================================
@@ -2445,12 +2467,13 @@ body {
    list pane (fixed width, user-resizable via drag) |
    detail pane (flex-grow — primary/larger view).
    The detail pane is a permanent static column — no slide-in overlay.
+   Query text MUST match LAYOUT_QUERY.desktop in js/utils.ts.
    ===================================================== */
 @media (min-width: 1200px) {
 
   /* Expand sidebar to show icon + label */
   #bottom-nav {
-    width: var(--sidebar-w);
+    width: calc(var(--sidebar-w) + var(--sa-l));
   }
 
   /* --- Nav button: horizontal icon + label layout --- */
@@ -2486,8 +2509,6 @@ body {
     flex-shrink: 0;
     min-width: var(--list-pane-min-w);
     max-width: var(--list-pane-max-w);
-    /* Safe-area inset no longer relevant at this breakpoint */
-    padding-bottom: 12px;
   }
 
   /* Show the drag handle between the two panes */
@@ -2575,6 +2596,30 @@ body {
 }
 
 /* =====================================================
+   TOUCH INPUT SIZE
+   iOS zooms the page when focusing a field under 16px. Rather than blocking
+   zoom in the viewport meta (which Android honours and iOS ignores — and which
+   removes pinch-zoom for low-vision users), touch screens get 16px fields.
+   ===================================================== */
+@media (pointer: coarse) {
+  .f-input, .f-select, .f-textarea,
+  .det-inline-input, .det-inline-select, .det-inline-textarea,
+  .search-input, .checklist-new-input {
+    font-size: 16px;
+  }
+}
+
+/* =====================================================
+   KEYBOARD FOCUS — visible ring for keyboard users only
+   ===================================================== */
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* =====================================================
    DARK MODE — defaults to OS preference
    ===================================================== */
 @media (prefers-color-scheme: dark) {
@@ -2597,6 +2642,8 @@ body {
     --field-border: #2d3748;      --field-focus: #3b82f6;
     --field-focus-ring: rgba(59,130,246,0.20);
     --field-text: #e2e8f0;        --field-empty-text: #475569;
+    --hover: rgba(255,255,255,0.06);
+    --backdrop: rgba(0,0,0,0.65);
   }
   /* Select chevron — lighter stroke for dark backgrounds */
   .f-select, .det-inline-select {
@@ -2607,5 +2654,4 @@ body {
   .toast.success { background: #14532d; }
   .toast.error   { background: #7f1d1d; }
   .offline-bar   { background: #92400e; color: #fef3c7; }
-  .sheet-backdrop, .confirm-backdrop { background: rgba(0,0,0,0.65); }
 }

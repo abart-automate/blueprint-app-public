@@ -1,6 +1,6 @@
 import type { DbRecord } from './db.js';
 import type { EntityConfig, EntityType, FormType, RefFieldDef } from './entity-config.js';
-import type { ChecklistItem, ChecklistSubItem } from './utils.js';
+import type { ChecklistItem, ChecklistSubItem, LayoutMode } from './utils.js';
 
 import { getById, getSetting, setSetting, upsert } from './db.js';
 import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
@@ -102,7 +102,38 @@ export function _closeDetailImmediate(): void {
   state.detailSlotNumber = null;
   state.detailStack      = [];
   _clearDetailEditState();
-  setHeaderForPage(state.page);
+  syncHeader();
+}
+
+/**
+ * Re-applies layout-dependent DOM state when the responsive tier changes
+ * (rotation, window resize). Registered with initLayoutDetection() by init();
+ * called once at startup with prev = null.
+ *
+ * The CSS switches the detail panel between a slide-over overlay
+ * (mobile/tablet, shown via .open) and a permanent pane (desktop, always
+ * display:flex) — this keeps the panel's classes/content and the header in
+ * step with whichever mode is now active.
+ */
+export function applyLayoutTransition(prev: LayoutMode | null, next: LayoutMode): void {
+  const hasDetail = !!state.detailType;
+  el.detail.classList.remove('animating');
+  if (next === 'desktop') {
+    el.detail.classList.remove('open');
+    el.detail.style.display = 'flex';
+    if (!hasDetail) renderDetailPlaceholder();
+  } else if (prev === 'desktop' || prev === null) {
+    if (hasDetail) {
+      // Keep the selected item on screen as an overlay, without replaying the slide-in.
+      el.detail.style.display = 'flex';
+      el.detail.classList.add('open');
+    } else {
+      // Drop the desktop "Select an item" placeholder — the overlay is closed.
+      el.detail.style.display = 'none';
+      el.detail.innerHTML = '';
+    }
+  }
+  syncHeader();
 }
 
 /**
@@ -214,32 +245,19 @@ export function openDetail(type: EntityType, id: string): void {
   state.detailId   = id;
   renderDetail();
 
-  if (getLayoutMode() !== 'desktop') {
-    /* Mobile / tablet: slide the overlay panel in from the right. */
-    if (!wasOpen) {
-      el.detail.classList.remove('animating');
-      el.detail.style.display = 'flex';
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => el.detail.classList.add('open'));
-      });
-    }
-    /* Show header back button so users can exit the overlay. */
-    el.backBtn.style.visibility = 'visible';
-    el.addBtn.style.visibility  = 'hidden';
-    el.pageTitle.textContent    = ENTITY[type].label;
-  } else {
-    /* Desktop: panel is always visible in the right column.
-       Keep the page title and Add button in the header (back button is only
-       shown when there is a parent detail to pop back to). */
-    if (state.detailStack.length > 0) {
-      el.backBtn.style.visibility = 'visible';
-      el.addBtn.style.visibility  = 'hidden';
-    } else {
-      el.backBtn.style.visibility = 'hidden';
-      el.addBtn.style.visibility  = 'visible';
-    }
-    el.pageTitle.textContent = (ENTITY as Record<string, EntityConfig>)[state.page]?.plural || 'blueprint';
-  }
+  if (!wasOpen) _slideDetailIn();
+  syncHeader();
+}
+
+/**
+ * Mobile/tablet: slides the overlay detail panel in from the right.
+ * Desktop: no-op — the pane is a permanent column and already visible.
+ */
+function _slideDetailIn(): void {
+  if (getLayoutMode() === 'desktop') return;
+  el.detail.classList.remove('animating');
+  el.detail.style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
 }
 
 /**
@@ -259,9 +277,7 @@ export async function closeDetail(): Promise<void> {
     state.detailId         = prev.id;
     state.detailSlotNumber = prev.slotNumber ?? null;
     renderDetail();
-    el.pageTitle.textContent = prev.type === FORM_TYPE.PLC_SLOT
-      ? `Slot ${prev.slotNumber}`
-      : ENTITY[prev.type as EntityType].label;
+    syncHeader();
     return;
   }
 
@@ -389,17 +405,8 @@ export function openSlotDetail(rackId: string, slotNumber: number): void {
   state.detailSlotNumber = slotNumber;
   renderDetail();
 
-  if (getLayoutMode() !== 'desktop') {
-    if (!wasOpen) {
-      el.detail.classList.remove('animating');
-      el.detail.style.display = 'flex';
-      requestAnimationFrame(() => requestAnimationFrame(() => el.detail.classList.add('open')));
-    }
-  }
-  /* Back button is always shown when navigating into a slot (stack is non-empty). */
-  el.backBtn.style.visibility = 'visible';
-  el.addBtn.style.visibility  = 'hidden';
-  el.pageTitle.textContent    = `Slot ${slotNumber}`;
+  if (!wasOpen) _slideDetailIn();
+  syncHeader();
 }
 
 export async function openAssignOrCreate(childType: EntityType, parentField: string, parentId: string): Promise<void> {
@@ -495,7 +502,7 @@ export async function navigate(page: string): Promise<void> {
   if (state.formType) closeSheet();
   state.page = page;
   window.location.hash = page;
-  setHeaderForPage(page);
+  syncHeader();
   document.querySelectorAll('.nav-btn').forEach(b => {
     const btn = b as HTMLElement;
     btn.classList.toggle('active', btn.dataset.page === page);
@@ -503,25 +510,38 @@ export async function navigate(page: string): Promise<void> {
   renderPage();
 }
 
-export function setHeaderForPage(page: string): void {
-  if (page === 'home') {
-    el.pageTitle.textContent = 'blueprint';
-  } else if (page === 'checklist') {
-    el.pageTitle.textContent = 'Checklist';
-  } else if (page === 'parts-library') {
-    el.pageTitle.textContent = 'Parts Library';
-  } else {
-    el.pageTitle.textContent = (ENTITY as Record<string, EntityConfig>)[page].plural;
-  }
-  el.backBtn.style.visibility = 'hidden';
-  el.addBtn.style.visibility  = 'visible';
+function pageTitle(page: string): string {
+  if (page === 'home')          return 'blueprint';
+  if (page === 'checklist')     return 'Checklist';
+  if (page === 'parts-library') return 'Parts Library';
+  return (ENTITY as Record<string, EntityConfig>)[page]?.plural || 'blueprint';
+}
+
+/**
+ * Derives the header (title, Back, Add) from state + layout — the only place
+ * that sets them, so every path (open/close/drill-down/navigate/rotate)
+ * agrees on one rule set:
+ *  - Detail shown as an overlay (mobile/tablet), or a drilled-in child on
+ *    desktop → Back visible, Add hidden.
+ *  - Otherwise → Add visible, Back hidden.
+ *  - Title names the detail only while it covers the list (overlay); on
+ *    desktop the list stays visible, so the title stays on the page.
+ */
+export function syncHeader(): void {
+  const overlay  = !!state.detailType && getLayoutMode() !== 'desktop';
+  const showBack = overlay || state.detailStack.length > 0;
+  el.backBtn.style.visibility = showBack ? 'visible' : 'hidden';
+  el.addBtn.style.visibility  = showBack ? 'hidden'  : 'visible';
+  el.pageTitle.textContent = !overlay ? pageTitle(state.page)
+    : state.detailType === FORM_TYPE.PLC_SLOT ? `Slot ${state.detailSlotNumber}`
+    : ENTITY[state.detailType as EntityType].label;
 }
 
 /* ============================================================
    RECENT CHANGES (detail-panel autosave undo history — B4)
    The toggle button + dropdown panel live in el.header, independent of
    state.page/state.detailStack (Risk 8) — unlike backBtn/addBtn above,
-   nothing here is touched by openDetail/closeDetail/setHeaderForPage.
+   nothing here is touched by syncHeader().
    ============================================================ */
 
 /** Mirrors the open/close pattern already used for #home-stats-toggle (_statsExpanded). */

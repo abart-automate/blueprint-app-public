@@ -1,17 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-/**
- * utils.js imports app.js (for renderDetailPlaceholder), whose import graph
- * does a top-level `(window as any).exportToZip = ...` assignment (see
- * export.js) — harmless in a real browser, but it throws ReferenceError
- * under vitest's default DOM-free "node" environment (no jsdom/happy-dom
- * installed). A minimal `window = {}` stand-in — not a real DOM — is enough
- * for that one property assignment to succeed. See renderers/detail.test.ts
- * for the same setup, used there for the same reason.
- */
-(globalThis as any).window = (globalThis as any).window ?? {};
-
-const { debounce, formatRelativeTime } = await import('./utils.js');
+import { debounce, formatRelativeTime } from './utils.js';
 
 /* ============================================================
    debounce() — new reusable primitive backing the detail-panel

@@ -3,7 +3,6 @@ import type { EntityType, EnumFieldDef, FieldDef, ItemTableDef } from './entity-
 
 import { ENTITY } from './entity-config.js';
 import { state } from './state.js';
-import { renderDetailPlaceholder } from './app.js';
 import { isUsableMediaEntry } from './media.js';
 /* ============================================================
    UTILITIES
@@ -345,57 +344,52 @@ export function entityIcon(type: string, size: number = 22): string {
 /* ---- RESPONSIVE LAYOUT DETECTION ---- */
 
 /**
- * Returns the current responsive tier based on window.innerWidth.
+ * Media queries defining the responsive tiers — the single JS source of truth.
+ * The CSS @media blocks in style.css MUST use exactly the same query text
+ * (search for "LAYOUT_QUERY" there).
  *
- * 'mobile'  → < 768 px  Current single-column overlay behaviour unchanged.
- * 'tablet'  → 768–1199 px  Icon-only sidebar; detail slides in as right overlay.
- * 'desktop' → ≥ 1200 px  Three-column layout; detail is a permanent side pane.
- *
- * These thresholds mirror the CSS @media breakpoints in style.css.
+ * 'mobile'  → portrait phones: bottom nav, detail slides over the list.
+ * 'tablet'  → ≥ 768 px, OR any short landscape viewport (a phone on its side):
+ *             icon-only sidebar; detail slides in as a right overlay.
+ * 'desktop' → ≥ 1200 px: three-column layout; detail is a permanent side pane.
  */
-export function getLayoutMode(): 'mobile' | 'tablet' | 'desktop' {
-  if (window.innerWidth >= 1200) return 'desktop';
-  if (window.innerWidth >= 768)  return 'tablet';
+export const LAYOUT_QUERY = {
+  desktop: '(min-width: 1200px)',
+  tablet:  '(min-width: 768px), (orientation: landscape) and (max-height: 500px)',
+} as const;
+
+export type LayoutMode = 'mobile' | 'tablet' | 'desktop';
+
+/** Returns the current responsive tier (see LAYOUT_QUERY). */
+export function getLayoutMode(): LayoutMode {
+  if (window.matchMedia(LAYOUT_QUERY.desktop).matches) return 'desktop';
+  if (window.matchMedia(LAYOUT_QUERY.tablet).matches)  return 'tablet';
   return 'mobile';
 }
 
 /**
  * Stamps the current layout mode on document.body as a data-layout attribute
- * so both CSS (body[data-layout="desktop"] selectors) and JS can branch on it
- * without duplicating the breakpoint numbers.
- *
- * Also initialises the desktop detail pane if we are already on a wide
- * viewport at page load (before the user clicks any entity card).
- *
- * Called once from init() and re-evaluates on every window resize (debounced
- * to 100 ms to avoid thrashing layout during continuous drag).
+ * and calls `onChange(prev, next)` — once immediately (prev = null) and again
+ * whenever the tier changes (rotation, window resize, split-screen). Listens to
+ * the LAYOUT_QUERY media queries themselves rather than `resize`, so it fires
+ * exactly when the CSS switches layouts and never in between.
  */
-export function initLayoutDetection(): void {
-  function applyLayout() {
-    const mode = getLayoutMode();
-    document.body.dataset.layout = mode;
+export function initLayoutDetection(onChange: (prev: LayoutMode | null, next: LayoutMode) => void): void {
+  let current = getLayoutMode();
+  document.body.dataset.layout = current;
+  onChange(null, current);
 
-    if (mode === 'desktop') {
-      /* On desktop the detail pane is always visible.  If nothing is
-         currently selected, show the empty-state placeholder.
-         renderDetailPlaceholder lives in app.js (loaded after utils.js). */
-      const panel = document.getElementById('detail-panel');
-      if (panel) {
-        panel.style.display = 'flex';
-        if (!panel.innerHTML.trim() && typeof renderDetailPlaceholder === 'function') {
-          renderDetailPlaceholder();
-        }
-      }
-    }
+  const apply = () => {
+    const next = getLayoutMode();
+    if (next === current) return;
+    const prev = current;
+    current = next;
+    document.body.dataset.layout = next;
+    onChange(prev, next);
+  };
+  for (const q of Object.values(LAYOUT_QUERY)) {
+    window.matchMedia(q).addEventListener('change', apply);
   }
-
-  applyLayout();
-
-  let _resizeTimer: ReturnType<typeof setTimeout> | undefined;
-  window.addEventListener('resize', () => {
-    clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(applyLayout, 100);
-  });
 }
 
 /* ---- DEBOUNCE ---- */
@@ -403,8 +397,7 @@ export function initLayoutDetection(): void {
 /**
  * A debounced wrapper around `fn`. Calling it resets a `ms`-long timer;
  * `fn` only actually runs once no further calls arrive within that window.
- * Unlike the one-off inline debounce in initLayoutDetection() above, this is
- * a reusable, exported primitive with explicit `cancel()`/`flush()` escape
+ * A reusable, exported primitive with explicit `cancel()`/`flush()` escape
  * hatches — needed by the detail-panel autosave (js/renderers/detail.js),
  * which must be able to abort a pending tick (panel closed) or force it to
  * run immediately (navigating away with a pending edit).
