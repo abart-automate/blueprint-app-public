@@ -611,6 +611,10 @@ body {
   box-shadow: var(--shadow);
   margin-bottom: 12px;
 }
+/* "Download All Photos" row below the media cards; collapses when no photos exist. */
+.det-media-download { margin-bottom: 12px; }
+.det-media-download:empty { display: none; }
+.det-media-download .wiring-add-btn { margin-top: 0; background: var(--surface); }
 .det-name-row {
   display: flex;
   align-items: center;
@@ -1565,10 +1569,15 @@ body {
 }
 .home-data-btns {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .home-data-btns .btn {
   flex: 1;
+}
+/* Long-label button on its own row so the text fits inside it. */
+.home-data-btns .home-data-btn-full {
+  flex-basis: 100%;
 }
 .home-install-card {
   display: flex;

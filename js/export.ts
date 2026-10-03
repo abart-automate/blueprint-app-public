@@ -7,8 +7,9 @@ import { getAll, getSetting } from './db.js';
 import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
 import { confirm, showToast } from './state.js';
 import { calcChecklistAutoItems, getEffectiveFields } from './utils.js';
-import { collectEntityMedia, entityHasMedia, extensionForMime, isMediaRef, loadEntityMedia, readMediaForExport } from './media.js';
+import { collectEntityMedia, isMediaRef, loadEntityMedia, mediaFileNames, readMediaForExport, sanitizeFilename } from './media.js';
 import { getRunningBuild } from './app.js';
+import { saveBlob, saveMediaFilesToDevice, shouldShareFiles } from './device-save.js';
 // ZIP Export Module for Blueprint App
 // Exports object hierarchy: Areas > Panels > (Power/Safety/Assets)
 // Unassigned items go in "Field Folder" directories
@@ -40,7 +41,7 @@ export async function exportToZip(): Promise<void> {
       const proceed = await confirm(
         'Large export',
         `This export contains about ${formatBytes(mediaBytes)} of photos and videos, which may be too large ` +
-        `for this device to build in one ZIP. Use "Download Photos" on individual items if it fails. Continue?`,
+        `for this device to build in one ZIP. Use "Download All Photos" on individual items if it fails. Continue?`,
         { yesLabel: 'Export', yesClass: 'btn-primary' }
       );
       if (!proceed) return;
@@ -701,51 +702,6 @@ export function sanitizeSheetName(name: string): string {
 /** Above this much media, exportToZip() asks before building one big archive. */
 export const ZIP_SIZE_WARN_BYTES = 500 * 1024 * 1024;
 
-/** iPhone/iPad, including iPadOS reporting itself as a Mac. */
-function isIOSDevice(): boolean {
-  return /iP(hone|od|ad)/.test(navigator.userAgent)
-    || (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1);
-}
-
-/**
- * True when `file` should be saved through the OS share sheet rather than an
- * <a download> link. Only on iOS: there, downloading a blob URL is unreliable in
- * an installed (standalone) PWA, while the share sheet offers "Save to Files".
- * Android keeps the normal download (its share sheet has no generic "save" target,
- * and Chrome refuses to share ZIP files at all).
- */
-function shouldShareFile(file: File): boolean {
-  return isIOSDevice() && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
-}
-
-/**
- * Saves a generated file to the device. Returns false if the user dismissed the
- * share sheet. On iOS this must run inside a user gesture (see deliverExport()).
- * The download URL is revoked after a delay — revoking right after click() can
- * cancel the download on mobile browsers.
- */
-export async function saveBlob(blob: Blob, filename: string): Promise<boolean> {
-  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
-  if (shouldShareFile(file)) {
-    try {
-      await navigator.share({ files: [file] });
-      return true;
-    } catch (err) {
-      if ((err as DOMException)?.name === 'AbortError') return false;
-      throw err;
-    }
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
-}
-
 /**
  * Hands a just-generated export to the user and closes the progress modal.
  * Building a ZIP takes long enough that the tap which started it no longer counts
@@ -756,7 +712,7 @@ export async function saveBlob(blob: Blob, filename: string): Promise<boolean> {
  */
 export async function deliverExport(blob: Blob, filename: string): Promise<boolean> {
   const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
-  if (!shouldShareFile(file)) {
+  if (!shouldShareFiles([file])) {
     hideExportProgress();
     return saveBlob(blob, filename);
   }
@@ -911,28 +867,18 @@ export async function processArea(
 let _zipMissingMedia = 0;
 
 /** File extension for one exported item (the stored thumbnail is never exported). */
-function exportExtension(item: MediaItem): string {
-  return extensionForMime(item.mimeType || item.blob?.type);
-}
-
 /**
  * Writes a record's media (original files, loaded read-only from the `media`
- * store) into a JSZip folder: named-photo slots as "<Slot>.<ext>" /
- * "<Slot>-2.<ext>", gallery images as "1.<ext>", "2.<ext>"…. Numbering follows
- * the stored order, so an unavailable photo leaves a gap rather than renaming
- * the others. Returns how many items were unavailable.
+ * store) into a JSZip folder, named by mediaFileNames(). Returns how many items
+ * were unavailable.
  */
 export async function _exportMedia(entity: MediaFields, photosFolder: any): Promise<number> {
   const { images, slots } = await loadEntityMedia(entity, readMediaForExport);
   let missing = 0;
-  const add = (item: MediaItem, name: string) => {
-    if (!item.blob || item.missing) { missing++; return; }
-    photosFolder.file(`${name}.${exportExtension(item)}`, item.blob);
-  };
-  for (const [slotName, items] of slots) {
-    items.forEach((item, i) => add(item, `${sanitizeFilename(slotName)}${items.length > 1 ? `-${i + 1}` : ''}`));
+  for (const { item, name } of mediaFileNames(images, slots)) {
+    if (!item.blob || item.missing) { missing++; continue; }
+    photosFolder.file(name, item.blob);
   }
-  images.forEach((item, i) => add(item, String(i + 1)));
   _zipMissingMedia += missing;
   return missing;
 }
@@ -967,10 +913,6 @@ export function generateObjectFolderName(item: DbRecord, siblings: DbRecord[]): 
   }
 
   return finalName;
-}
-
-export function sanitizeFilename(name: string): string {
-  return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -1043,32 +985,33 @@ export function hideExportProgress(): void {
 }
 
 /**
- * Downloads one record's photos/videos (original files) as a ZIP.
- * Pass the *current* media — e.g. the detail panel's live state — not a record
- * snapshot, so photos added since the panel opened are included.
- * Reuses _exportMedia() for consistent file naming. JSZip is a global from the
- * vendor <script> tag in index.html.
+ * "Download All Photos": saves one record's photos/videos (original files) to the
+ * device's photo library — see saveMediaFilesToDevice(). Takes the *loaded* media
+ * (the detail panel's live state, which also covers photos added since it opened)
+ * so the Files are built synchronously and the tap's user gesture survives to
+ * navigator.share(). File names match the ZIP export's (mediaFileNames()).
  */
-export async function downloadEntityPhotos(entityName: string, media: MediaFields): Promise<void> {
-  if (!entityHasMedia(media)) {
-    showToast('No photos to download for this item.', 'error');
+export async function downloadEntityMediaToDevice(
+  entityName: string,
+  media: { images: MediaItem[], namedPhotos: Record<string, MediaItem[]> },
+): Promise<void> {
+  const prefix = `${sanitizeFilename(entityName) || 'photo'} - `;
+  const named = mediaFileNames(media.images, Object.entries(media.namedPhotos), prefix);
+  const files = named
+    .filter(({ item }) => item.blob && !item.missing)
+    .map(({ item, name }) => new File([item.blob as Blob], name, { type: item.mimeType || (item.blob as Blob).type }));
+  const missing = named.length - files.length;
+  if (!files.length) {
+    showToast(named.length
+      ? 'These photos are unavailable on this device and cannot be downloaded.'
+      : 'No photos to download for this item.', 'error');
     return;
   }
   try {
-    showExportProgress('Preparing photos...');
-    const zip = new JSZip();
-    const missing = await _exportMedia(media, zip);
-    if (Object.keys(zip.files).length === 0) {
-      hideExportProgress();
-      showToast('These photos are unavailable on this device and cannot be downloaded.', 'error');
-      return;
-    }
-    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
-    if (await deliverExport(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`) && missing) {
+    if (await saveMediaFilesToDevice(files) && missing) {
       showToast(`${missing} unavailable photo(s) could not be included.`, 'error');
     }
   } catch (err) {
-    hideExportProgress();
     showToast('Photo download failed: ' + (err instanceof Error ? err.message : String(err)), 'error');
   }
 }

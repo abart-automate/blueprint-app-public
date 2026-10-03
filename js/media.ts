@@ -193,6 +193,37 @@ export function extensionForMime(mimeType: string | undefined): string {
   return MIME_EXTENSIONS[mimeType] ?? (mimeType.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'bin');
 }
 
+/** File extension for a loaded item: its stored MIME type, else the Blob's. */
+export function mediaItemExtension(item: MediaItem): string {
+  return extensionForMime(item.mimeType || item.blob?.type);
+}
+
+/** Replaces characters that are invalid in file/folder names and collapses whitespace. */
+export function sanitizeFilename(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * File names for a record's loaded media, shared by the ZIP export and "Download
+ * All Photos": named-photo slots as "<Slot>.<ext>" / "<Slot>-2.<ext>", gallery
+ * images as "1.<ext>", "2.<ext>"…, each prefixed with `prefix` when given.
+ * Numbering follows the stored order and unavailable items are still listed, so
+ * callers that skip them leave a gap rather than renaming the others.
+ */
+export function mediaFileNames(
+  images: MediaItem[],
+  slots: Array<[string, MediaItem[]]>,
+  prefix = '',
+): Array<{ item: MediaItem, name: string }> {
+  const out: Array<{ item: MediaItem, name: string }> = [];
+  const add = (item: MediaItem, base: string) => out.push({ item, name: `${prefix}${base}.${mediaItemExtension(item)}` });
+  for (const [slotName, items] of slots) {
+    items.forEach((item, i) => add(item, `${sanitizeFilename(slotName)}${items.length > 1 ? `-${i + 1}` : ''}`));
+  }
+  images.forEach((item, i) => add(item, String(i + 1)));
+  return out;
+}
+
 /**
  * Infers a MIME type from a filename. Some Android pickers hand over files with
  * an empty `type` (notably HEIC), so processMediaFile() falls back to this.

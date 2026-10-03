@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import type { MediaRef } from './media.js';
+import type { MediaItem, MediaRef } from './media.js';
 
 /**
  * media.ts imports only db.ts (no top-level side effects) and lightbox.ts only
@@ -26,8 +26,10 @@ import {
   isUsableMediaEntry,
   mapEntityMedia,
   mapEntityMediaAsync,
+  mediaFileNames,
   mimeFromFilename,
   needsReencode,
+  sanitizeFilename,
   toMediaRef,
   toMediaRefs,
 } from './media.js';
@@ -196,5 +198,28 @@ describe('computeZoomLevels', () => {
     expect(secondary).toBeLessThanOrEqual(max);
     expect(secondary).toBeGreaterThanOrEqual(1);
     expect(max).toBeCloseTo(3.6);
+  });
+});
+
+describe('mediaFileNames', () => {
+  const item = (mimeType = 'image/jpeg', extra: Partial<MediaItem> = {}): MediaItem => ({ mediaId: '', mimeType, ...extra });
+
+  it('names single and repeated slot entries, then numbers the gallery', () => {
+    const names = mediaFileNames(
+      [item(), item('video/quicktime')],
+      [['Nameplate', [item('image/png')]], ['Front / Back', [item(), item()]]],
+    ).map(n => n.name);
+    expect(names).toEqual(['Nameplate.png', 'Front _ Back-1.jpg', 'Front _ Back-2.jpg', '1.jpg', '2.mov']);
+  });
+
+  it('applies the prefix and keeps missing items so numbering leaves gaps', () => {
+    const missing = item('image/jpeg', { missing: true });
+    const named = mediaFileNames([item(), missing, item()], [], 'Pump 1 - ');
+    expect(named.map(n => n.name)).toEqual(['Pump 1 - 1.jpg', 'Pump 1 - 2.jpg', 'Pump 1 - 3.jpg']);
+    expect(named[1].item).toBe(missing);
+  });
+
+  it('sanitizeFilename replaces invalid characters and collapses whitespace', () => {
+    expect(sanitizeFilename('  a:b*c   d  ')).toBe('a_b_c d');
   });
 });

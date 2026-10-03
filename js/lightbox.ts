@@ -1,6 +1,8 @@
 import type { MediaItem } from './media.js';
 
-import { createMediaUrl, isVideoMime, revokeTrackedMediaUrl } from './media.js';
+import { saveMediaFilesToDevice } from './device-save.js';
+import { createMediaUrl, isVideoMime, mediaItemExtension, revokeTrackedMediaUrl } from './media.js';
+import { showToast } from './state.js';
 /* ============================================================
    LIGHTBOX
    Fullscreen photo/video viewer built on PhotoSwipe v5: pinch / wheel
@@ -32,6 +34,28 @@ async function measureImage(src: string): Promise<{ width: number, height: numbe
   img.src = src;
   await img.decode();
   return { width: img.naturalWidth, height: img.naturalHeight };
+}
+
+/** Download icon sized and styled like PhotoSwipe's built-in toolbar icons. */
+const DOWNLOAD_ICON =
+  '<svg class="pswp__icn" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">' +
+  '<path d="M16 6v13M10.5 13.5 16 19l5.5-5.5M8 23h16" fill="none" stroke="currentColor" ' +
+  'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/**
+ * Saves one viewed item. The File is built from the already-loaded Blob without
+ * awaiting anything first, so the tap still counts as a user gesture for the iOS
+ * share sheet ("Save Image" / "Save Video" → Photos).
+ */
+async function saveLightboxItem(item: MediaItem | undefined): Promise<void> {
+  if (!item?.blob) return;
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const file = new File([item.blob], `blueprint-${stamp}.${mediaItemExtension(item)}`, { type: item.mimeType || item.blob.type });
+  try {
+    await saveMediaFilesToDevice([file]);
+  } catch (err) {
+    showToast('Could not save photo: ' + (err instanceof Error ? err.message : String(err)), 'error');
+  }
 }
 
 /**
@@ -111,6 +135,18 @@ export async function openMediaLightbox(allItems: MediaItem[], index: number): P
 
   new PhotoSwipeVideoPlugin(lightbox, {
     videoAttributes: { controls: '', playsinline: '' },
+  });
+
+  // Toolbar button: save the item being viewed to the device (camera roll on iOS).
+  lightbox.on('uiRegister', () => {
+    lightbox.pswp?.ui?.registerElement({
+      name: 'download',
+      order: 9,
+      isButton: true,
+      title: 'Save to device',
+      html: DOWNLOAD_ICON,
+      onClick: (_e, _el, pswp) => void saveLightboxItem(items[pswp.currIndex]),
+    });
   });
 
   // Fallback for legacy slides opened without stored dimensions: read the real size once loaded.

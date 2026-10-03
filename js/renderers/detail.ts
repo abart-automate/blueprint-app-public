@@ -10,7 +10,7 @@ import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, 
 import { entityHasMedia, loadMedia, revokeBlobUrlsInContainer, toMediaRefs } from '../media.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
 import { deleteItem, duplicateItem, validateRequiredFields, validateUniqueIp, validateUniqueName } from '../operations.js';
-import { downloadEntityPhotos } from '../export.js';
+import { downloadEntityMediaToDevice } from '../export.js';
 import { cardHTML, cardThumbHtml, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm, refreshHistoryUi } from '../app.js';
 /* ============================================================
    DETAIL VIEW RENDERERS
@@ -515,21 +515,24 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
           <div id="${slotId}" class="img-grid"></div>
         </div>`;
     }).join('');
-    // Without an "Other Media" card, the download button lives here instead.
-    const downloadSlot = cfg.noImages ? `<div id="det-media-download"></div>` : '';
-    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml + downloadSlot, { expanded: true });
+    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml, { expanded: true });
   }
 
-  // Other media gallery placeholder. The Download Photos button is (re)built in the
-  // mounting block below by refreshDownloadButton(), once state.detailImages is populated.
+  // Other media gallery placeholder
   let otherPhotosCard = '';
   if (!cfg.noImages) {
     otherPhotosCard = buildCollapsibleCard(
       'Other Media',
-      `<div id="det-gallery" class="img-grid"></div><div id="det-media-download"></div>`,
+      `<div id="det-gallery" class="img-grid"></div>`,
       { expanded: true }
     );
   }
+
+  // "Download All Photos" sits below both media cards since it covers both. The
+  // button itself is (re)built in the mounting block below by refreshDownloadButton().
+  const mediaDownloadSlot = (cfg.requiredPhotoSlots || !cfg.noImages)
+    ? `<div id="det-media-download" class="det-media-download"></div>`
+    : '';
 
   /* ------------------------------------------------------------------
      Switch/Router tables — editable inline via the parameterised renderers.
@@ -646,6 +649,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
       ${physicalSectionCards}
       ${requiredPhotosCard}
       ${otherPhotosCard}
+      ${mediaDownloadSlot}
       ${childSections}
     </div>
   `;
@@ -714,8 +718,8 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
      to a closed tab, and undo (editHistory) deliberately never covers
      images/namedPhotos, so there is nothing gained by delaying the write.
      ------------------------------------------------------------------ */
-  // Download Photos button: re-evaluated on every gallery/slot re-render so it
-  // appears/disappears live and always zips the current media, including photos
+  // Download All Photos button: re-evaluated on every gallery/slot re-render so it
+  // appears/disappears live and always saves the current media, including photos
   // added since the panel opened.
   const downloadContainer = document.getElementById('det-media-download');
   const refreshDownloadButton = () => {
@@ -726,10 +730,10 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'wiring-add-btn det-download-photos-btn';
-    btn.textContent = 'Download Photos';
+    btn.textContent = 'Download All Photos';
     btn.addEventListener('click', () => {
       const name = String(state.detailChanges.name ?? item.name ?? '');
-      void downloadEntityPhotos(name, currentMedia());
+      void downloadEntityMediaToDevice(name, currentMedia());
     });
     downloadContainer.appendChild(btn);
   };
