@@ -1,6 +1,48 @@
 // @ts-check
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/**
+ * Build stamp for sw.js's SW_BUILD: "<UTC YYYYMMDDTHHmmZ>-<short commit>".
+ * CI uses GITHUB_SHA (the exact commit being deployed). Locally it falls back
+ * to `git rev-parse --short HEAD`, with "-dirty" when the tree has uncommitted
+ * changes, so a local build is never mistaken for a deployed one.
+ * See the comment above SW_BUILD in sw.js for why the stamp must change on every build.
+ */
+function computeBuildStamp() {
+  const now = new Date();
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  const utc = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
+    `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}Z`;
+  let commit = process.env.GITHUB_SHA?.slice(0, 7);
+  if (!commit) {
+    try {
+      commit = execSync('git rev-parse --short=7 HEAD').toString().trim();
+      if (execSync('git status --porcelain').toString().trim()) commit += '-dirty';
+    } catch {
+      commit = 'unknown';
+    }
+  }
+  return `${utc}-${commit}`;
+}
+
+const BUILD_STAMP = computeBuildStamp();
+
+/**
+ * Replaces the '__SW_BUILD__' placeholder in sw.js with BUILD_STAMP. Runs inside
+ * vite-plugin-pwa's separate service-worker build (injectManifest.buildPlugins).
+ * @returns {import('vite').Plugin}
+ */
+function swBuildStamp() {
+  return {
+    name: 'sw-build-stamp',
+    transform(code, id) {
+      if (!id.endsWith('sw.js') || !code.includes('__SW_BUILD__')) return null;
+      return { code: code.replace(/'__SW_BUILD__'/g, JSON.stringify(BUILD_STAMP)), map: null };
+    },
+  };
+}
 
 export default defineConfig({
   // GitHub Pages serves this as a project page under /blueprint-app-public/,
@@ -25,6 +67,7 @@ export default defineConfig({
         // default here is to content-hash everything itself, which is
         // redundant work on top of what Vite already did).
         globPatterns: ['**/*.{js,css,html,png,json,svg}'],
+        buildPlugins: { vite: [swBuildStamp()] },
       },
       // index.html already registers sw.js itself, with a custom gated
       // update flow (see index.html's registration script and

@@ -1,32 +1,44 @@
 import type { ItemTableRow, NetworkPortRow, UntypedTableRow } from '../state.js';
-import type { BlobMediaItem, NormalizedMediaItem } from '../media.js';
+import type { MediaItem } from '../media.js';
 import type { NetworkPortEntry } from '../utils.js';
 
 import { CARD_TYPE_NET_TYPES, ENTITY, ICON_RM } from '../entity-config.js';
 import { $, showToast, state } from '../state.js';
 import { buildNetworkOptions, esc, getEntityNetworkPorts, getIpPrefix, getNetworkAddrFields } from '../utils.js';
-import { CAMERA_ACCEPT, LIBRARY_ACCEPT, createMediaUrl, isVideoMime, processMediaFile, revokeBlobUrlsInContainer } from '../media.js';
+import { CAMERA_ACCEPT, LIBRARY_ACCEPT, createMediaUrl, isVideoMime, processMediaFile, revokeBlobUrlsInContainer, saveNewMedia } from '../media.js';
 import { openMediaLightbox } from '../lightbox.js';
 /* ============================================================
    TABLE & MEDIA RENDERERS
    All dynamic table UIs rendered into the form sheet.
    Depends on: state, ENTITY, esc, getIpPrefix (utils.js);
-               processMediaFile, createMediaUrl (media.js);
+               processMediaFile, saveNewMedia, createMediaUrl (media.js);
                openMediaLightbox (lightbox.js).
    ============================================================ */
 
 /* ---- SHARED MEDIA RENDERER ---- */
 
+/** Shown when a missing photo's tile is tapped. */
+const MISSING_MEDIA_MESSAGE =
+  "This photo's data is no longer stored on this device. Restore it from a JSON backup " +
+  '(Home → Restore Photos from Backup), or remove it and add the photo again.';
+
 /**
  * Returns a .img-thumb DOM element for one media item. Images show the small
- * stored thumbnail (or the full blob for items saved before thumbnails existed)
- * and decode lazily and asynchronously, so long galleries stay responsive.
+ * stored thumbnail (falling back to the full blob) and decode asynchronously.
+ * Items whose bytes are unavailable render a "Photo unavailable" tile instead of
+ * a blank image; it can still be removed, and tapping it explains how to recover.
  */
-export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onClick }: { onRemove?: (() => void) | null, onClick?: () => void } = {}): HTMLElement {
+export function renderMediaThumb(mediaItem: MediaItem, { onRemove, onClick }: { onRemove?: (() => void) | null, onClick?: () => void } = {}): HTMLElement {
   const div = document.createElement('div');
   div.className = 'img-thumb';
-  let media: HTMLImageElement | HTMLVideoElement;
-  if (isVideoMime(mediaItem.mimeType)) {
+  let media: HTMLElement;
+  if (mediaItem.missing) {
+    media = document.createElement('div');
+    media.className = 'img-thumb-missing';
+    media.textContent = 'Photo unavailable';
+    media.addEventListener('click', () => showToast(MISSING_MEDIA_MESSAGE, 'error'));
+    onClick = undefined;
+  } else if (isVideoMime(mediaItem.mimeType)) {
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
@@ -39,7 +51,6 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
     const img = document.createElement('img');
     img.alt = '';
     img.decoding = 'async';
-    img.loading = 'lazy';
     img.src = createMediaUrl(mediaItem, 'thumb');
     media = img;
   }
@@ -65,15 +76,14 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
  *     `capture` is ignored and the button would just repeat the library button.
  *   - The library button opens the Photos sheet (iOS) or the photo picker (Android).
  *
- * Each picked file goes through processMediaFile(). While that runs, the control
- * is marked aria-busy and shows progress. Files that fail are toasted and skipped.
- *
- * Known limitation: on low-memory Android devices, Chrome may discard the page while
- * the camera app is in front. The detail panel commits media to IndexedDB on every
- * add, so nothing is lost there. The New-item form and Quick Add keep media in
- * memory until they're saved.
+ * Each picked file goes through processMediaFile() and is stored immediately as a
+ * `media` row (saveNewMedia), so onFiles receives already-stored items and a capture
+ * survives the page being discarded while the camera app is in front. Rows whose
+ * owning form is later cancelled are reclaimed by collectOrphanMedia().
+ * While processing, the control is marked aria-busy and shows progress. Files that
+ * fail are toasted and skipped.
  */
-export function buildMediaPicker(libraryLabel: string, onFiles: (items: BlobMediaItem[]) => void): HTMLElement {
+export function buildMediaPicker(libraryLabel: string, onFiles: (items: MediaItem[]) => void): HTMLElement {
   const picker = document.createElement('div');
   picker.className = 'media-picker';
   picker.innerHTML = `
@@ -88,10 +98,10 @@ export function buildMediaPicker(libraryLabel: string, onFiles: (items: BlobMedi
       input.value = '';
       if (!files.length) return;
       picker.setAttribute('aria-busy', 'true');
-      const results: BlobMediaItem[] = [];
+      const results: MediaItem[] = [];
       for (const [i, file] of files.entries()) {
         status.textContent = files.length > 1 ? `Processing ${i + 1}/${files.length}…` : 'Processing…';
-        try { results.push(await processMediaFile(file)); }
+        try { results.push(await saveNewMedia(await processMediaFile(file))); }
         catch (err) { showToast(err instanceof Error ? err.message : String(err), 'error'); }
       }
       picker.removeAttribute('aria-busy');
@@ -108,8 +118,8 @@ export function buildMediaPicker(libraryLabel: string, onFiles: (items: BlobMedi
  */
 export function _renderMediaItems(
   containerEl: HTMLElement,
-  mediaItems: NormalizedMediaItem[],
-  { onAdd, onRemove, readonly, emptyHtml, addLabel = 'Choose from Library' }: { onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean, emptyHtml?: string, addLabel?: string } = {}
+  mediaItems: MediaItem[],
+  { onAdd, onRemove, readonly, emptyHtml, addLabel = 'Choose from Library' }: { onAdd?: (items: MediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean, emptyHtml?: string, addLabel?: string } = {}
 ): void {
   // Revoke outgoing blob URLs before clearing — see revokeBlobUrlsInContainer() in media.ts.
   revokeBlobUrlsInContainer(containerEl);
@@ -134,8 +144,8 @@ export function _renderMediaItems(
  */
 export function renderMediaGallery(
   containerEl: HTMLElement,
-  mediaItems: NormalizedMediaItem[],
-  { onAdd, onRemove, readonly }: { onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean } = {}
+  mediaItems: MediaItem[],
+  { onAdd, onRemove, readonly }: { onAdd?: (items: MediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean } = {}
 ): void {
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,
@@ -150,8 +160,8 @@ export function renderMediaGallery(
 export function renderMediaSlot(
   containerEl: HTMLElement,
   slotName: string,
-  mediaItems: NormalizedMediaItem[],
-  { onAdd, onRemove, readonly }: { onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean } = {}
+  mediaItems: MediaItem[],
+  { onAdd, onRemove, readonly }: { onAdd?: (items: MediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean } = {}
 ): void {
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,

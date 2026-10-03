@@ -1,13 +1,13 @@
 import type { DbRecord } from './db.js';
 import type { EntityType, EnumFieldDef, FieldDef } from './entity-config.js';
 import type { ChecklistItem } from './utils.js';
-import type { MediaFields, MediaItemLike } from './media.js';
+import type { MediaFields, MediaItem } from './media.js';
 
 import { getAll, getSetting } from './db.js';
 import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
 import { confirm, showToast } from './state.js';
 import { calcChecklistAutoItems, getEffectiveFields } from './utils.js';
-import { base64ToMediaItem, collectEntityMedia, entityHasMedia, entityMediaLists, extensionForMime } from './media.js';
+import { collectEntityMedia, entityHasMedia, extensionForMime, isMediaRef, loadEntityMedia, readMediaForExport } from './media.js';
 import { getRunningBuild } from './app.js';
 // ZIP Export Module for Blueprint App
 // Exports object hierarchy: Areas > Panels > (Power/Safety/Assets)
@@ -46,6 +46,8 @@ export async function exportToZip(): Promise<void> {
       if (!proceed) return;
       showExportProgress('Starting export...');
     }
+
+    _zipMissingMedia = 0;
 
     // Build indexing maps
     const areaMap = new Map(areas.map(a => [a.id, a]));
@@ -116,14 +118,16 @@ export async function exportToZip(): Promise<void> {
       const itemFolder = checklistFolder.folder(folderName);
       const { images: _imgs, ...itemData } = item;
       itemFolder.file('data.json', JSON.stringify(itemData, null, 2));
-      _exportMedia(item, itemFolder.folder('photos'));
+      await _exportMedia(item, itemFolder.folder('photos'));
     }
 
     // Generate and download ZIP
     updateProgress(totalItems, totalItems, 'Generating ZIP file...');
     const zipBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
     if (await deliverExport(zipBlob, `blueprint-export-${new Date().toISOString().split('T')[0]}.zip`)) {
-      showToast('Export completed successfully!', 'success');
+      showToast(_zipMissingMedia
+        ? `Export completed — ${_zipMissingMedia} unavailable photo(s) could not be included`
+        : 'Export completed successfully!', 'success');
     }
 
   } catch (error) {
@@ -792,11 +796,17 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-/** Approximate bytes of media (original blobs only) across the given records. */
+/**
+ * Approximate bytes of media (original files only) across the given records,
+ * without loading any media: refs carry their `size`. Pre-v4 inline entries are
+ * sized from the Blob, and base64 strings decode to ~3/4 of their length.
+ */
 export function estimateMediaBytes(records: MediaFields[]): number {
-  return records.reduce((sum, rec) => sum + collectEntityMedia(rec).reduce(
-    // Legacy base64 strings decode to ~3/4 of their length.
-    (s, item) => s + (typeof item === 'string' ? item.length * 0.75 : item.blob?.size ?? 0), 0), 0);
+  return records.reduce((sum, rec) => sum + collectEntityMedia(rec).reduce((s: number, entry) => {
+    if (typeof entry === 'string') return s + entry.length * 0.75;
+    if (isMediaRef(entry)) return s + (entry.damaged ? 0 : entry.size ?? 0);
+    return s + (entry.blob?.size ?? 0);
+  }, 0), 0);
 }
 
 export async function processArea(
@@ -894,34 +904,37 @@ export async function processArea(
 }
 
 /**
- * Returns the exportable original bytes and file extension of one media item
- * (legacy base64 strings are decoded; the stored thumbnail is never exported).
- * Returns null for items with nothing to export.
+ * Photos skipped by _exportMedia() during the current exportToZip() run because
+ * their bytes are unavailable — reset at the start of each export and reported in
+ * its completion toast. Module-scoped so processArea()'s signature stays unchanged.
  */
-export function _mediaItemToExport(item: MediaItemLike): { blob: Blob, ext: string } | null {
-  if (typeof item === 'string') item = base64ToMediaItem(item);
-  else if (item._legacySrc) item = base64ToMediaItem(item._legacySrc);
-  if (!item.blob) return null;
-  return { blob: item.blob, ext: extensionForMime(item.mimeType || item.blob.type) };
+let _zipMissingMedia = 0;
+
+/** File extension for one exported item (the stored thumbnail is never exported). */
+function exportExtension(item: MediaItem): string {
+  return extensionForMime(item.mimeType || item.blob?.type);
 }
 
 /**
- * Writes a record's media into a JSZip folder: named-photo slots as
- * "<Slot>.<ext>" / "<Slot>-2.<ext>", gallery images as "1.<ext>", "2.<ext>"….
+ * Writes a record's media (original files, loaded read-only from the `media`
+ * store) into a JSZip folder: named-photo slots as "<Slot>.<ext>" /
+ * "<Slot>-2.<ext>", gallery images as "1.<ext>", "2.<ext>"…. Numbering follows
+ * the stored order, so an unavailable photo leaves a gap rather than renaming
+ * the others. Returns how many items were unavailable.
  */
-export function _exportMedia(entity: MediaFields, photosFolder: any): void {
-  const { images, slots } = entityMediaLists(entity);
+export async function _exportMedia(entity: MediaFields, photosFolder: any): Promise<number> {
+  const { images, slots } = await loadEntityMedia(entity, readMediaForExport);
+  let missing = 0;
+  const add = (item: MediaItem, name: string) => {
+    if (!item.blob || item.missing) { missing++; return; }
+    photosFolder.file(`${name}.${exportExtension(item)}`, item.blob);
+  };
   for (const [slotName, items] of slots) {
-    items.forEach((item, i) => {
-      const out = _mediaItemToExport(item);
-      const suffix = items.length > 1 ? `-${i + 1}` : '';
-      if (out) photosFolder.file(`${sanitizeFilename(slotName)}${suffix}.${out.ext}`, out.blob);
-    });
+    items.forEach((item, i) => add(item, `${sanitizeFilename(slotName)}${items.length > 1 ? `-${i + 1}` : ''}`));
   }
-  images.forEach((item, i) => {
-    const out = _mediaItemToExport(item);
-    if (out) photosFolder.file(`${i + 1}.${out.ext}`, out.blob);
-  });
+  images.forEach((item, i) => add(item, String(i + 1)));
+  _zipMissingMedia += missing;
+  return missing;
 }
 
 export async function processPanel(panel: DbRecord, panelFolder: any): Promise<void> {
@@ -929,7 +942,7 @@ export async function processPanel(panel: DbRecord, panelFolder: any): Promise<v
   delete data.namedPhotos;
   delete data.images;
   panelFolder.file('data.json', JSON.stringify(data, null, 2));
-  _exportMedia(panel, panelFolder.folder('Photos'));
+  await _exportMedia(panel, panelFolder.folder('Photos'));
 }
 
 export async function processObject(item: DbRecord, itemFolder: any): Promise<void> {
@@ -937,7 +950,7 @@ export async function processObject(item: DbRecord, itemFolder: any): Promise<vo
   delete data.namedPhotos;
   delete data.images;
   itemFolder.file('data.json', JSON.stringify(data, null, 2));
-  _exportMedia(item, itemFolder.folder('photos'));
+  await _exportMedia(item, itemFolder.folder('photos'));
 }
 
 export function generateObjectFolderName(item: DbRecord, siblings: DbRecord[]): string {
@@ -960,7 +973,11 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
-export function showExportProgress(message: string): void {
+/**
+ * Shows the shared progress modal (export, import, and the photo-storage upgrade).
+ * @param title - Heading; defaults to the original export wording.
+ */
+export function showExportProgress(message: string, titleText: string = 'Exporting Data'): void {
   hideExportProgress();
 
   const backdrop = document.createElement('div');
@@ -970,7 +987,7 @@ export function showExportProgress(message: string): void {
   modal.className = 'export-progress-modal';
 
   const title = document.createElement('h3');
-  title.textContent = 'Exporting Data';
+  title.textContent = titleText;
 
   const progressBar = document.createElement('div');
   progressBar.className = 'progress-bar';
@@ -1002,7 +1019,8 @@ export function showExportProgress(message: string): void {
   document.body.appendChild(container);
 }
 
-export function updateProgress(current: number, total: number, message: string | null = null): void {
+/** Updates the progress modal. `unit` labels the count line ("3 / 20 photos"). */
+export function updateProgress(current: number, total: number, message: string | null = null, unit: string = 'sheets'): void {
   const container = document.getElementById('export-progress-modal');
   if (!container) return;
 
@@ -1012,7 +1030,7 @@ export function updateProgress(current: number, total: number, message: string |
 
   const percent = total > 0 ? (current / total) * 100 : 0;
   if (fill) fill.style.width = `${percent}%`;
-  if (count) count.textContent = `${current} / ${total} sheets`;
+  if (count) count.textContent = `${current} / ${total} ${unit}`;
 
   if (message && text) {
     text.textContent = message;
@@ -1039,9 +1057,16 @@ export async function downloadEntityPhotos(entityName: string, media: MediaField
   try {
     showExportProgress('Preparing photos...');
     const zip = new JSZip();
-    _exportMedia(media, zip);
+    const missing = await _exportMedia(media, zip);
+    if (Object.keys(zip.files).length === 0) {
+      hideExportProgress();
+      showToast('These photos are unavailable on this device and cannot be downloaded.', 'error');
+      return;
+    }
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
-    await deliverExport(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`);
+    if (await deliverExport(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`) && missing) {
+      showToast(`${missing} unavailable photo(s) could not be included.`, 'error');
+    }
   } catch (err) {
     hideExportProgress();
     showToast('Photo download failed: ' + (err instanceof Error ? err.message : String(err)), 'error');

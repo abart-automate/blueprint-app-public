@@ -1,6 +1,6 @@
 import type { DbRecord, StoreName } from './db.js';
 import type { EntityType, FormType } from './entity-config.js';
-import type { BlobMediaItem, NormalizedMediaItem } from './media.js';
+import type { MediaItem } from './media.js';
 
 import { getAll } from './db.js';
 /* ============================================================
@@ -10,10 +10,11 @@ import { getAll } from './db.js';
    ============================================================ */
 
 /**
- * A media item as held in state's *editable* image/photo arrays (form sheet,
- * Quick Add) — always blob-backed; see media.ts's toBlobMediaItems().
+ * A media item as held in state's editable image/photo arrays (detail panel,
+ * form sheet, Quick Add): a stored MediaRef plus its loaded Blobs — see media.ts.
+ * Records store toMediaRefs() of these, never the Blobs themselves.
  */
-export type EditableMediaItem = BlobMediaItem;
+export type EditableMediaItem = MediaItem;
 
 export interface ItemTableRow { terminal?: string, label?: string }
 
@@ -62,14 +63,10 @@ export interface State {
   detailSlotNumber: number | null;
   /** Pending field-level edits (key -> value). */
   detailChanges: Record<string, any>;
-  /**
-   * "Other Media" gallery. Unlike formImages, not blob-converted at load
-   * time (normalizeMediaItems() may leave legacy base64 items without a
-   * real Blob) — freshenMediaItems() only runs at save time.
-   */
-  detailImages: NormalizedMediaItem[];
+  /** "Other Media" gallery, loaded from the `media` store (media.ts loadMedia()). */
+  detailImages: MediaItem[];
   /** Keyed by required-photo slot name. */
-  detailNamedPhotos: Record<string, NormalizedMediaItem[]>;
+  detailNamedPhotos: Record<string, MediaItem[]>;
   /** True after any add/remove so the navigation guard fires. */
   detailMediaDirty: boolean;
   /** Keyed by wiring-table key. */
@@ -153,7 +150,7 @@ export const state: State = {
   detailChanges:    {},        // pending field-level edits (key → value)
   // Editable media and table state for the detail panel, mirroring the form state pattern.
   // Initialized from the current item when the detail opens; cleared on save/discard/close.
-  detailImages:          [],   // Array<{blob, mimeType}> for the "Other Media" gallery
+  detailImages:          [],   // MediaItem[] for the "Other Media" gallery
   detailNamedPhotos:     {},   // { [slotName]: Array<{blob, mimeType}> } for required photo slots
   detailMediaDirty:      false, // true after any add/remove so navigation guard fires
   detailItemTables:      {},   // { [tableKey]: Array<{terminal, label}> } for wiring tables

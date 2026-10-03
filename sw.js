@@ -1,43 +1,33 @@
-// SW_BUILD is auto-stamped "<UTC timestamp>-<tree hash>" (e.g.
-// '20260909T1432Z-dbb0ef0') by a pre-commit hook (scripts/git-hooks/
-// pre-commit -> scripts/stamp-sw-build.js) on every commit — do not
-// hand-edit this value, it's overwritten on the next commit. The
-// timestamp is there so "what build is this install on, and when was it
-// published" can be read straight off this value (e.g. in DevTools ->
-// Application -> Cache Storage, or console-logged) without a git log
-// lookup; the hash is what actually guarantees uniqueness. It's a git
-// tree hash (`git write-tree`), not a commit hash — a commit's hash is
-// derived from its own tree, so a file can never correctly embed its own
-// commit's hash (stamping it in would change the tree, which changes the
-// hash). The tree hash is computed just before this file is rewritten, so
-// it correctly identifies this commit instead of always lagging one behind
-// (see stamp-sw-build.js for the full explanation).
+// SW_BUILD is stamped at BUILD time as "<UTC timestamp>-<short commit>"
+// (e.g. '20261003T1432Z-f4aef4f') by the swBuildStamp plugin in
+// vite.config.mjs, which replaces the '__SW_BUILD__' placeholder below. Do
+// not hand-edit it. The commit is GITHUB_SHA in CI (the commit actually
+// deployed) or `git rev-parse --short HEAD` locally (+ "-dirty" for
+// uncommitted changes). Stamping at build time, not commit time, means no
+// per-clone git-hook setup can be forgotten: an earlier pre-commit-hook
+// design silently stopped stamping on a clone without
+// `core.hooksPath` configured, freezing this value for weeks.
 //
 // It exists because the browser's service-worker update check only detects
 // a new version by byte-diffing THIS file's own content against what's
 // currently registered — it does not look inside files this script imports.
-// An earlier design derived CACHE_NAME from a hand-maintained version string
-// via importScripts(); since that never changed sw.js's own bytes, the
-// browser always concluded "no update" and the "Update Now" banner (wired in
-// index.html's registration script -> init.js's initUpdateBanner) never
-// appeared, no matter how many times that string was bumped. Deriving this
-// from the commit hash instead means there's nothing to remember to bump,
-// and it can never silently drift out of sync the way a hand-edited value
-// can.
+// A new stamp per build guarantees the bytes change, so the "Update Now"
+// banner (index.html's registration script -> init.js's initUpdateBanner)
+// fires, and CACHE_NAME changes, so the previous build's cache is dropped
+// on activation.
 //
-// One-time setup per clone: `git config core.hooksPath scripts/git-hooks`.
 // This is also the app's only version concept shown to humans: the
 // home-page footer and export metadata both read it straight out of Cache
 // Storage (see js/app.js's getRunningBuild()) rather than duplicating it in
 // a separately maintained constant.
 //
-// The app's shell assets (this list, below) all load once eagerly at
-// initial page load and are never re-fetched at runtime, so a new worker
-// silently taking over mid-session has always been low-risk here. The
-// gated-activation pattern below (waiting worker + SKIP_WAITING message on
-// user consent) is adopted for predictability of *when* control transfers,
-// not because that was an active bug for this app's architecture.
-const SW_BUILD = '20260911T1848Z-c69a851';
+// The app's shell assets (this list, below) are all precached, including
+// the lazily imported lightbox chunks, so a new worker silently taking over
+// mid-session has always been low-risk here. The gated-activation pattern
+// below (waiting worker + SKIP_WAITING message on user consent) is adopted
+// for predictability of *when* control transfers, not because that was an
+// active bug for this app's architecture.
+const SW_BUILD = '__SW_BUILD__';
 
 const CACHE_NAME = `plant-asset-${SW_BUILD}`;
 

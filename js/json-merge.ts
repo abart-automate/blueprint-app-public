@@ -283,9 +283,12 @@ export async function _mergeSettings(payload: MergePayload): Promise<void> {
     if (item.id === 'checklistItems') {
       const existingChecklist = existingSettings.find(s => s.id === 'checklistItems');
       const existingLabels = new Set(((existingChecklist?.value || []) as any[]).map(c => c.label));
-      const newItems = ((item.value || []) as any[])
-        .map(_deserializeEntityMedia)
-        .filter(c => c.label && !existingLabels.has(c.label));
+      // Filter first so only checklist items actually being added get their
+      // photos decoded and stored (one at a time — see _deserializeEntityMedia).
+      const newItems = [];
+      for (const c of ((item.value || []) as any[]).filter(c => c.label && !existingLabels.has(c.label))) {
+        newItems.push(await _deserializeEntityMedia(c));
+      }
       if (newItems.length) {
         await setSetting('checklistItems', [...(existingChecklist?.value || []), ...newItems]);
       }
@@ -311,7 +314,7 @@ export async function applyJsonMergePlan(payload: MergePayload, plan: MergePlan)
       }
 
       if (entry.status === 'new') {
-        const deserialized = _deserializeEntityMedia(entry.importedItem);
+        const deserialized = await _deserializeEntityMedia(entry.importedItem);
         const saved = await upsert(store, remapRefsDeep(_stripSystemFields(deserialized), remap));
         if (oldId) remap[store][oldId] = saved.id as string;
         stats.added++;
@@ -327,7 +330,7 @@ export async function applyJsonMergePlan(payload: MergePayload, plan: MergePlan)
         continue;
       }
 
-      const deserialized = _deserializeEntityMedia(entry.importedItem);
+      const deserialized = await _deserializeEntityMedia(entry.importedItem);
       let toSave: Record<string, any>;
       if (conflict.resolution === 'overwrite') {
         // Full replace using imported data, but keep the existing record's identity.

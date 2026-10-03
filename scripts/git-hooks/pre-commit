@@ -1,25 +1,17 @@
 #!/bin/sh
-# Auto-stamps sw.js's SW_BUILD with a tree hash of this commit on every commit.
-# See sw.js and stamp-sw-build.js (in this same scripts/ directory) for why
-# this needs to happen at all.
-#
-# This hook only runs if this repo's core.hooksPath points here — that's a
-# one-time setup step per clone (git doesn't share hook config via clone/
-# push), not something a hook can turn on for itself:
+# Optional local pre-commit check: runs the TypeScript typecheck so type errors
+# are caught before they reach CI. Enable once per clone with:
 #
 #   git config core.hooksPath scripts/git-hooks
 #
-# Without that, sw.js's build stamp silently goes stale again and the
-# "Update Now" banner stops firing — the exact bug this hook exists to
-# prevent — so if you're setting this repo up on a new machine, run that
-# command once before your first commit.
+# Nothing depends on this hook any more. sw.js's SW_BUILD stamp is applied at
+# build time by vite.config.mjs (see the comment above SW_BUILD in sw.js), and
+# CI runs the same typecheck before deploying, so a clone without the hook
+# still ships correct builds.
 
 repo_root="$(git rev-parse --show-toplevel)"
 
-# Type-checks whichever .js files have opted in via a leading `// @ts-check`
-# (see tsconfig.json — checkJs is off globally, so untyped files are silently
-# skipped; only files being actively migrated are gated here). Skipped
-# entirely — with a warning, not a hard failure — on a fresh clone that
+# Skipped entirely — with a warning, not a hard failure — on a fresh clone that
 # hasn't run `npm install` yet, so this hook never blocks on network access.
 if [ -f "$repo_root/node_modules/.bin/tsc" ]; then
   if ! "$repo_root/node_modules/.bin/tsc" --noEmit -p "$repo_root"; then
@@ -29,5 +21,3 @@ if [ -f "$repo_root/node_modules/.bin/tsc" ]; then
 else
   echo "pre-commit: TypeScript not installed (run 'npm install') — skipping typecheck." >&2
 fi
-
-exec node "$repo_root/scripts/stamp-sw-build.js"

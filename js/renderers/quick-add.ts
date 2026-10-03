@@ -5,7 +5,7 @@ import { ENTITY } from '../entity-config.js';
 import { el, loadCache, showToast, state } from '../state.js';
 import { upsert } from '../db.js';
 import { buildEnumOptions, buildRefOptions, esc } from '../utils.js';
-import { freshenMediaItems, markFormMediaStart, revokeFormMediaUrls } from '../media.js';
+import { markFormMediaStart, revokeFormMediaUrls, toMediaRefs } from '../media.js';
 import { renderMediaGallery } from './tables.js';
 import { validateRequiredFields, validateUniqueName, _field } from '../operations.js';
 import { navigate, openDetail } from '../app.js';
@@ -257,9 +257,9 @@ export async function saveQuickAdd(): Promise<void> {
   el.qaSave.textContent = 'Saving…';
 
   try {
-    // Freshen media blobs (re-slice ArrayBuffer to survive transfer across ticks)
+    // Photo bytes were stored by the picker (saveNewMedia); the record holds refs only.
     if (state.qaImages.length) {
-      item.images = await freshenMediaItems(state.qaImages);
+      item.images = toMediaRefs(state.qaImages);
     }
 
     const saved = await upsert(type, item);

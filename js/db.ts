@@ -1,7 +1,12 @@
 // IndexedDB layer for Plant Asset Manager
 export const DB_NAME = 'PlantAssetDB';
-export const DB_VERSION = 3;
-export const STORES = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary'] as const;
+// v4 added the `media` store (see media.ts): photo/video bytes live there,
+// written once and never rewritten; records hold only MediaRef pointers.
+export const DB_VERSION = 4;
+export const STORES = ['areas', 'panels', 'power', 'safety', 'networks', 'assets', 'settings', 'partsLibrary', 'media'] as const;
+
+/** Stores whose records can carry media (images / namedPhotos). Checklist media lives in the `checklistItems` setting. */
+export const ENTITY_STORES = ['areas', 'panels', 'power', 'safety', 'networks', 'assets'] as const;
 
 export type StoreName = typeof STORES[number];
 
@@ -68,6 +73,57 @@ export async function upsert(name: StoreName, item: DbRecord): Promise<DbRecord>
     const req = tx(name, 'readwrite').put(item);
     req.onsuccess = () => res(item);
     req.onerror   = () => rej(req.error);
+  });
+}
+
+/**
+ * Writes a record exactly as given — no id/timestamp changes. For maintenance
+ * writes (e.g. the media-storage migration) that must not alter "last modified".
+ */
+export async function putRaw(name: StoreName, item: DbRecord): Promise<void> {
+  return new Promise((res, rej) => {
+    const req = tx(name, 'readwrite').put(item);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+/**
+ * Inserts a new record, failing if the id already exists (IDBObjectStore.add).
+ * Used for media rows, which are insert-only by design.
+ */
+export async function insert(name: StoreName, item: DbRecord): Promise<void> {
+  return new Promise((res, rej) => {
+    const req = tx(name, 'readwrite').add(item);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+/** Reads several records by id in one transaction; missing ids resolve to null (order preserved). */
+export async function getMany(name: StoreName, ids: string[]): Promise<(DbRecord | null)[]> {
+  if (!ids.length) return [];
+  return new Promise((res, rej) => {
+    const store = tx(name);
+    const out: (DbRecord | null)[] = new Array(ids.length).fill(null);
+    let pending = ids.length;
+    ids.forEach((id, i) => {
+      const req = store.get(id);
+      req.onsuccess = () => { out[i] = req.result ?? null; if (--pending === 0) res(out); };
+      req.onerror   = () => rej(req.error);
+    });
+  });
+}
+
+/** Deletes several records by id in one transaction. */
+export async function removeMany(name: StoreName, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  return new Promise((res, rej) => {
+    const t = (_db as IDBDatabase).transaction(name, 'readwrite');
+    const store = t.objectStore(name);
+    ids.forEach(id => store.delete(id));
+    t.oncomplete = () => res();
+    t.onerror    = () => rej(t.error);
   });
 }
 

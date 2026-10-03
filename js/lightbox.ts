@@ -1,4 +1,4 @@
-import type { NormalizedMediaItem } from './media.js';
+import type { MediaItem } from './media.js';
 
 import { createMediaUrl, isVideoMime, revokeTrackedMediaUrl } from './media.js';
 /* ============================================================
@@ -45,10 +45,17 @@ async function measureImage(src: string): Promise<{ width: number, height: numbe
  * Videos go through photoswipe-video-plugin, which renders a native <video> with
  * controls + playsinline (required for inline playback on iOS) and pauses it on swipe.
  *
+ * Items whose bytes are unavailable (`missing`) are skipped; `index` refers to the
+ * caller's full list and is remapped onto the remaining items.
+ *
  * Every object URL created here is tracked and revoked when the viewer is destroyed —
  * PhotoSwipe's DOM lives outside #app, so revokeBlobUrlsInContainer() never reaches it.
  */
-export async function openMediaLightbox(items: NormalizedMediaItem[], index: number): Promise<void> {
+export async function openMediaLightbox(allItems: MediaItem[], index: number): Promise<void> {
+  const items = allItems.filter(item => !item.missing);
+  if (!items.length) return;
+  const startIndex = Math.max(0, items.indexOf(allItems[index]));
+
   const [{ default: PhotoSwipeLightbox }, { default: PhotoSwipeVideoPlugin }] = await Promise.all([
     import('photoswipe/lightbox'),
     import('photoswipe-video-plugin'),
@@ -76,7 +83,7 @@ export async function openMediaLightbox(items: NormalizedMediaItem[], index: num
     };
   });
 
-  const opening = dataSource[index];
+  const opening = dataSource[startIndex];
   if (opening && !('type' in opening) && !opening.width) {
     try {
       Object.assign(opening, await measureImage(opening.src));
@@ -124,5 +131,5 @@ export async function openMediaLightbox(items: NormalizedMediaItem[], index: num
   });
 
   lightbox.init();
-  lightbox.loadAndOpen(index);
+  lightbox.loadAndOpen(startIndex);
 }

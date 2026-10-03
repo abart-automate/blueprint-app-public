@@ -1,35 +1,40 @@
 import { describe, it, expect } from 'vitest';
 
-import type { BlobMediaItem } from './media.js';
+import type { MediaRef } from './media.js';
 
 /**
- * media.ts and lightbox.ts have no app-module imports (PhotoSwipe is only
- * pulled in by a dynamic import() inside openMediaLightbox), so unlike
- * utils.test.ts no `window` stub is needed to load them under vitest's
- * DOM-free "node" environment. Only the pure helpers are tested here; the
- * decode/encode pipeline needs a real browser canvas (see the plan's manual
- * device checklist).
+ * media.ts imports only db.ts (no top-level side effects) and lightbox.ts only
+ * media.ts (PhotoSwipe is a dynamic import() inside openMediaLightbox), so unlike
+ * utils.test.ts no `window` stub is needed under vitest's DOM-free "node"
+ * environment. Only the pure helpers are tested here; IndexedDB-backed flows are
+ * in media-io.test.ts, and the decode/encode pipeline needs a real browser canvas
+ * (see the plan's manual device checklist).
  */
 import {
   MAX_STORED_PIXELS,
   THUMB_MAX_EDGE,
+  classifyMediaEntry,
   collectEntityMedia,
+  collectMediaIds,
+  countInlineEntries,
   entityHasMedia,
   extensionForMime,
   fitWithinLongEdge,
   fitWithinPixelBudget,
-  freshenMediaItems,
   getFirstMedia,
+  hasInlineMedia,
+  isUsableMediaEntry,
   mapEntityMedia,
   mapEntityMediaAsync,
   mimeFromFilename,
   needsReencode,
-  normalizeMediaItems,
+  toMediaRef,
+  toMediaRefs,
 } from './media.js';
 import { computeZoomLevels } from './lightbox.js';
 
-const blobItem = (bytes = 'x', mimeType = 'image/jpeg'): BlobMediaItem =>
-  ({ blob: new Blob([bytes], { type: mimeType }), mimeType });
+const ref = (mediaId: string, extra: Partial<MediaRef> = {}): MediaRef => ({ mediaId, mimeType: 'image/jpeg', ...extra });
+const inline = (bytes = 'x') => ({ blob: new Blob([bytes], { type: 'image/jpeg' }), mimeType: 'image/jpeg' });
 
 describe('fitWithinPixelBudget', () => {
   it('leaves images within budget untouched', () => {
@@ -98,11 +103,12 @@ describe('extensionForMime / mimeFromFilename', () => {
 });
 
 describe('entity media helpers', () => {
-  const a = blobItem('a'), b = blobItem('b'), c = blobItem('c');
+  const a = ref('a'), b = ref('b'), c = ref('c');
 
-  it('collects slot and gallery items, coercing legacy single values', () => {
+  it('collects slot and gallery entries, coercing legacy single values', () => {
     const entity = { images: [a], namedPhotos: { Nameplate: b, Overview: [c] } };
     expect(collectEntityMedia(entity)).toEqual([b, c, a]);
+    expect(collectMediaIds(entity)).toEqual(['b', 'c', 'a']);
   });
 
   it('entityHasMedia ignores empty slots', () => {
@@ -111,51 +117,68 @@ describe('entity media helpers', () => {
     expect(entityHasMedia({})).toBe(false);
   });
 
-  it('getFirstMedia prefers the gallery, then the first non-empty slot', () => {
+  it('getFirstMedia prefers the gallery, then the first usable slot photo', () => {
     expect(getFirstMedia({ images: [a], namedPhotos: { X: [b] } })).toBe(a);
     expect(getFirstMedia({ images: [], namedPhotos: { X: [], Y: [c] } })).toBe(c);
     expect(getFirstMedia({})).toBeNull();
   });
 
-  it('mapEntityMedia maps every item, drops null results, and keeps absent fields absent', () => {
+  it('getFirstMedia skips damaged photos and videos', () => {
+    const damaged = ref('d', { damaged: true });
+    const video = ref('v', { mimeType: 'video/mp4' });
+    expect(getFirstMedia({ images: [damaged, video, b] })).toBe(b);
+    expect(getFirstMedia({ images: [damaged] })).toBeNull();
+  });
+
+  it('mapEntityMedia maps every entry, drops null results, and keeps absent fields absent', () => {
     const out = mapEntityMedia({ id: '1', images: [a, b], namedPhotos: { X: [c] } },
       item => (item === b ? null : 'mapped'));
     expect(out).toEqual({ id: '1', images: ['mapped'], namedPhotos: { X: ['mapped'] } });
     expect('images' in mapEntityMedia({ id: '2' }, x => x)).toBe(false);
   });
 
-  it('mapEntityMediaAsync resolves conversions back into place', async () => {
+  it('mapEntityMediaAsync resolves conversions back into place, in order', async () => {
+    const seen: unknown[] = [];
     const out = await mapEntityMediaAsync({ images: [a], namedPhotos: { X: [b] } },
-      async item => (item === a ? 'A' : 'B'));
+      async item => { seen.push(item); return item === a ? 'A' : 'B'; });
     expect(out).toEqual({ images: ['A'], namedPhotos: { X: ['B'] } });
+    expect(seen).toEqual([b, a]);
   });
 });
 
-describe('normalizeMediaItems', () => {
-  it('wraps legacy base64 strings and passes blob items through', () => {
-    const item = blobItem();
-    expect(normalizeMediaItems(['data:image/jpeg;base64,AA', item])).toEqual([
-      { _legacySrc: 'data:image/jpeg;base64,AA', mimeType: 'image/jpeg' },
-      item,
-    ]);
-    expect(normalizeMediaItems(undefined)).toEqual([]);
+describe('stored entry classification', () => {
+  it('classifies refs, inline blobs, base64 strings and junk', () => {
+    expect(classifyMediaEntry(ref('a'))).toBe('ref');
+    expect(classifyMediaEntry(inline())).toBe('inline');
+    expect(classifyMediaEntry('data:image/jpeg;base64,AA')).toBe('base64');
+    expect(classifyMediaEntry('https://example.com/x.jpg')).toBe('invalid');
+    expect(classifyMediaEntry(null)).toBe('invalid');
+    expect(classifyMediaEntry({ mimeType: 'image/jpeg' })).toBe('invalid');
+  });
+
+  it('counts inline (pre-v4) entries so records needing migration are found', () => {
+    const legacy = { images: [inline(), ref('a')], namedPhotos: { X: 'data:image/jpeg;base64,AA' } };
+    expect(countInlineEntries(legacy)).toBe(2);
+    expect(hasInlineMedia(legacy)).toBe(true);
+    expect(hasInlineMedia({ images: [ref('a')] })).toBe(false);
+  });
+
+  it('treats damaged refs as unusable', () => {
+    expect(isUsableMediaEntry(ref('a'))).toBe(true);
+    expect(isUsableMediaEntry(ref('a', { damaged: true }))).toBe(false);
+    expect(isUsableMediaEntry(inline())).toBe(true);
+    expect(isUsableMediaEntry('nope')).toBe(false);
   });
 });
 
-describe('freshenMediaItems', () => {
-  it('copies both the original blob and the thumbnail into new in-memory blobs', async () => {
-    const original = { ...blobItem('full'), thumb: new Blob(['thumb'], { type: 'image/jpeg' }), width: 10, height: 5 };
-    const [fresh] = await freshenMediaItems([original]) as BlobMediaItem[];
-    expect(fresh.blob).not.toBe(original.blob);
-    expect(fresh.thumb).not.toBe(original.thumb);
-    expect(await fresh.blob.text()).toBe('full');
-    expect(await fresh.thumb!.text()).toBe('thumb');
-    expect(fresh.width).toBe(10);
+describe('toMediaRef(s)', () => {
+  it('strips loaded Blobs, keeping only what a record stores', () => {
+    const item = { ...ref('a', { width: 4, height: 3, size: 99 }), blob: new Blob(['x']), thumb: new Blob(['t']) };
+    expect(toMediaRef(item)).toEqual({ mediaId: 'a', mimeType: 'image/jpeg', width: 4, height: 3, size: 99 });
   });
 
-  it('leaves legacy items untouched', async () => {
-    const legacy = { _legacySrc: 'data:x', mimeType: 'image/jpeg' };
-    expect(await freshenMediaItems([legacy])).toEqual([legacy]);
+  it('keeps missing items as damaged refs (so they can be restored in place)', () => {
+    expect(toMediaRefs([{ ...ref('a'), missing: true }])).toEqual([{ mediaId: 'a', mimeType: 'image/jpeg', damaged: true }]);
   });
 });
 

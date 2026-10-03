@@ -1,13 +1,13 @@
 import type { DbRecord } from '../db.js';
 import type { EntityConfig, EntityType, FieldDef, FormType } from '../entity-config.js';
 import type { EditHistoryEntry } from '../state.js';
-import type { NormalizedMediaItem } from '../media.js';
+import type { MediaRef } from '../media.js';
 
 import { getById, setSetting, upsert } from '../db.js';
 import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
 import { confirm, el, refreshAll, showToast, state } from '../state.js';
 import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, esc, formatNetworkPortLabels, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, renumberSlots, resolveFieldOptions, resolveRefName, sortByName } from '../utils.js';
-import { ensureMediaMetadata, entityHasMedia, freshenMediaItems, normalizeMediaItems, revokeBlobUrlsInContainer } from '../media.js';
+import { entityHasMedia, loadMedia, revokeBlobUrlsInContainer, toMediaRefs } from '../media.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
 import { deleteItem, duplicateItem, validateRequiredFields, validateUniqueIp, validateUniqueName } from '../operations.js';
 import { downloadEntityPhotos } from '../export.js';
@@ -411,12 +411,13 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
   state.detailMediaDirty = false;
   resetAutosaveSession();
 
-  // Load editable media state from the saved item
-  state.detailImages = normalizeMediaItems(item.images);
+  // Load editable media state from the `media` store. These Blobs come from
+  // insert-only rows, so they stay valid however often this record is rewritten.
+  state.detailImages = await loadMedia(item.images);
   state.detailNamedPhotos = {};
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
-      state.detailNamedPhotos[slot] = normalizeMediaItems(item.namedPhotos?.[slot]);
+      state.detailNamedPhotos[slot] = await loadMedia(item.namedPhotos?.[slot]);
     }
   }
 
@@ -602,7 +603,7 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
      ------------------------------------------------------------------ */
   // Revoke all blob URLs in the current detail panel before replacing its HTML.
   // Gallery <img>/<video> elements created by createMediaUrl() are tracked in _mediaUrls;
-  // child-section card thumbnails from getCardThumbSrc() are untracked. Both are destroyed
+  // child-section card thumbnails from hydrateMediaThumbs() are untracked. Both are destroyed
   // by the innerHTML replacement — without this call they accumulate on every Save re-render
   // and eventually exhaust the browser's per-page blob URL cap, breaking all thumbnails.
   revokeBlobUrlsInContainer(el.detail);
@@ -767,7 +768,6 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     }
   }
   refreshDownloadButton();
-  void backfillDetailMediaMetadata(type, id);
 
   /* ------------------------------------------------------------------
      Wire all [data-edit-field] inputs (text, textarea, select, name input).
@@ -1315,50 +1315,26 @@ export function buildSlotDetailItem(rack: DbRecord, slotNumber: number): { updat
 }
 
 /**
- * Commits the detail panel's current media state (images + namedPhotos) to
- * IndexedDB immediately — called from the gallery/slot onAdd/onRemove
- * callbacks, independent of the text-field autosave debounce (see B3).
- * Re-normalizes state.detailImages/detailNamedPhotos from the freshened,
- * saved result so a later add doesn't re-freshen already-fresh blobs.
+ * Commits the detail panel's current media (images + namedPhotos) to IndexedDB
+ * immediately — called from the gallery/slot onAdd/onRemove callbacks,
+ * independent of the text-field autosave debounce (see B3). Only MediaRef
+ * pointers are written; the photo bytes were already stored by the picker
+ * (saveNewMedia), so state's loaded Blobs stay valid and need no reload.
  */
 export async function persistDetailMedia(type: EntityType, id: string): Promise<void> {
   const item = await getById(type, id);
   if (!item) return;
   const cfg = ENTITY[type];
 
-  const updatedItem: DbRecord = { ...item };
-  updatedItem.images = await freshenMediaItems(state.detailImages);
+  const updatedItem: DbRecord = { ...item, images: toMediaRefs(state.detailImages) };
   if (cfg.requiredPhotoSlots) {
-    const freshNamedPhotos: Record<string, NormalizedMediaItem[]> = {};
+    const namedPhotos: Record<string, MediaRef[]> = {};
     for (const [slotKey, items] of Object.entries(state.detailNamedPhotos)) {
-      freshNamedPhotos[slotKey] = await freshenMediaItems(items);
+      namedPhotos[slotKey] = toMediaRefs(items);
     }
-    updatedItem.namedPhotos = freshNamedPhotos;
+    updatedItem.namedPhotos = namedPhotos;
   }
-
-  const saved = await persistDetailItem(type, updatedItem);
-  state.detailImages = normalizeMediaItems(saved.images);
-  if (cfg.requiredPhotoSlots) {
-    state.detailNamedPhotos = {};
-    for (const slotKey of cfg.requiredPhotoSlots) {
-      state.detailNamedPhotos[slotKey] = normalizeMediaItems(saved.namedPhotos?.[slotKey]);
-    }
-  }
-}
-
-/**
- * Lazily upgrades the open record's photos with thumbnails + dimensions when they
- * lack them (saved before thumbnails existed, or restored from a JSON import).
- * Runs in the background after the panel renders and persists only if something
- * changed and the same record is still open — so older data gets memory-safe
- * thumbnails without a bulk migration. Galleries keep showing the full blob until
- * their next render.
- */
-async function backfillDetailMediaMetadata(type: EntityType, id: string): Promise<void> {
-  const items = [...state.detailImages, ...Object.values(state.detailNamedPhotos).flat()];
-  if (!(await ensureMediaMetadata(items))) return;
-  if (state.detailType !== type || state.detailId !== id) return;
-  await persistDetailMedia(type, id);
+  await persistDetailItem(type, updatedItem);
 }
 
 /* ---- Field-invalid UI feedback (Risk 2/3's mitigation) ---- */

@@ -4,6 +4,7 @@ import type { EntityType, EnumFieldDef, FieldDef, ItemTableDef } from './entity-
 import { ENTITY } from './entity-config.js';
 import { state } from './state.js';
 import { renderDetailPlaceholder } from './app.js';
+import { isUsableMediaEntry } from './media.js';
 /* ============================================================
    UTILITIES
    Pure helper functions with no side effects beyond what they
@@ -216,8 +217,9 @@ export function calcCompleteness(type: EntityType, item: Record<string, any>): n
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
       total++;
+      // A photo whose bytes were lost (damaged ref) doesn't count as captured.
       const sv = item.namedPhotos?.[slot];
-      if (Array.isArray(sv) ? sv.length > 0 : !!sv) filled++;
+      if ((Array.isArray(sv) ? sv : sv ? [sv] : []).some(isUsableMediaEntry)) filled++;
     }
   }
   for (const t of itemTables(type, item)) {

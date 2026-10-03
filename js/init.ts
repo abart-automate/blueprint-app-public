@@ -2,10 +2,13 @@ import type { EntityConfig } from './entity-config.js';
 
 import { getSetting, initDB } from './db.js';
 import { ENTITY, assertEntityConfigComplete } from './entity-config.js';
-import { initEl, state } from './state.js';
+import { initEl, showToast, state } from './state.js';
 import { esc, initLayoutDetection } from './utils.js';
 import { wireEvents } from './events.js';
 import { loadEditHistory, navigate, renderHome, renderPage } from './app.js';
+import { hideExportProgress, showExportProgress, updateProgress } from './export.js';
+import { initMediaThumbHydration } from './media.js';
+import { collectOrphanMedia, migrateInlineMedia } from './media-migration.js';
 /* ============================================================
    INIT & PWA LIFECYCLE
    Depends on: db.js, state.js, utils.js, entity-config.js,
@@ -32,6 +35,12 @@ export async function init(): Promise<void> {
        (which holds original-resolution photos) isn't evicted under storage
        pressure. Fire-and-forget: unsupported or declined just means best-effort. */
     void navigator.storage?.persist?.().catch(() => false);
+
+    /* Move any pre-v4 photo bytes out of records into the `media` store before
+       anything renders (see media.ts's header for why), then reclaim unreferenced
+       media rows in the background. */
+    await runMediaStorageUpgrade();
+    initMediaThumbHydration(document.body);
 
     /* Restore the persisted autosave undo history (js/app.js's editHistory —
        see B4 of the autosave plan) so the Recent Changes badge/panel are
@@ -76,6 +85,37 @@ export async function applyPersistedListPaneWidth(): Promise<void> {
   const w = await getSetting('listPaneWidth');
   if (w && Number.isFinite(Number(w))) {
     document.documentElement.style.setProperty('--list-pane-w', Number(w) + 'px');
+  }
+}
+
+/* ============================================================
+   MEDIA STORAGE UPGRADE
+   ============================================================ */
+
+/**
+ * One-time move of pre-v4 inline photo bytes into the `media` store (no-op once
+ * done), shown with the shared progress modal, followed by a background sweep of
+ * unreferenced media rows. Failures are reported but never block startup: an
+ * interrupted migration resumes next launch, and loadMedia() self-heals any
+ * record still holding inline media in the meantime.
+ */
+async function runMediaStorageUpgrade(): Promise<void> {
+  try {
+    let shown = false;
+    const result = await migrateInlineMedia(({ done, total }) => {
+      if (!shown) { showExportProgress('Upgrading photo storage...', 'Updating App'); shown = true; }
+      updateProgress(done, total, 'Upgrading photo storage...', 'photos');
+    });
+    if (shown) hideExportProgress();
+    if (result.damaged) {
+      showToast(`${result.damaged} photo(s) could not be read and are marked unavailable. ` +
+        'Use Home → Restore Photos from Backup if you have a JSON export.', 'error');
+    }
+    void collectOrphanMedia().catch(err => console.warn('Media cleanup failed:', err));
+  } catch (err) {
+    hideExportProgress();
+    console.error('Photo storage upgrade failed:', err);
+    showToast('Photo storage upgrade could not finish; it will retry next launch.', 'error');
   }
 }
 

@@ -1,71 +1,96 @@
+import { getMany, insert } from './db.js';
 /* ============================================================
    MEDIA
    Everything about photos/videos attached to records: the stored
    data shapes, the capture/upload processing pipeline, thumbnail
-   generation, object-URL lifecycle, and entity-level media helpers.
-   No imports from app modules — safe to load in unit tests without
-   a DOM (DOM APIs are only touched inside the async pipeline).
-   The fullscreen viewer lives separately in lightbox.ts (lazy-loaded).
+   generation, the `media` object store, object-URL lifecycle, and
+   entity-level media helpers.
+
+   STORAGE MODEL (DB v4)
+   Photo/video bytes live in the `media` object store, one row per
+   item, and a row is only ever INSERTED or DELETED — never updated.
+   Records (entities, checklist items) hold small MediaRef pointers.
+
+   Why: on iOS/WebKit, rewriting an IndexedDB record that embeds Blobs
+   deletes the files behind every Blob previously read from it — blob:
+   URLs on screen go blank, and writing such a Blob back stores an empty
+   one (permanent data loss). With bytes in insert-only rows, field
+   autosaves, media add/remove and Excel/JSON imports rewrite only
+   small JSON, so loaded Blobs stay valid for the life of the page.
+
+   Only app-module import is db.ts (no top-level side effects), so the
+   pure helpers stay testable without a DOM or IndexedDB.
+   The fullscreen viewer lives in lightbox.ts (lazy-loaded).
    ============================================================ */
 
 /* ---- DATA SHAPES ---- */
 
 /**
- * The current stored shape of one photo/video.
- *   - `blob`      The stored file. For photos this is the original camera/library
- *                 file byte-for-byte (EXIF intact) unless it had to be re-encoded —
- *                 see needsReencode().
- *   - `width`/`height`  Display dimensions of `blob` (EXIF orientation applied).
- *                 Lets the lightbox open at the right aspect ratio without a reflow.
- *   - `thumb`     Small JPEG used by grids/cards so lists never decode full-res
- *                 bitmaps (a 12MP bitmap is ~48MB of RAM — iOS kills the tab).
- * width/height/thumb are optional: records saved before they existed, and records
- * restored from JSON import, lack them until ensureMediaMetadata() backfills them.
- * `_legacySrc?: undefined` lets this union cleanly with NormalizedLegacyItem.
+ * What a record stores per photo/video: a pointer to a `media` row plus the
+ * metadata needed without loading the row (lightbox aspect ratio, export size
+ * estimate). `damaged` marks an item whose bytes were found unreadable or empty
+ * during migration/import — kept (not dropped) so the UI can say so and
+ * "Restore Photos from Backup" can replace it in place.
  */
-export type BlobMediaItem = {
+export interface MediaRef {
+  mediaId: string,
+  mimeType: string,
+  width?: number,
+  height?: number,
+  size?: number,
+  damaged?: true,
+}
+
+/**
+ * In-memory media item used by the UI: a MediaRef plus its loaded Blobs.
+ *   - `blob`   Original file (photos: byte-for-byte unless re-encoded — see needsReencode()).
+ *   - `thumb`  Small JPEG for grids/cards (decoding full-res bitmaps in lists crashes iOS).
+ *   - `missing` The bytes are unavailable (damaged ref, deleted row, or empty blob).
+ */
+export interface MediaItem extends MediaRef {
+  blob?: Blob,
+  thumb?: Blob,
+  missing?: boolean,
+}
+
+/** A processed capture/upload not yet stored: what processMediaFile() returns. */
+export interface NewMediaItem {
   blob: Blob,
   mimeType: string,
   width?: number,
   height?: number,
   thumb?: Blob,
-  _legacySrc?: undefined,
-};
+}
+
+/** One row of the `media` object store. Insert-only — see the module header. */
+export interface MediaRow {
+  id: string,
+  blob: Blob,
+  thumb?: Blob,
+  mimeType: string,
+  width?: number,
+  height?: number,
+  size: number,
+  createdAt: string,
+}
 
 /**
- * Historical stored shapes of a media value:
- *   - A raw base64 data-URL string (oldest format, pre-blob storage).
- *   - A BlobMediaItem (current format).
- *   - An array of either (namedPhotos slots and the "Other Media" gallery).
- * normalizeMediaItems() is the sanctioned entry point that turns any of these
- * into a uniform NormalizedMediaItem[]; other modules consume that output.
+ * Pre-v4 inline shapes, accepted only by the migration, the self-healing path in
+ * loadMedia(), and the JSON import decoder:
+ *   - InlineMediaItem: a Blob embedded directly in the record.
+ *   - a base64 data-URL string (oldest format; also the JSON export format).
  */
-export type LegacyBase64MediaItem = string;
-export type RawMediaItem = BlobMediaItem | LegacyBase64MediaItem;
-export type StoredMediaValue = RawMediaItem | RawMediaItem[] | undefined | null;
-
-/** A legacy base64 item after normalizeMediaItems() — never branched on via typeof again. */
-export type NormalizedLegacyItem = {
-  _legacySrc: string,
-  mimeType: string,
-  blob?: undefined,
-  width?: undefined,
-  height?: undefined,
-  thumb?: undefined,
-};
-export type NormalizedMediaItem = BlobMediaItem | NormalizedLegacyItem;
-
-/** Call sites that legitimately see either raw or normalized shapes. */
-export type MediaItemLike = RawMediaItem | NormalizedMediaItem;
-export type AnyMediaValue = MediaItemLike | MediaItemLike[] | undefined | null;
+export type InlineMediaItem = { blob: Blob, mimeType?: string, width?: number, height?: number, thumb?: Blob };
+export type StoredMediaEntry = MediaRef | MediaItem | InlineMediaItem | string;
+export type StoredMediaValue = StoredMediaEntry | StoredMediaEntry[] | undefined | null;
 
 /**
  * The media-bearing fields of any record (entities, checklist items, detail-panel
  * state). The index signature lets whole records (DbRecord) be passed directly.
  */
 export interface MediaFields {
-  images?: AnyMediaValue,
-  namedPhotos?: Record<string, AnyMediaValue> | null,
+  images?: StoredMediaValue,
+  namedPhotos?: Record<string, StoredMediaValue> | null,
   [key: string]: unknown,
 }
 
@@ -181,21 +206,61 @@ function isHeicMime(mimeType: string): boolean {
   return mimeType === 'image/heic' || mimeType === 'image/heif';
 }
 
+/** True for a v4 pointer (anything carrying a `mediaId`). */
+export function isMediaRef(entry: unknown): entry is MediaRef {
+  return typeof entry === 'object' && entry !== null && typeof (entry as MediaRef).mediaId === 'string';
+}
+
+/**
+ * Classifies one stored media entry:
+ *   'ref'     v4 pointer (MediaRef / MediaItem)
+ *   'inline'  pre-v4 Blob embedded in the record
+ *   'base64'  data-URL string (oldest stored format, and the JSON export format)
+ *   'invalid' anything else (dropped by importers)
+ */
+export function classifyMediaEntry(entry: unknown): 'ref' | 'inline' | 'base64' | 'invalid' {
+  if (isMediaRef(entry)) return 'ref';
+  if (typeof entry === 'string') return entry.startsWith('data:') ? 'base64' : 'invalid';
+  if (typeof entry === 'object' && entry !== null && (entry as InlineMediaItem).blob instanceof Blob) return 'inline';
+  return 'invalid';
+}
+
+/** Strips a MediaItem down to the pointer a record stores. Missing items keep their ref, flagged damaged. */
+export function toMediaRef(item: MediaItem | MediaRef): MediaRef {
+  const ref: MediaRef = { mediaId: item.mediaId, mimeType: item.mimeType };
+  if (item.width) ref.width = item.width;
+  if (item.height) ref.height = item.height;
+  if (item.size) ref.size = item.size;
+  if (item.damaged || (item as MediaItem).missing) ref.damaged = true;
+  return ref;
+}
+
+/** toMediaRef() over a list — what every record write stores for images / a slot. */
+export function toMediaRefs(items: (MediaItem | MediaRef)[]): MediaRef[] {
+  return items.map(toMediaRef);
+}
+
+/** True when a stored entry is a usable photo (a ref not flagged damaged, or legacy inline data). */
+export function isUsableMediaEntry(entry: unknown): boolean {
+  const kind = classifyMediaEntry(entry);
+  return kind === 'ref' ? !(entry as MediaRef).damaged : kind !== 'invalid';
+}
+
 /* ---- ENTITY-LEVEL MEDIA HELPERS ---- */
 
 /**
  * Splits a record's media into its gallery images and its named-photo slots,
  * each coerced to an array (legacy records stored single values).
  */
-export function entityMediaLists(entity: MediaFields): { images: MediaItemLike[], slots: Array<[string, MediaItemLike[]]> } {
+export function entityMediaLists(entity: MediaFields): { images: StoredMediaEntry[], slots: Array<[string, StoredMediaEntry[]]> } {
   return {
     images: asArray(entity.images),
     slots: Object.entries(entity.namedPhotos ?? {}).map(([slot, value]) => [slot, asArray(value)]),
   };
 }
 
-/** Every media item on a record (named-photo slots, then the gallery), flattened. */
-export function collectEntityMedia(entity: MediaFields): MediaItemLike[] {
+/** Every media entry on a record (named-photo slots, then the gallery), flattened. */
+export function collectEntityMedia(entity: MediaFields): StoredMediaEntry[] {
   const { images, slots } = entityMediaLists(entity);
   return [...slots.flatMap(([, items]) => items), ...images];
 }
@@ -205,20 +270,46 @@ export function entityHasMedia(entity: MediaFields): boolean {
   return collectEntityMedia(entity).length > 0;
 }
 
-/** The media item a list card uses as its thumbnail: first gallery image, else first slot photo. */
-export function getFirstMedia(entity: MediaFields): MediaItemLike | null {
-  const { images, slots } = entityMediaLists(entity);
-  return images[0] ?? slots.find(([, items]) => items.length)?.[1][0] ?? null;
+/**
+ * Number of entries on a record that still embed bytes (pre-v4 Blobs or base64
+ * strings, which is also the JSON export format) — the unit of progress for the
+ * migration and for JSON import.
+ */
+export function countInlineEntries(entity: MediaFields): number {
+  return collectEntityMedia(entity).filter(e => {
+    const kind = classifyMediaEntry(e);
+    return kind === 'inline' || kind === 'base64';
+  }).length;
+}
+
+/** True when any stored entry still embeds bytes — i.e. the record needs migrating. */
+export function hasInlineMedia(entity: MediaFields): boolean {
+  return countInlineEntries(entity) > 0;
+}
+
+/** Every mediaId a record points at (used by orphan cleanup). */
+export function collectMediaIds(entity: MediaFields): string[] {
+  return collectEntityMedia(entity).filter(isMediaRef).map(r => r.mediaId);
 }
 
 /**
- * Returns a shallow copy of `entity` with every media item replaced by fn(item).
- * Items for which fn returns null/undefined are dropped. Fields absent on the
+ * The media entry a list card uses as its thumbnail: the first usable gallery
+ * image, else the first usable slot photo. Videos are skipped (no still thumbnail).
+ */
+export function getFirstMedia(entity: MediaFields): StoredMediaEntry | null {
+  const { images, slots } = entityMediaLists(entity);
+  const usableStill = (e: StoredMediaEntry) => isUsableMediaEntry(e) && !isVideoMime(typeof e === 'string' ? undefined : e.mimeType);
+  return images.find(usableStill) ?? slots.flatMap(([, items]) => items).find(usableStill) ?? null;
+}
+
+/**
+ * Returns a shallow copy of `entity` with every media entry replaced by fn(entry).
+ * Entries for which fn returns null/undefined are dropped. Fields absent on the
  * input stay absent on the output.
  */
-export function mapEntityMedia<T extends Record<string, any>>(entity: T, fn: (item: MediaItemLike) => unknown): T {
+export function mapEntityMedia<T extends Record<string, any>>(entity: T, fn: (entry: StoredMediaEntry) => unknown): T {
   const out: Record<string, any> = { ...entity };
-  const keep = (items: MediaItemLike[]) => items.map(fn).filter(x => x != null);
+  const keep = (items: StoredMediaEntry[]) => items.map(fn).filter(x => x != null);
   if (entity.images) out.images = keep(asArray(entity.images));
   if (entity.namedPhotos) {
     out.namedPhotos = Object.fromEntries(entityMediaLists(entity).slots.map(([slot, items]) => [slot, keep(items)]));
@@ -226,11 +317,17 @@ export function mapEntityMedia<T extends Record<string, any>>(entity: T, fn: (it
   return out as T;
 }
 
-/** Async variant of mapEntityMedia(): converts every item concurrently, then rebuilds the record. */
-export async function mapEntityMediaAsync<T extends Record<string, any>>(entity: T, fn: (item: MediaItemLike) => Promise<unknown>): Promise<T> {
-  const items = collectEntityMedia(entity);
-  const results = new Map(await Promise.all(items.map(async item => [item, await fn(item)] as const)));
-  return mapEntityMedia(entity, item => results.get(item));
+/**
+ * Async variant of mapEntityMedia(). Entries are converted one at a time, in
+ * order — conversions may decode full-resolution photos, and doing them
+ * concurrently could exhaust memory on a phone.
+ */
+export async function mapEntityMediaAsync<T extends Record<string, any>>(entity: T, fn: (entry: StoredMediaEntry) => Promise<unknown>): Promise<T> {
+  const results = new Map<StoredMediaEntry, unknown>();
+  for (const entry of collectEntityMedia(entity)) {
+    if (!results.has(entry)) results.set(entry, await fn(entry));
+  }
+  return mapEntityMedia(entity, entry => results.get(entry));
 }
 
 /* ---- DECODE / ENCODE (browser only) ---- */
@@ -326,7 +423,8 @@ function probeVideoDimensions(blob: Blob): Promise<{ width: number, height: numb
 /* ---- CAPTURE / UPLOAD PIPELINE ---- */
 
 /**
- * Turns a picked or captured file into a storable BlobMediaItem.
+ * Turns a picked or captured file into a NewMediaItem (not yet stored — the
+ * picker passes it straight to saveNewMedia()).
  *
  * Photos:
  *   - Web-safe and ≤ MAX_STORED_PIXELS → the original file is kept byte-for-byte
@@ -341,7 +439,7 @@ function probeVideoDimensions(blob: Blob): Promise<{ width: number, height: numb
  *
  * Throws a user-readable Error for unsupported or undecodable files.
  */
-export async function processMediaFile(file: File): Promise<BlobMediaItem> {
+export async function processMediaFile(file: File): Promise<NewMediaItem> {
   const mimeType = file.type || mimeFromFilename(file.name);
 
   if (isVideoMime(mimeType)) {
@@ -364,97 +462,173 @@ export async function processMediaFile(file: File): Promise<BlobMediaItem> {
   }
 
   try {
-    let stored: BlobMediaItem = { blob: file, mimeType, width: decoded.width, height: decoded.height };
+    let item: NewMediaItem = { blob: file, mimeType, width: decoded.width, height: decoded.height };
     if (needsReencode(mimeType, decoded.width, decoded.height)) {
       const size = fitWithinPixelBudget(decoded.width, decoded.height, MAX_STORED_PIXELS);
       const blob = await renderToBlob(decoded.image, size.width, size.height, REENCODE_TYPE, REENCODE_QUALITY);
-      stored = { blob, mimeType: REENCODE_TYPE, ...size };
+      item = { blob, mimeType: REENCODE_TYPE, ...size };
     }
-    stored.thumb = await renderThumb(decoded);
-    return stored;
+    item.thumb = await renderThumb(decoded);
+    return item;
   } finally {
     decoded.release();
   }
 }
 
 /**
- * Backfills `thumb` and `width`/`height` on image items that lack them (records
- * saved before thumbnails existed, or restored from a JSON import, which carries
- * only the original bytes). Mutates the items in place, one at a time to bound
- * peak memory. Returns true when anything changed so the caller can persist.
- * Undecodable items are skipped silently — they still display via the full blob.
+ * Fills in thumbnail and dimensions for media whose bytes came from somewhere
+ * other than the picker (pre-v4 records, JSON imports, backups). Best effort:
+ * a photo the browser can't decode is still kept, just without a thumbnail.
  */
-export async function ensureMediaMetadata(items: NormalizedMediaItem[]): Promise<boolean> {
-  let changed = false;
-  for (const item of items) {
-    if (!item.blob || isVideoMime(item.mimeType) || (item.thumb && item.width)) continue;
+async function deriveMetadata(blob: Blob, mimeType: string): Promise<Pick<NewMediaItem, 'width' | 'height' | 'thumb'>> {
+  try {
+    if (isVideoMime(mimeType)) return (await probeVideoDimensions(blob)) ?? {};
+    const decoded = await decodeImage(blob);
     try {
-      const decoded = await decodeImage(item.blob);
-      try {
-        item.width = decoded.width;
-        item.height = decoded.height;
-        item.thumb = await renderThumb(decoded);
-        changed = true;
-      } finally {
-        decoded.release();
-      }
-    } catch { /* leave as-is */ }
+      return { width: decoded.width, height: decoded.height, thumb: await renderThumb(decoded) };
+    } finally {
+      decoded.release();
+    }
+  } catch {
+    return {};
   }
-  return changed;
 }
 
-/* ---- LEGACY CONVERSION / NORMALIZATION ---- */
+/* ---- MEDIA STORE ---- */
 
 /**
- * Converts a legacy base64 data URL to a BlobMediaItem (MIME type taken from the header).
+ * Stores a new item as an insert-only `media` row and returns the in-memory
+ * MediaItem (ref + Blobs). Called the moment a photo is captured or picked, so it
+ * survives the page being discarded while the camera app is in front.
+ *
+ * Bytes are copied into fresh in-memory Blobs first: picker Files on iOS are backed
+ * by temp files, and IndexedDB-backed Blobs (migration) must not be re-stored by
+ * reference on WebKit — see the module header.
  */
-export function base64ToMediaItem(dataUrl: string): BlobMediaItem {
+export async function saveNewMedia(item: NewMediaItem): Promise<MediaItem> {
+  const blob = new Blob([await item.blob.arrayBuffer()], { type: item.mimeType });
+  // A thumbnail is regenerable; an unreadable one (pre-v4 data) must not fail the save.
+  const thumb = item.thumb
+    ? await item.thumb.arrayBuffer().then(b => new Blob([b], { type: THUMB_TYPE }), () => undefined)
+    : undefined;
+  const row: MediaRow = {
+    id: crypto.randomUUID(),
+    blob,
+    mimeType: item.mimeType,
+    size: blob.size,
+    createdAt: new Date().toISOString(),
+    ...(thumb ? { thumb } : {}),
+    ...(item.width ? { width: item.width, height: item.height } : {}),
+  };
+  await insert('media', row);
+  return { mediaId: row.id, mimeType: row.mimeType, width: row.width, height: row.height, size: row.size, blob, thumb };
+}
+
+/**
+ * Converts one pre-v4 inline entry (embedded Blob or base64 data URL) into a stored
+ * `media` row, deriving thumbnail/dimensions. Used by the migration, JSON import,
+ * backup restore, and loadMedia()'s self-healing path.
+ *
+ * Reads the bytes BEFORE anything rewrites the owning record (WebKit — see the module
+ * header). Bytes that are unreadable or empty yield a `damaged` item rather than
+ * being dropped, so the loss stays visible and restorable.
+ */
+export async function importInlineMedia(entry: InlineMediaItem | string): Promise<MediaItem> {
+  let blob: Blob;
+  let mimeType: string;
+  try {
+    if (typeof entry === 'string') {
+      ({ blob, mimeType } = base64ToBlob(entry));
+    } else {
+      mimeType = entry.mimeType || entry.blob.type || 'image/jpeg';
+      blob = new Blob([await entry.blob.arrayBuffer()], { type: mimeType });
+    }
+  } catch {
+    return damagedItem(typeof entry === 'string' ? 'image/jpeg' : entry.mimeType || 'image/jpeg');
+  }
+  if (!blob.size) return damagedItem(mimeType);
+  const meta = typeof entry !== 'string' && entry.thumb && entry.width
+    ? { width: entry.width, height: entry.height, thumb: entry.thumb }
+    : await deriveMetadata(blob, mimeType);
+  return saveNewMedia({ blob, mimeType, ...meta });
+}
+
+function damagedItem(mimeType: string): MediaItem {
+  return { mediaId: crypto.randomUUID(), mimeType, damaged: true, missing: true };
+}
+
+/**
+ * Loads media for display/editing: refs resolve to their `media` rows in one
+ * transaction; order and count are preserved, so list indices line up with the
+ * stored array. A damaged ref, a missing row, or an empty Blob comes back as
+ * `missing: true`.
+ *
+ * Self-healing: a pre-v4 inline entry (only possible if the startup migration
+ * could not finish) is stored as a new row on the fly, so the caller's next
+ * write stores a ref instead of re-storing the Blob.
+ */
+export async function loadMedia(value: StoredMediaValue): Promise<MediaItem[]> {
+  const entries = asArray(value).filter(e => classifyMediaEntry(e) !== 'invalid');
+  const rows = await readMediaRows(entries.filter(isMediaRef).map(r => r.mediaId));
+  const out: MediaItem[] = [];
+  for (const entry of entries) {
+    out.push(isMediaRef(entry)
+      ? itemFromRow(entry, rows.get(entry.mediaId))
+      : await importInlineMedia(entry as InlineMediaItem | string));
+  }
+  return out;
+}
+
+/**
+ * Read-only variant of loadMedia() for exporters: resolves refs to rows and passes
+ * inline entries through (decoding base64), never writing anything.
+ */
+export async function readMediaForExport(value: StoredMediaValue): Promise<MediaItem[]> {
+  const entries = asArray(value).filter(e => classifyMediaEntry(e) !== 'invalid');
+  const rows = await readMediaRows(entries.filter(isMediaRef).map(r => r.mediaId));
+  return entries.map(entry => {
+    if (isMediaRef(entry)) return itemFromRow(entry, rows.get(entry.mediaId));
+    try {
+      const { blob, mimeType } = typeof entry === 'string'
+        ? base64ToBlob(entry)
+        : { blob: (entry as InlineMediaItem).blob, mimeType: (entry as InlineMediaItem).mimeType || (entry as InlineMediaItem).blob.type };
+      return { mediaId: '', mimeType, blob, size: blob.size, missing: !blob.size };
+    } catch {
+      return { mediaId: '', mimeType: 'image/jpeg', missing: true };
+    }
+  });
+}
+
+/** loadMedia() for a whole record, keeping the gallery / slot structure. */
+export async function loadEntityMedia(entity: MediaFields, read: (v: StoredMediaValue) => Promise<MediaItem[]> = loadMedia):
+  Promise<{ images: MediaItem[], slots: Array<[string, MediaItem[]]> }> {
+  const { images, slots } = entityMediaLists(entity);
+  const outSlots: Array<[string, MediaItem[]]> = [];
+  for (const [slot, items] of slots) outSlots.push([slot, await read(items)]);
+  return { images: await read(images), slots: outSlots };
+}
+
+async function readMediaRows(ids: string[]): Promise<Map<string, MediaRow>> {
+  const unique = [...new Set(ids)];
+  const rows = await getMany('media', unique);
+  return new Map(rows.filter((r): r is MediaRow & Record<string, any> => r != null).map(r => [r.id, r as MediaRow]));
+}
+
+function itemFromRow(ref: MediaRef, row: MediaRow | undefined): MediaItem {
+  if (ref.damaged || !row || !row.blob?.size) return { ...ref, missing: true };
+  return { ...ref, blob: row.blob, thumb: row.thumb, width: ref.width ?? row.width, height: ref.height ?? row.height, size: row.size };
+}
+
+/* ---- LEGACY CONVERSION ---- */
+
+/** Decodes a base64 data URL into a Blob (MIME type taken from the header). */
+export function base64ToBlob(dataUrl: string): { blob: Blob, mimeType: string } {
   const [header, b64] = dataUrl.split(',');
   const mimeType = (header.match(/:(.*?);/) || [])[1] || 'image/jpeg';
   const bytes = atob(b64);
   const arr = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   return { blob: new Blob([arr], { type: mimeType }), mimeType };
-}
-
-/**
- * Normalises a stored media value into NormalizedMediaItem[]. Legacy base64
- * strings become NormalizedLegacyItems (displayed straight from the data URL).
- */
-export function normalizeMediaItems(value: StoredMediaValue): NormalizedMediaItem[] {
-  return asArray(value).map(x => (typeof x === 'string' ? { _legacySrc: x, mimeType: 'image/jpeg' } : x));
-}
-
-/**
- * Like normalizeMediaItems(), but converts legacy base64 strings to real blobs.
- * Used where the result is edited and saved back (the form sheet).
- */
-export function toBlobMediaItems(value: StoredMediaValue): BlobMediaItem[] {
-  return asArray(value).map(x => (typeof x === 'string' ? base64ToMediaItem(x) : x));
-}
-
-/**
- * Converts IDB-backed blobs to fresh in-memory blobs before writing back to IndexedDB.
- * WebKit/Safari cannot reliably re-store blobs retrieved from IndexedDB via structured
- * clone — they write back as zero-byte blobs, causing broken media after a
- * close-and-reopen cycle. Reading via arrayBuffer() + new Blob() produces a true
- * in-memory copy. Applies to every Blob on the item (`blob` and `thumb`).
- */
-export async function freshenMediaItems(items: NormalizedMediaItem[] | undefined | null): Promise<NormalizedMediaItem[]> {
-  if (!items?.length) return [];
-  const freshen = async (blob: Blob, type: string) => new Blob([await blob.arrayBuffer()], { type: blob.type || type });
-  return Promise.all(items.map(async mi => {
-    if (!mi?.blob) return mi;
-    try {
-      return {
-        ...mi,
-        blob: await freshen(mi.blob, mi.mimeType),
-        ...(mi.thumb ? { thumb: await freshen(mi.thumb, THUMB_TYPE) } : {}),
-      };
-    } catch {
-      return mi;
-    }
-  }));
 }
 
 /* ---- OBJECT URL LIFECYCLE ---- */
@@ -469,13 +643,14 @@ export let _formMediaStart = 0;
 
 /**
  * Creates and tracks a blob object URL for a media item. `variant: 'thumb'`
- * uses the thumbnail when one exists (falls back to the full blob). Legacy
- * base64 items return their data URL directly (nothing to track or revoke).
- * Release with revokeTrackedMediaUrl()/revokeBlobUrlsInContainer()/revokeAllMediaUrls().
+ * uses the thumbnail when one exists (falls back to the full blob). Returns ''
+ * for items without bytes. Release with revokeTrackedMediaUrl() /
+ * revokeBlobUrlsInContainer() / revokeAllMediaUrls().
  */
-export function createMediaUrl(mediaItem: NormalizedMediaItem, variant: 'full' | 'thumb' = 'full'): string {
-  if (!mediaItem.blob) return mediaItem._legacySrc ?? '';
-  const url = URL.createObjectURL(variant === 'thumb' && mediaItem.thumb ? mediaItem.thumb : mediaItem.blob);
+export function createMediaUrl(mediaItem: MediaItem, variant: 'full' | 'thumb' = 'full'): string {
+  const blob = variant === 'thumb' && mediaItem.thumb ? mediaItem.thumb : mediaItem.blob;
+  if (!blob) return '';
+  const url = URL.createObjectURL(blob);
   _mediaUrls.push(url);
   return url;
 }
@@ -484,7 +659,7 @@ export function createMediaUrl(mediaItem: NormalizedMediaItem, variant: 'full' |
  * Revokes one blob URL and removes it from the tracked pool. Call before
  * discarding an element that used createMediaUrl() so the pool doesn't grow
  * when a gallery is re-rendered. Revoking an untracked or already-revoked URL
- * is a safe no-op; non-blob (data:) URLs are ignored.
+ * is a safe no-op; non-blob URLs are ignored.
  */
 export function revokeTrackedMediaUrl(url: string): void {
   if (!url.startsWith('blob:')) return;
@@ -496,7 +671,7 @@ export function revokeTrackedMediaUrl(url: string): void {
 /**
  * Revokes all blob URLs referenced by <img>/<video> elements inside containerEl.
  * Call immediately before any innerHTML assignment that destroys blob-src elements.
- * Handles tracked URLs and untracked ones (e.g. from getCardThumbSrc()).
+ * Handles tracked URLs and untracked ones (list-card thumbnails from hydrateMediaThumbs()).
  */
 export function revokeBlobUrlsInContainer(containerEl: Element): void {
   containerEl.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').forEach(el => {
@@ -521,17 +696,44 @@ export function revokeAllMediaUrls(): void {
   _formMediaStart = 0;
 }
 
+/* ---- LIST-CARD THUMBNAILS ---- */
+
 /**
- * Returns a src for a list-card thumbnail <img>, preferring the small `thumb`.
- * Accepts raw or normalized items, or an array (uses the first). Videos have no
- * card thumbnail. URLs created here are untracked — callers revoke them with
- * revokeBlobUrlsInContainer() before replacing the card list.
+ * List cards are rendered as HTML strings, so they can't await media loads. Card
+ * renderers emit a placeholder carrying `data-media-id` (see cardThumbHtml() in
+ * app.ts); this swaps every such placeholder for an <img> of the stored thumbnail,
+ * loading all of them in one transaction. Placeholders whose media is missing
+ * keep showing the entity icon. The URLs are untracked — the existing
+ * revokeBlobUrlsInContainer() calls before list re-renders release them.
  */
-export function getCardThumbSrc(mediaValue: AnyMediaValue): string | null {
-  const item = Array.isArray(mediaValue) ? mediaValue[0] : mediaValue;
-  if (!item) return null;
-  if (typeof item === 'string') return item;
-  if (item._legacySrc) return item._legacySrc;
-  if (isVideoMime(item.mimeType) || !item.blob) return null;
-  return URL.createObjectURL(item.thumb ?? item.blob);
+export async function hydrateMediaThumbs(root: ParentNode): Promise<void> {
+  const placeholders = Array.from(root.querySelectorAll<HTMLElement>('[data-media-id]:not([data-hydrating])'));
+  if (!placeholders.length) return;
+  placeholders.forEach(el => el.setAttribute('data-hydrating', ''));
+  const rows = await readMediaRows(placeholders.map(el => el.dataset.mediaId as string));
+  for (const el of placeholders) {
+    const row = rows.get(el.dataset.mediaId as string);
+    const blob = row?.thumb ?? (row?.blob?.size ? row.blob : undefined);
+    if (!blob || !el.isConnected) continue;
+    const img = document.createElement('img');
+    img.className = 'card-thumb';
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = URL.createObjectURL(blob);
+    el.replaceWith(img);
+  }
+}
+
+/**
+ * Hydrates card thumbnails wherever cards get rendered, without every renderer
+ * having to remember to call hydrateMediaThumbs(): a MutationObserver batches
+ * newly inserted placeholders once per microtask.
+ */
+export function initMediaThumbHydration(root: HTMLElement): void {
+  let scheduled = false;
+  const run = () => { scheduled = false; void hydrateMediaThumbs(root); };
+  new MutationObserver(() => {
+    if (!scheduled) { scheduled = true; queueMicrotask(run); }
+  }).observe(root, { childList: true, subtree: true });
+  run();
 }

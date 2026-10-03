@@ -6,11 +6,12 @@ import { getById, getSetting, setSetting, upsert } from './db.js';
 import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
 import { $, el, loadCache, refreshAll, showToast, state } from './state.js';
 import { buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, formatRelativeTime, getEntityNetworkPorts, getLayoutMode, resolveRefName, sortByName } from './utils.js';
-import { getCardThumbSrc, getFirstMedia, markFormMediaStart, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, toBlobMediaItems } from './media.js';
+import { getFirstMedia, isMediaRef, loadMedia, markFormMediaStart, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, toMediaRefs } from './media.js';
 import { renderMediaGallery } from './renderers/tables.js';
 import { renderForm } from './renderers/form.js';
 import { flushOrBlockPendingAutosave, renderDetail, resetAutosaveSession } from './renderers/detail.js';
 import { clearAllData, deleteItem, importData, showExportOptions } from './operations.js';
+import { restorePhotosFromBackup } from './media-restore.js';
 import { renderPartsLibraryPage } from './parts-library.js';
 /* ============================================================
    MAIN PAGE CONTROLLER
@@ -72,7 +73,7 @@ export function _closeDetailImmediate(): void {
   el.detail.classList.remove('open');
 
   // Revoke all blob URLs while el.detail DOM is still intact — must precede innerHTML = ''.
-  // revokeBlobUrlsInContainer catches untracked child-section URLs (from getCardThumbSrc,
+  // revokeBlobUrlsInContainer catches untracked child-section URLs (from hydrateMediaThumbs,
   // not in _mediaUrls) that revokeAllMediaUrls cannot reach. Placing both calls here —
   // before the layout branch — ensures desktop (immediate innerHTML = '') and mobile
   // (innerHTML = '' fires 300ms later in setTimeout) both operate on the live DOM.
@@ -281,17 +282,21 @@ export async function closeDetail(): Promise<void> {
  * @param type   - Entity store name
  * @param id   - Entity id to edit; null for new
  * @param preset - Pre-fill values: { field, value } or { copyFrom: item }
+ * Async because existing media is loaded from the `media` store before the form renders.
  */
-export function openSheet(type: EntityType, id: string | null = null, preset: Record<string, any> | null = null): void {
+export async function openSheet(type: EntityType, id: string | null = null, preset: Record<string, any> | null = null): Promise<void> {
+  const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
+  // Load media first so a quick Save can never write the form's media as empty.
+  const formImages = await loadMedia(existing?.images);
+  const formNamedPhotos: typeof state.formNamedPhotos = {};
+  for (const [slot, value] of Object.entries(existing?.namedPhotos || {})) {
+    formNamedPhotos[slot] = await loadMedia(value as any);
+  }
   state.formType   = type;
   state.formId     = id;
   state.formPreset = preset;
-  const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
-  // Normalize legacy single-item or base64 string media to editable blob items.
-  state.formImages = toBlobMediaItems(existing?.images);
-  state.formNamedPhotos = Object.fromEntries(
-    Object.entries(existing?.namedPhotos || {}).map(([k, v]) => [k, toBlobMediaItems(v as any)])
-  );
+  state.formImages = formImages;
+  state.formNamedPhotos = formNamedPhotos;
   state.formItemTables = {};
   const cfg = ENTITY[type];
   for (const t of [...(cfg.itemTables || []), ...Object.values(cfg.classItemTables || {}).flat()])
@@ -625,7 +630,7 @@ export const PAGE_RENDERERS = {
 /** Re-renders the current page based on state.page. */
 export async function renderPage(): Promise<void> {
   // Revoke any blob URLs from the outgoing page's card list before replacing el.main.
-  // getCardThumbSrc() creates untracked URLs invisible to revokeAllMediaUrls(); they must
+  // hydrateMediaThumbs() creates untracked URLs invisible to revokeAllMediaUrls(); they must
   // be explicitly revoked here on every page navigation to prevent accumulation toward the
   // per-page blob URL cap.
   revokeBlobUrlsInContainer(el.main);
@@ -744,6 +749,10 @@ export async function renderHome(): Promise<void> {
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Import
         </button>
+        <button class="btn btn-outline" id="home-restore-photos-btn" title="Replace unavailable photos with the copies in a JSON export">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Restore Photos from Backup
+        </button>
         <button class="btn btn-danger" id="home-clear-btn">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           Clear All Data
@@ -772,6 +781,7 @@ export async function renderHome(): Promise<void> {
   el.main.querySelector('#home-export-btn')?.addEventListener('click', showExportOptions);
   el.main.querySelector('#home-import-btn')?.addEventListener('click', importData);
   el.main.querySelector('#home-clear-btn')?.addEventListener('click', clearAllData);
+  el.main.querySelector('#home-restore-photos-btn')?.addEventListener('click', () => void restorePhotosFromBackup());
   if (showInstall) {
     el.main.querySelector('#home-install-btn')?.addEventListener('click', async () => {
       if (!state.deferredInstallPrompt) return;
@@ -953,16 +963,18 @@ export async function bindChecklistEvents(customItems?: any[]): Promise<void> {
     const wrap = container.querySelector(`#checklist-media-${item.id}`) as HTMLElement | null;
     if (!wrap) return;
 
-    // Reads latest item state from DB so blob references stay current after add/remove.
+    // Reads the latest refs from the DB so the gallery reflects every add/remove.
     const refreshGallery = async () => {
       const latest = (await getSetting('checklistItems')) || [];
       const cur = latest.find((i: any) => i.id === item.id) || item;
-      renderMediaGallery(wrap, cur.images || [], {
-        onAdd: async (newMedia: any[]) => {
+      // Refs in the setting, bytes in the `media` store: indices of the loaded list
+      // line up with the stored array (loadMedia preserves order and count).
+      renderMediaGallery(wrap, await loadMedia(cur.images), {
+        onAdd: async newMedia => {
           const updated = (await getSetting('checklistItems')) || [];
           const idx = updated.findIndex((i: any) => i.id === item.id);
           if (idx === -1) return;
-          updated[idx].images = [...(updated[idx].images || []), ...newMedia];
+          updated[idx].images = [...(updated[idx].images || []), ...toMediaRefs(newMedia)];
           await setSetting('checklistItems', updated);
           const btn = container.querySelector(`.checklist-detail-btn[data-cid="${item.id}"]`);
           if (btn) btn.classList.add('has-detail');
@@ -1146,7 +1158,7 @@ export async function renderList(type: EntityType, opts: { preFilter?: (item: Db
 
   const render = () => {
     // Revoke outgoing card thumbnail blob URLs before replacing the card list.
-    // getCardThumbSrc() creates intentionally untracked URLs; they must be explicitly
+    // hydrateMediaThumbs() creates intentionally untracked URLs; they must be explicitly
     // revoked on every re-render to prevent unbounded accumulation toward the per-page
     // blob URL cap. Covers both the empty-state and populated-state branches below.
     revokeBlobUrlsInContainer(list);
@@ -1234,17 +1246,18 @@ export function _cardCountsHtml(item: DbRecord, cfg: EntityConfig): string {
 }
 
 /**
- * List-card thumbnail: the record's first photo (small stored thumbnail when
- * available), else the entity-type icon placeholder. The <img> src is an
+ * List-card thumbnail: the entity-type icon placeholder, upgraded to the record's
+ * first photo thumbnail by hydrateMediaThumbs(). The resulting <img> uses an
  * untracked object URL — callers revoke it with revokeBlobUrlsInContainer()
  * before replacing the card list.
  */
 export function cardThumbHtml(type: EntityType, item: DbRecord): string {
   const cfg = ENTITY[type];
-  const thumbSrc = getCardThumbSrc(getFirstMedia(item));
-  return thumbSrc
-    ? `<img class="card-thumb" src="${thumbSrc}" alt="" decoding="async" loading="lazy">`
-    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+  const first = getFirstMedia(item);
+  // The icon placeholder carries data-media-id; hydrateMediaThumbs() (media.ts)
+  // swaps it for the stored thumbnail once loaded, or leaves the icon if missing.
+  const mediaAttr = isMediaRef(first) ? ` data-media-id="${esc(first.mediaId)}"` : '';
+  return `<div class="card-thumb-ph"${mediaAttr} style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
 }
 
 export function cardHTML(type: EntityType, item: DbRecord, { contextNetworkId }: { contextNetworkId?: string } = {}): string {
