@@ -1,6 +1,6 @@
 import type { DbRecord, StoreName } from './db.js';
 import type { EntityType, FormType } from './entity-config.js';
-import type { NormalizedMediaItem } from './utils.js';
+import type { BlobMediaItem, NormalizedMediaItem } from './media.js';
 
 import { getAll } from './db.js';
 /* ============================================================
@@ -10,11 +10,10 @@ import { getAll } from './db.js';
    ============================================================ */
 
 /**
- * A media item as held in state's *editable* image/photo arrays (already
- * normalized — see utils.js's normalizeMediaItems() for the raw stored-value
- * shapes this gets built from).
+ * A media item as held in state's *editable* image/photo arrays (form sheet,
+ * Quick Add) — always blob-backed; see media.ts's toBlobMediaItems().
  */
-export interface EditableMediaItem { blob: Blob, mimeType: string }
+export type EditableMediaItem = BlobMediaItem;
 
 export interface ItemTableRow { terminal?: string, label?: string }
 

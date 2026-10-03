@@ -28,6 +28,11 @@ export async function init(): Promise<void> {
 
     await initDB();
 
+    /* Ask the browser to mark this origin's storage as persistent so IndexedDB
+       (which holds original-resolution photos) isn't evicted under storage
+       pressure. Fire-and-forget: unsupported or declined just means best-effort. */
+    void navigator.storage?.persist?.().catch(() => false);
+
     /* Restore the persisted autosave undo history (js/app.js's editHistory —
        see B4 of the autosave plan) so the Recent Changes badge/panel are
        correct from the very first paint. */

@@ -1108,7 +1108,30 @@ body {
 }
 .img-thumb img,
 .img-thumb video { width: 100%; height: 100%; object-fit: cover; }
-.img-grid .wiring-add-btn { grid-column: 1 / -1; }
+.img-grid .media-picker { grid-column: 1 / -1; }
+
+/* Add-media control (tables.ts buildMediaPicker): "Take Photo" + library button. */
+.media-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.media-picker .wiring-add-btn { flex: 1 1 0; min-width: 0; }
+.media-picker-status {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.media-picker-status:empty { display: none; }
+.media-picker[aria-busy="true"] .wiring-add-btn {
+  pointer-events: none;
+  opacity: 0.5;
+}
+/* Desktop/mouse: `capture` is ignored, so "Take Photo" would just repeat the library picker. */
+@media (hover: hover) and (pointer: fine) {
+  .media-picker-camera { display: none; }
+}
 .img-rm {
   position: absolute;
   top: 4px;
@@ -1339,6 +1362,14 @@ body {
   font-size: 12px;
   color: var(--muted);
   font-family: monospace;
+}
+
+/* "Export ready — Save" step (export.ts deliverExport, iOS share sheet). */
+.export-ready-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
 }
 
 /* =====================================================
@@ -1688,8 +1719,6 @@ body {
   gap: 8px;
 }
 
-/* IMAGE LIGHTBOX styles removed — PhotoSwipe injects its own stylesheet. */
-
 /* =====================================================
    RELATED ITEMS LIST (in detail view)
    ===================================================== */
@@ -1899,7 +1928,6 @@ body {
   color: var(--text);
   margin-bottom: 6px;
 }
-.named-img-thumb { aspect-ratio: 16/9; }
 
 /* =====================================================
    NAMED PHOTO DETAIL VIEW

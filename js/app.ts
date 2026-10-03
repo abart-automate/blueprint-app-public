@@ -5,7 +5,8 @@ import type { ChecklistItem, ChecklistSubItem } from './utils.js';
 import { getById, getSetting, setSetting, upsert } from './db.js';
 import { CARD_TYPE_NET_TYPES, ENTITY, FORM_TYPE, ICON_CHECK, ICON_CHEVRON, ICON_CIRCLE, ICON_NOTE, ICON_PLUS, ICON_RM, ICON_TRASH } from './entity-config.js';
 import { $, el, loadCache, refreshAll, showToast, state } from './state.js';
-import { base64ToMediaItem, buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, formatRelativeTime, getCardThumbSrc, getEntityNetworkPorts, getLayoutMode, markFormMediaStart, resolveRefName, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, sortByName } from './utils.js';
+import { buildLegacyNetworkPortRow, calcAreaCompleteness, calcChecklistAutoItems, calcCompleteness, calcPanelDevicesCompleteness, completenessColor, entityIcon, esc, formatNetworkPortLabels, formatRelativeTime, getEntityNetworkPorts, getLayoutMode, resolveRefName, sortByName } from './utils.js';
+import { getCardThumbSrc, getFirstMedia, markFormMediaStart, revokeAllMediaUrls, revokeBlobUrlsInContainer, revokeFormMediaUrls, toBlobMediaItems } from './media.js';
 import { renderMediaGallery } from './renderers/tables.js';
 import { renderForm } from './renderers/form.js';
 import { flushOrBlockPendingAutosave, renderDetail, resetAutosaveSession } from './renderers/detail.js';
@@ -26,8 +27,8 @@ import { renderPartsLibraryPage } from './parts-library.js';
 
 /* esc, resolveRef, resolveRefName, getEffectiveFields, itemTables, getIpPrefix,
    calcCompleteness, calcArea/PanelDevicesCompleteness, buildDetailCompletenessHtml,
-   entityIcon, processMediaFile, base64ToMediaItem, createMediaUrl, revokeAllMediaUrls,
-   openMediaLightbox are defined in js/utils.js. */
+   entityIcon are defined in js/utils.js. Media processing and object-URL helpers
+   live in js/media.js; the fullscreen viewer in js/lightbox.js. */
 
 /* ============================================================
    BACK BUTTON / DETAIL PANEL
@@ -286,15 +287,10 @@ export function openSheet(type: EntityType, id: string | null = null, preset: Re
   state.formId     = id;
   state.formPreset = preset;
   const existing = id ? state.refs[type]?.[id] : (preset?.copyFrom || null);
-  // Normalize legacy single-item or base64 string media to Array<{blob,mimeType}>.
-  state.formImages = (existing?.images || []).map(
-    (x: any) => (typeof x === 'string' ? base64ToMediaItem(x) : x)
-  );
+  // Normalize legacy single-item or base64 string media to editable blob items.
+  state.formImages = toBlobMediaItems(existing?.images);
   state.formNamedPhotos = Object.fromEntries(
-    Object.entries(existing?.namedPhotos || {}).map(([k, v]) => {
-      const arr = Array.isArray(v) ? v : (v ? [v] : []);
-      return [k, arr.map((x: any) => (typeof x === 'string' ? base64ToMediaItem(x) : x))];
-    })
+    Object.entries(existing?.namedPhotos || {}).map(([k, v]) => [k, toBlobMediaItems(v as any)])
   );
   state.formItemTables = {};
   const cfg = ENTITY[type];
@@ -1237,6 +1233,20 @@ export function _cardCountsHtml(item: DbRecord, cfg: EntityConfig): string {
     </div>` : '';
 }
 
+/**
+ * List-card thumbnail: the record's first photo (small stored thumbnail when
+ * available), else the entity-type icon placeholder. The <img> src is an
+ * untracked object URL — callers revoke it with revokeBlobUrlsInContainer()
+ * before replacing the card list.
+ */
+export function cardThumbHtml(type: EntityType, item: DbRecord): string {
+  const cfg = ENTITY[type];
+  const thumbSrc = getCardThumbSrc(getFirstMedia(item));
+  return thumbSrc
+    ? `<img class="card-thumb" src="${thumbSrc}" alt="" decoding="async" loading="lazy">`
+    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+}
+
 export function cardHTML(type: EntityType, item: DbRecord, { contextNetworkId }: { contextNetworkId?: string } = {}): string {
   const cfg  = ENTITY[type];
   const classLine = type === 'assets' && item.assetClass
@@ -1244,11 +1254,7 @@ export function cardHTML(type: EntityType, item: DbRecord, { contextNetworkId }:
     : '';
   const locationLine = _cardLocationLine(type, item, cfg);
   const networkLine  = _cardNetworkLine(type, item, contextNetworkId);
-  const firstMedia = item.images?.[0] || (item.namedPhotos && Object.values(item.namedPhotos)[0]) || null;
-  const thumbSrc = getCardThumbSrc(firstMedia);
-  const thumb = thumbSrc
-    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
-    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon(type, 24)}</div>`;
+  const thumb = cardThumbHtml(type, item);
   const countsHtml = _cardCountsHtml(item, cfg);
 
   const trashIcon = ICON_TRASH;

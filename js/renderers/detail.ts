@@ -1,16 +1,17 @@
 import type { DbRecord } from '../db.js';
 import type { EntityConfig, EntityType, FieldDef, FormType } from '../entity-config.js';
 import type { EditHistoryEntry } from '../state.js';
-import type { NormalizedMediaItem } from '../utils.js';
+import type { NormalizedMediaItem } from '../media.js';
 
 import { getById, setSetting, upsert } from '../db.js';
 import { ASSET_CLASS_NETWORK_PORTS, ASSIGN_STORE_MAP, CARD_TYPE_IO_TYPES, CARD_TYPE_NET_TYPES, CARD_TYPE_TERMINAL_TYPES, ENTITY, FORM_TYPE, ICON_BACK, ICON_CHEVRON, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DUPLICATE, ICON_GRIP, ICON_RM, PLC_CARD_TYPE_FIELDS } from '../entity-config.js';
 import { confirm, el, refreshAll, showToast, state } from '../state.js';
-import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, entityIcon, esc, formatNetworkPortLabels, freshenMediaItems, getCardThumbSrc, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, normalizeMediaItems, renumberSlots, resolveFieldOptions, resolveRefName, revokeBlobUrlsInContainer, sortByName } from '../utils.js';
+import { attachFieldEmptyToggle, buildDetailCompletenessHtml, buildEnumOptions, buildLegacyNetworkPortRow, buildRefOptions, debounce, esc, formatNetworkPortLabels, getEffectiveFields, getEntityNetworkPorts, isSwitchAsset, itemTables, renumberSlots, resolveFieldOptions, resolveRefName, sortByName } from '../utils.js';
+import { ensureMediaMetadata, entityHasMedia, freshenMediaItems, normalizeMediaItems, revokeBlobUrlsInContainer } from '../media.js';
 import { IO_SIGNAL_OPTS, IO_WIRING_OPTS, renderItemTableDetail, renderMediaGallery, renderMediaSlot, renderNetworkPortsTableDetail, renderPowerBusTableDetail, renderSwitchNetworksTableDetail, renderSwitchPortsTableDetail } from './tables.js';
 import { deleteItem, duplicateItem, validateRequiredFields, validateUniqueIp, validateUniqueName } from '../operations.js';
 import { downloadEntityPhotos } from '../export.js';
-import { cardHTML, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm, refreshHistoryUi } from '../app.js';
+import { cardHTML, cardThumbHtml, closeDetail, openAssignOrCreate, openDetail, openSheet, openSlotDetail, openSlotForm, refreshHistoryUi } from '../app.js';
 /* ============================================================
    DETAIL VIEW RENDERERS
    Depends on: entity-config.js, state.js, utils.js, db.js, app.js (openDetail,
@@ -513,11 +514,13 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
           <div id="${slotId}" class="img-grid"></div>
         </div>`;
     }).join('');
-    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml, { expanded: true });
+    // Without an "Other Media" card, the download button lives here instead.
+    const downloadSlot = cfg.noImages ? `<div id="det-media-download"></div>` : '';
+    requiredPhotosCard = buildCollapsibleCard('Required Media', slotsHtml + downloadSlot, { expanded: true });
   }
 
-  // Other media gallery placeholder; download button is appended dynamically in the
-  // mounting block below (after state.detailImages is populated, so we can gate on count).
+  // Other media gallery placeholder. The Download Photos button is (re)built in the
+  // mounting block below by refreshDownloadButton(), once state.detailImages is populated.
   let otherPhotosCard = '';
   if (!cfg.noImages) {
     otherPhotosCard = buildCollapsibleCard(
@@ -710,6 +713,26 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
      to a closed tab, and undo (editHistory) deliberately never covers
      images/namedPhotos, so there is nothing gained by delaying the write.
      ------------------------------------------------------------------ */
+  // Download Photos button: re-evaluated on every gallery/slot re-render so it
+  // appears/disappears live and always zips the current media, including photos
+  // added since the panel opened.
+  const downloadContainer = document.getElementById('det-media-download');
+  const refreshDownloadButton = () => {
+    if (!downloadContainer) return;
+    downloadContainer.innerHTML = '';
+    const currentMedia = () => ({ images: state.detailImages, namedPhotos: state.detailNamedPhotos });
+    if (!entityHasMedia(currentMedia())) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wiring-add-btn det-download-photos-btn';
+    btn.textContent = 'Download Photos';
+    btn.addEventListener('click', () => {
+      const name = String(state.detailChanges.name ?? item.name ?? '');
+      void downloadEntityPhotos(name, currentMedia());
+    });
+    downloadContainer.appendChild(btn);
+  };
+
   if (cfg.requiredPhotoSlots) {
     for (const slot of cfg.requiredPhotoSlots) {
       const slotId    = `det-slot-${slot.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
@@ -717,10 +740,13 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
       if (container) {
         // Self-referencing closure mirrors renderEntityForm's reSlot() pattern so
         // thumbnails appear immediately without waiting for a save round-trip.
-        const reSlot = () => renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
-          onAdd:    items => { state.detailNamedPhotos[slot].push(...items); reSlot(); void persistDetailMedia(type, id); },
-          onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   reSlot(); void persistDetailMedia(type, id); },
-        });
+        const reSlot = () => {
+          renderMediaSlot(container, slot, state.detailNamedPhotos[slot], {
+            onAdd:    items => { state.detailNamedPhotos[slot].push(...items); reSlot(); void persistDetailMedia(type, id); },
+            onRemove: i     => { state.detailNamedPhotos[slot].splice(i, 1);   reSlot(); void persistDetailMedia(type, id); },
+          });
+          refreshDownloadButton();
+        };
         reSlot();
       }
     }
@@ -730,28 +756,18 @@ export async function renderEntityDetail(savedScroll: number): Promise<void> {
     if (gallery) {
       // Self-referencing closure mirrors renderEntityForm's reGallery() pattern —
       // same reason: immediate thumbnail visibility without a save round-trip.
-      const reGallery = () => renderMediaGallery(gallery, state.detailImages, {
-        onAdd:    items => { state.detailImages.push(...items); reGallery(); void persistDetailMedia(type, id); },
-        onRemove: i     => { state.detailImages.splice(i, 1);  reGallery(); void persistDetailMedia(type, id); },
-      });
+      const reGallery = () => {
+        renderMediaGallery(gallery, state.detailImages, {
+          onAdd:    items => { state.detailImages.push(...items); reGallery(); void persistDetailMedia(type, id); },
+          onRemove: i     => { state.detailImages.splice(i, 1);  reGallery(); void persistDetailMedia(type, id); },
+        });
+        refreshDownloadButton();
+      };
       reGallery();
     }
-
-    // Download Photos button — mounted once on entity load.  Not in a reGallery closure
-    // because it reflects what is already saved, not the in-progress draft state.
-    const downloadContainer = document.getElementById('det-media-download');
-    if (downloadContainer) {
-      const hasMedia = state.detailImages.length > 0
-        || Object.values(state.detailNamedPhotos).some(v => v.length > 0);
-      if (hasMedia) {
-        const btn = document.createElement('button');
-        btn.className = 'wiring-add-btn det-download-photos-btn';
-        btn.textContent = 'Download Photos';
-        btn.addEventListener('click', () => void downloadEntityPhotos((item.name as string) ?? '', item));
-        downloadContainer.appendChild(btn);
-      }
-    }
   }
+  refreshDownloadButton();
+  void backfillDetailMediaMetadata(type, id);
 
   /* ------------------------------------------------------------------
      Wire all [data-edit-field] inputs (text, textarea, select, name input).
@@ -1069,12 +1085,7 @@ export function getSlotLinkedRacks(parentType: string, parentId: string): Array<
 }
 
 export function slotLinkedRackCardHTML(rack: any, slots: any[], contextNetworkId?: string): string {
-  const cfg = ENTITY.assets;
-  const firstMedia = rack.images?.[0] || (rack.namedPhotos && Object.values(rack.namedPhotos)[0]) || null;
-  const thumbSrc = getCardThumbSrc(firstMedia);
-  const thumb = thumbSrc
-    ? `<img class="card-thumb" src="${thumbSrc}" alt="">`
-    : `<div class="card-thumb-ph" style="color:${cfg.color};background:${cfg.bgColor}">${entityIcon('assets', 24)}</div>`;
+  const thumb = cardThumbHtml('assets', rack);
   const panelName = resolveRefName('panels', rack.panelId);
   const slotLines = slots.map(s => {
     const label = `Slot ${s.slotNumber}${s.name ? ` (${s.name})` : ''}`;
@@ -1333,6 +1344,21 @@ export async function persistDetailMedia(type: EntityType, id: string): Promise<
       state.detailNamedPhotos[slotKey] = normalizeMediaItems(saved.namedPhotos?.[slotKey]);
     }
   }
+}
+
+/**
+ * Lazily upgrades the open record's photos with thumbnails + dimensions when they
+ * lack them (saved before thumbnails existed, or restored from a JSON import).
+ * Runs in the background after the panel renders and persists only if something
+ * changed and the same record is still open — so older data gets memory-safe
+ * thumbnails without a bulk migration. Galleries keep showing the full blob until
+ * their next render.
+ */
+async function backfillDetailMediaMetadata(type: EntityType, id: string): Promise<void> {
+  const items = [...state.detailImages, ...Object.values(state.detailNamedPhotos).flat()];
+  if (!(await ensureMediaMetadata(items))) return;
+  if (state.detailType !== type || state.detailId !== id) return;
+  await persistDetailMedia(type, id);
 }
 
 /* ---- Field-invalid UI feedback (Risk 2/3's mitigation) ---- */

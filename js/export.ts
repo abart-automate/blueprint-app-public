@@ -1,11 +1,13 @@
 import type { DbRecord } from './db.js';
 import type { EntityType, EnumFieldDef, FieldDef } from './entity-config.js';
 import type { ChecklistItem } from './utils.js';
+import type { MediaFields, MediaItemLike } from './media.js';
 
 import { getAll, getSetting } from './db.js';
 import { ASSIGN_STORE_MAP, ENTITY } from './entity-config.js';
-import { showToast } from './state.js';
+import { confirm, showToast } from './state.js';
 import { calcChecklistAutoItems, getEffectiveFields } from './utils.js';
+import { base64ToMediaItem, collectEntityMedia, entityHasMedia, entityMediaLists, extensionForMime } from './media.js';
 import { getRunningBuild } from './app.js';
 // ZIP Export Module for Blueprint App
 // Exports object hierarchy: Areas > Panels > (Power/Safety/Assets)
@@ -28,6 +30,22 @@ export async function exportToZip(): Promise<void> {
       getAll('safety'),
       getAll('assets')
     ]);
+    const checklistCustom = (await getSetting('checklistItems')) || [];
+
+    // With original-resolution photos a full export can exceed what a phone can
+    // hold in memory while JSZip builds the archive — warn before trying.
+    const mediaBytes = estimateMediaBytes([...areas, ...panels, ...power, ...safety, ...assets, ...checklistCustom]);
+    if (mediaBytes > ZIP_SIZE_WARN_BYTES) {
+      hideExportProgress();
+      const proceed = await confirm(
+        'Large export',
+        `This export contains about ${formatBytes(mediaBytes)} of photos and videos, which may be too large ` +
+        `for this device to build in one ZIP. Use "Download Photos" on individual items if it fails. Continue?`,
+        { yesLabel: 'Export', yesClass: 'btn-primary' }
+      );
+      if (!proceed) return;
+      showExportProgress('Starting export...');
+    }
 
     // Build indexing maps
     const areaMap = new Map(areas.map(a => [a.id, a]));
@@ -77,7 +95,6 @@ export async function exportToZip(): Promise<void> {
     // Checklist snapshot at ZIP root.
     // Image blobs cannot be JSON-serialised, so strip them from the snapshot;
     // media files are written to Checklist/<item>/ subfolders below.
-    const checklistCustom = (await getSetting('checklistItems')) || [];
     const customItemsForJson = checklistCustom.map(({ images: _i, ...rest }: any) => rest);
     // Raw SW_BUILD stamp, not a semver string — write-only metadata (never read
     // back on import), included so a support conversation about an exported
@@ -104,18 +121,10 @@ export async function exportToZip(): Promise<void> {
 
     // Generate and download ZIP
     updateProgress(totalItems, totalItems, 'Generating ZIP file...');
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `blueprint-export-${new Date().toISOString().split('T')[0]}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    hideExportProgress();
-    showToast('Export completed successfully!', 'success');
+    const zipBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+    if (await deliverExport(zipBlob, `blueprint-export-${new Date().toISOString().split('T')[0]}.zip`)) {
+      showToast('Export completed successfully!', 'success');
+    }
 
   } catch (error) {
     console.error('Export failed:', error);
@@ -214,10 +223,9 @@ export async function exportExcel(): Promise<void> {
     const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const finalArray = await postProcessXlsx(workbookArray, sheetMeta);
     const blob = new Blob([finalArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    downloadBlob(blob, `blueprint-export-${new Date().toISOString().split('T')[0]}.xlsx`);
-
-    hideExportProgress();
-    showToast('Excel export completed successfully!', 'success');
+    if (await deliverExport(blob, `blueprint-export-${new Date().toISOString().split('T')[0]}.xlsx`)) {
+      showToast('Excel export completed successfully!', 'success');
+    }
   } catch (error) {
     console.error('Excel export failed:', error);
     hideExportProgress();
@@ -684,15 +692,111 @@ export function sanitizeSheetName(name: string): string {
   return safe.substring(0, 31);
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+/* ---- SAVING GENERATED FILES (desktop, Android, iOS) ---- */
+
+/** Above this much media, exportToZip() asks before building one big archive. */
+export const ZIP_SIZE_WARN_BYTES = 500 * 1024 * 1024;
+
+/** iPhone/iPad, including iPadOS reporting itself as a Mac. */
+function isIOSDevice(): boolean {
+  return /iP(hone|od|ad)/.test(navigator.userAgent)
+    || (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * True when `file` should be saved through the OS share sheet rather than an
+ * <a download> link. Only on iOS: there, downloading a blob URL is unreliable in
+ * an installed (standalone) PWA, while the share sheet offers "Save to Files".
+ * Android keeps the normal download (its share sheet has no generic "save" target,
+ * and Chrome refuses to share ZIP files at all).
+ */
+function shouldShareFile(file: File): boolean {
+  return isIOSDevice() && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+}
+
+/**
+ * Saves a generated file to the device. Returns false if the user dismissed the
+ * share sheet. On iOS this must run inside a user gesture (see deliverExport()).
+ * The download URL is revoked after a delay — revoking right after click() can
+ * cancel the download on mobile browsers.
+ */
+export async function saveBlob(blob: Blob, filename: string): Promise<boolean> {
+  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+  if (shouldShareFile(file)) {
+    try {
+      await navigator.share({ files: [file] });
+      return true;
+    } catch (err) {
+      if ((err as DOMException)?.name === 'AbortError') return false;
+      throw err;
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return true;
+}
+
+/**
+ * Hands a just-generated export to the user and closes the progress modal.
+ * Building a ZIP takes long enough that the tap which started it no longer counts
+ * as a user gesture, and iOS then rejects navigator.share(). So when the share
+ * sheet will be used, the progress modal turns into a "ready — Save" prompt and
+ * the save runs from that fresh tap. Elsewhere the file is saved immediately.
+ * Resolves true once saved, false if the user closed the prompt.
+ */
+export async function deliverExport(blob: Blob, filename: string): Promise<boolean> {
+  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+  if (!shouldShareFile(file)) {
+    hideExportProgress();
+    return saveBlob(blob, filename);
+  }
+  if (!document.getElementById('export-progress-modal')) showExportProgress('');
+  const modal = document.querySelector('#export-progress-modal .export-progress-modal') as HTMLElement;
+  modal.innerHTML = `
+    <h3>Export ready</h3>
+    <p class="progress-text"></p>
+    <div class="export-ready-actions">
+      <button type="button" class="btn" data-act="close">Close</button>
+      <button type="button" class="btn btn-primary" data-act="save">Save</button>
+    </div>`;
+  (modal.querySelector('.progress-text') as HTMLElement).textContent = `${filename} (${formatBytes(blob.size)})`;
+  return new Promise(resolve => {
+    modal.querySelector('[data-act="close"]')!.addEventListener('click', () => {
+      hideExportProgress();
+      resolve(false);
+    });
+    modal.querySelector('[data-act="save"]')!.addEventListener('click', async () => {
+      try {
+        if (!(await saveBlob(blob, filename))) return; // share sheet dismissed — keep prompt open
+        hideExportProgress();
+        resolve(true);
+      } catch (err) {
+        hideExportProgress();
+        showToast('Could not save file: ' + (err instanceof Error ? err.message : String(err)), 'error');
+        resolve(false);
+      }
+    });
+  });
+}
+
+/** Human-readable size, e.g. "12.3 MB". */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/** Approximate bytes of media (original blobs only) across the given records. */
+export function estimateMediaBytes(records: MediaFields[]): number {
+  return records.reduce((sum, rec) => sum + collectEntityMedia(rec).reduce(
+    // Legacy base64 strings decode to ~3/4 of their length.
+    (s, item) => s + (typeof item === 'string' ? item.length * 0.75 : item.blob?.size ?? 0), 0), 0);
 }
 
 export async function processArea(
@@ -789,31 +893,35 @@ export async function processArea(
   return processedCount;
 }
 
-// Returns { blob, ext } from either a legacy base64 string or a { blob, mimeType } media item.
-export function _mediaItemToExport(value: any): { blob: Blob, ext: string } {
-  if (typeof value === 'string') return { blob: base64ToBlob(value), ext: 'jpg' };
-  const ext = value.mimeType === 'video/mp4' ? 'mp4' : value.mimeType === 'video/quicktime' ? 'mov' : 'jpg';
-  return { blob: value.blob, ext };
+/**
+ * Returns the exportable original bytes and file extension of one media item
+ * (legacy base64 strings are decoded; the stored thumbnail is never exported).
+ * Returns null for items with nothing to export.
+ */
+export function _mediaItemToExport(item: MediaItemLike): { blob: Blob, ext: string } | null {
+  if (typeof item === 'string') item = base64ToMediaItem(item);
+  else if (item._legacySrc) item = base64ToMediaItem(item._legacySrc);
+  if (!item.blob) return null;
+  return { blob: item.blob, ext: extensionForMime(item.mimeType || item.blob.type) };
 }
 
-// Writes namedPhotos (object of arrays or legacy strings) and images array to a JSZip folder.
-export function _exportMedia(entity: DbRecord, photosFolder: any): void {
-  if (entity.namedPhotos) {
-    for (const [slotName, slotValue] of Object.entries(entity.namedPhotos)) {
-      const items = Array.isArray(slotValue) ? slotValue : (slotValue ? [slotValue] : []);
-      items.forEach((item: any, i: number) => {
-        const { blob, ext } = _mediaItemToExport(item);
-        const suffix = items.length > 1 ? `-${i + 1}` : '';
-        photosFolder.file(`${sanitizeFilename(slotName)}${suffix}.${ext}`, blob);
-      });
-    }
-  }
-  if (entity.images?.length) {
-    entity.images.forEach((item: any, i: number) => {
-      const { blob, ext } = _mediaItemToExport(item);
-      photosFolder.file(`${i + 1}.${ext}`, blob);
+/**
+ * Writes a record's media into a JSZip folder: named-photo slots as
+ * "<Slot>.<ext>" / "<Slot>-2.<ext>", gallery images as "1.<ext>", "2.<ext>"….
+ */
+export function _exportMedia(entity: MediaFields, photosFolder: any): void {
+  const { images, slots } = entityMediaLists(entity);
+  for (const [slotName, items] of slots) {
+    items.forEach((item, i) => {
+      const out = _mediaItemToExport(item);
+      const suffix = items.length > 1 ? `-${i + 1}` : '';
+      if (out) photosFolder.file(`${sanitizeFilename(slotName)}${suffix}.${out.ext}`, out.blob);
     });
   }
+  images.forEach((item, i) => {
+    const out = _mediaItemToExport(item);
+    if (out) photosFolder.file(`${i + 1}.${out.ext}`, out.blob);
+  });
 }
 
 export async function processPanel(panel: DbRecord, panelFolder: any): Promise<void> {
@@ -850,17 +958,6 @@ export function generateObjectFolderName(item: DbRecord, siblings: DbRecord[]): 
 
 export function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, ' ').trim();
-}
-
-export function base64ToBlob(base64: string): Blob {
-  const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');
-  const byteCharacters = atob(cleanBase64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: 'image/jpeg' });
 }
 
 export function showExportProgress(message: string): void {
@@ -928,22 +1025,27 @@ export function hideExportProgress(): void {
 }
 
 /**
- * Downloads all photos for a single entity as a ZIP file.
- * Reuses _exportMedia() for consistent file naming (sanitized slot names, numbered suffixes).
- * Shows an error toast and returns without downloading if the entity has no media.
- * JSZip is available as a global via the vendor <script> tag in index.html.
+ * Downloads one record's photos/videos (original files) as a ZIP.
+ * Pass the *current* media — e.g. the detail panel's live state — not a record
+ * snapshot, so photos added since the panel opened are included.
+ * Reuses _exportMedia() for consistent file naming. JSZip is a global from the
+ * vendor <script> tag in index.html.
  */
-export async function downloadEntityPhotos(entityName: string, entity: DbRecord): Promise<void> {
-  const hasNamedPhotos = entity.namedPhotos && Object.values(entity.namedPhotos as Record<string, any[]>).some(v => v?.length > 0);
-  const hasImages = Array.isArray(entity.images) && entity.images.length > 0;
-  if (!hasNamedPhotos && !hasImages) {
+export async function downloadEntityPhotos(entityName: string, media: MediaFields): Promise<void> {
+  if (!entityHasMedia(media)) {
     showToast('No photos to download for this item.', 'error');
     return;
   }
-  const zip = new JSZip();
-  _exportMedia(entity, zip);
-  const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`);
+  try {
+    showExportProgress('Preparing photos...');
+    const zip = new JSZip();
+    _exportMedia(media, zip);
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+    await deliverExport(blob, `${sanitizeFilename(entityName || 'photos')}-photos.zip`);
+  } catch (err) {
+    hideExportProgress();
+    showToast('Photo download failed: ' + (err instanceof Error ? err.message : String(err)), 'error');
+  }
 }
 
 // Make export functions globally available

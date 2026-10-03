@@ -1,34 +1,48 @@
 import type { ItemTableRow, NetworkPortRow, UntypedTableRow } from '../state.js';
-import type { BlobMediaItem, NetworkPortEntry, NormalizedMediaItem } from '../utils.js';
+import type { BlobMediaItem, NormalizedMediaItem } from '../media.js';
+import type { NetworkPortEntry } from '../utils.js';
 
 import { CARD_TYPE_NET_TYPES, ENTITY, ICON_RM } from '../entity-config.js';
 import { $, showToast, state } from '../state.js';
-import { buildNetworkOptions, createMediaUrl, esc, getEntityNetworkPorts, getIpPrefix, getNetworkAddrFields, openMediaLightbox, processMediaFile, revokeBlobUrlsInContainer } from '../utils.js';
+import { buildNetworkOptions, esc, getEntityNetworkPorts, getIpPrefix, getNetworkAddrFields } from '../utils.js';
+import { CAMERA_ACCEPT, LIBRARY_ACCEPT, createMediaUrl, isVideoMime, processMediaFile, revokeBlobUrlsInContainer } from '../media.js';
+import { openMediaLightbox } from '../lightbox.js';
 /* ============================================================
    TABLE & MEDIA RENDERERS
    All dynamic table UIs rendered into the form sheet.
-   Depends on: state, ENTITY, esc, getIpPrefix,
-               processMediaFile, createMediaUrl, openMediaLightbox (utils.js).
+   Depends on: state, ENTITY, esc, getIpPrefix (utils.js);
+               processMediaFile, createMediaUrl (media.js);
+               openMediaLightbox (lightbox.js).
    ============================================================ */
 
 /* ---- SHARED MEDIA RENDERER ---- */
 
 /**
- * Returns a .img-thumb DOM element for one media item.
+ * Returns a .img-thumb DOM element for one media item. Images show the small
+ * stored thumbnail (or the full blob for items saved before thumbnails existed)
+ * and decode lazily and asynchronously, so long galleries stay responsive.
  */
 export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onClick }: { onRemove?: (() => void) | null, onClick?: () => void } = {}): HTMLElement {
   const div = document.createElement('div');
   div.className = 'img-thumb';
-  const src = createMediaUrl(mediaItem);
-  const isVideo = mediaItem.mimeType?.startsWith('video/');
-  const media = document.createElement(isVideo ? 'video' : 'img') as HTMLVideoElement | HTMLImageElement;
-  if (isVideo) {
-    const video = media as HTMLVideoElement;
+  let media: HTMLImageElement | HTMLVideoElement;
+  if (isVideoMime(mediaItem.mimeType)) {
+    const video = document.createElement('video');
     video.muted = true;
+    video.playsInline = true;
     video.preload = 'metadata';
+    // Seeking just past 0 makes iOS paint the first frame instead of a blank tile.
     video.addEventListener('loadedmetadata', () => { video.currentTime = 0.001; });
+    video.src = createMediaUrl(mediaItem);
+    media = video;
+  } else {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    img.src = createMediaUrl(mediaItem, 'thumb');
+    media = img;
   }
-  media.src = src;
   if (onClick) media.addEventListener('click', onClick);
   div.appendChild(media);
   if (onRemove) {
@@ -36,6 +50,7 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
     btn.className = 'img-rm';
     btn.type = 'button';
     btn.textContent = '✕';
+    btn.setAttribute('aria-label', 'Remove');
     btn.addEventListener('click', e => { e.stopPropagation(); onRemove(); });
     div.appendChild(btn);
   }
@@ -43,38 +58,60 @@ export function renderMediaThumb(mediaItem: NormalizedMediaItem, { onRemove, onC
 }
 
 /**
- * Private: creates a file input label that validates files via processMediaFile.
- * @param multiple - Allow multiple file selection.
+ * Builds the add-media control:
+ *   - "Take Photo" opens the device's native rear camera (capture="environment"),
+ *     which gives full sensor resolution, autofocus/tap-to-focus, zoom, HDR and flash
+ *     on both iOS and Android. CSS hides it on hover + fine-pointer devices, where
+ *     `capture` is ignored and the button would just repeat the library button.
+ *   - The library button opens the Photos sheet (iOS) or the photo picker (Android).
+ *
+ * Each picked file goes through processMediaFile(). While that runs, the control
+ * is marked aria-busy and shows progress. Files that fail are toasted and skipped.
+ *
+ * Known limitation: on low-memory Android devices, Chrome may discard the page while
+ * the camera app is in front. The detail panel commits media to IndexedDB on every
+ * add, so nothing is lost there. The New-item form and Quick Add keep media in
+ * memory until they're saved.
  */
-export function _makeUploadInput(multiple: boolean, onFiles: (items: BlobMediaItem[]) => void): HTMLLabelElement {
-  const label = document.createElement('label');
-  label.className = 'wiring-add-btn';
-  // image/*,video/* triggers the native Photo Library sheet on iOS and the gallery
-  // picker on Android; a specific MIME list (jpeg,png,…) suppresses that sheet on iOS.
-  label.innerHTML = `<input type="file" accept="image/*,video/*"${multiple ? ' multiple' : ''}><span>+ Add Photo</span>`;
-  const input = label.querySelector('input') as HTMLInputElement;
-  input.addEventListener('change', async () => {
-    const files = Array.from(input.files ?? []);
-    input.value = '';
-    const results: BlobMediaItem[] = [];
-    for (const file of files) {
-      try { results.push(await processMediaFile(file)); }
-      catch (err) { showToast(err instanceof Error ? err.message : String(err), 'error'); }
-    }
-    if (results.length) onFiles(results);
+export function buildMediaPicker(libraryLabel: string, onFiles: (items: BlobMediaItem[]) => void): HTMLElement {
+  const picker = document.createElement('div');
+  picker.className = 'media-picker';
+  picker.innerHTML = `
+    <label class="wiring-add-btn media-picker-camera"><input type="file" accept="${CAMERA_ACCEPT}" capture="environment"><span>Take Photo</span></label>
+    <label class="wiring-add-btn media-picker-library"><input type="file" accept="${LIBRARY_ACCEPT}" multiple><span>${esc(libraryLabel)}</span></label>
+    <div class="media-picker-status" aria-live="polite"></div>`;
+  const status = picker.querySelector('.media-picker-status') as HTMLElement;
+
+  picker.querySelectorAll('input').forEach(input => {
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files ?? []);
+      input.value = '';
+      if (!files.length) return;
+      picker.setAttribute('aria-busy', 'true');
+      const results: BlobMediaItem[] = [];
+      for (const [i, file] of files.entries()) {
+        status.textContent = files.length > 1 ? `Processing ${i + 1}/${files.length}…` : 'Processing…';
+        try { results.push(await processMediaFile(file)); }
+        catch (err) { showToast(err instanceof Error ? err.message : String(err), 'error'); }
+      }
+      picker.removeAttribute('aria-busy');
+      status.textContent = '';
+      if (results.length) onFiles(results);
+    });
   });
-  return label;
+  return picker;
 }
 
 /**
- * Shared core: renders media thumbs into containerEl.
+ * Shared core: renders media thumbs (click → lightbox) into containerEl and,
+ * unless readonly, the add-media picker.
  */
 export function _renderMediaItems(
   containerEl: HTMLElement,
   mediaItems: NormalizedMediaItem[],
-  { onAdd, onRemove, readonly, emptyHtml, uploadLabel }: { onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean, emptyHtml?: string, uploadLabel?: string } = {}
+  { onAdd, onRemove, readonly, emptyHtml, addLabel = 'Choose from Library' }: { onAdd?: (items: BlobMediaItem[]) => void, onRemove?: (i: number) => void, readonly?: boolean, emptyHtml?: string, addLabel?: string } = {}
 ): void {
-  // Revoke outgoing blob URLs before clearing — see revokeBlobUrlsInContainer() in utils.js.
+  // Revoke outgoing blob URLs before clearing — see revokeBlobUrlsInContainer() in media.ts.
   revokeBlobUrlsInContainer(containerEl);
   containerEl.innerHTML = '';
   if (!mediaItems.length && readonly) {
@@ -84,16 +121,11 @@ export function _renderMediaItems(
   mediaItems.forEach((item, i) => {
     containerEl.appendChild(renderMediaThumb(item, {
       onRemove: readonly ? null : () => onRemove?.(i),
-      onClick:  () => openMediaLightbox(mediaItems, i),
+      onClick:  () => void openMediaLightbox(mediaItems, i),
     }));
   });
   if (!readonly) {
-    const upload = _makeUploadInput(true, items => onAdd?.(items));
-    if (uploadLabel) {
-      const span = upload.querySelector('span');
-      if (span) span.textContent = uploadLabel;
-    }
-    containerEl.appendChild(upload);
+    containerEl.appendChild(buildMediaPicker(addLabel, items => onAdd?.(items)));
   }
 }
 
@@ -108,7 +140,7 @@ export function renderMediaGallery(
   _renderMediaItems(containerEl, mediaItems, {
     onAdd, onRemove, readonly,
     emptyHtml: `<div style="color:var(--muted);font-size:14px;padding:4px 0">No media added.</div>`,
-    uploadLabel: '+ Add Media',
+    addLabel: 'Choose Photo / Video',
   });
 }
 
